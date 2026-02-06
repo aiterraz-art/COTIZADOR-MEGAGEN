@@ -183,8 +183,20 @@ const App: React.FC = () => {
       alert('Catálogo maestro actualizado con éxito. El sistema recordará esta lista hasta que subas otra.');
       fetchProducts(); // Refresh list from DB to ensure IDs are synced
     } catch (error) {
-      console.error('Sync error:', error);
-      alert('Error al sincronizar: ' + (error as Error).message);
+      console.error('Detailed Sync error:', error);
+
+      let errorMessage = (error as Error).message;
+      let advice = '\n\nRevisa la consola del navegador para más detalles técnicos.';
+
+      // Check for common connection/mixed content errors
+      if (errorMessage === 'Failed to fetch' || errorMessage.includes('fetch')) {
+        advice = '\n\nPOSIBLES CAUSAS:\n' +
+          '1. Mixed Content: Tu app usa HTTPS pero la URL de Supabase es HTTP.\n' +
+          '2. VPN/Red: Estás usando una IP privada y no estás conectado a la red correcta (ej: Tailscale).\n' +
+          '3. URL Incorrecta: Verifica que VITE_SUPABASE_URL sea accesible públicamente.';
+      }
+
+      alert('Error al sincronizar: ' + errorMessage + advice);
     } finally {
       setIsSyncing(false);
     }

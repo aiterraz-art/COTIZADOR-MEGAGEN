@@ -1,4 +1,10 @@
-# React + TypeScript + Vite
+# MegaGen Chile - Finance Deal Analyzer
+
+> [!IMPORTANT]
+> **POLÍTICA DE GITHUB:** Todos los cambios en este repositorio deben ser autorizados explícitamente por el usuario antes de realizar un `git push`. El push automático está prohibido.
+
+## React + TypeScript + Vite
+
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
