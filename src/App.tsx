@@ -141,6 +141,15 @@ const App: React.FC = () => {
       }
     } catch (error) {
       console.error('Error fetching products:', error);
+      const errorMessage = (error as Error).message;
+      const url = import.meta.env.VITE_SUPABASE_URL || 'MISSING';
+
+      // Show diagnostic alert for initial load
+      alert('Error inicial al cargar productos de Supabase.\n' +
+        'URL: ' + url + '\n' +
+        'Mensaje: ' + errorMessage + '\n\n' +
+        'Si estás en Vercel (HTTPS), asegúrate de que la URL sea https:// y sea accesible.');
+
       setProducts(initialProducts); // Fallback
     } finally {
       setIsLoading(false);
@@ -185,15 +194,21 @@ const App: React.FC = () => {
     } catch (error) {
       console.error('Detailed Sync error:', error);
 
-      let errorMessage = (error as Error).message;
-      let advice = '\n\nRevisa la consola del navegador para más detalles técnicos.';
+      const errorMessage = (error as Error).message;
+      const url = import.meta.env.VITE_SUPABASE_URL || 'MISSING';
+      const isHttpsPage = window.location.protocol === 'https:';
+      const isHttpUrl = url.toLowerCase().startsWith('http:');
 
-      // Check for common connection/mixed content errors
+      let advice = '\n\nRevisa la consola del navegador (F12) para más detalles.';
+
       if (errorMessage === 'Failed to fetch' || errorMessage.includes('fetch')) {
-        advice = '\n\nPOSIBLES CAUSAS:\n' +
-          '1. Mixed Content: Tu app usa HTTPS pero la URL de Supabase es HTTP.\n' +
-          '2. VPN/Red: Estás usando una IP privada y no estás conectado a la red correcta (ej: Tailscale).\n' +
-          '3. URL Incorrecta: Verifica que VITE_SUPABASE_URL sea accesible públicamente.';
+        advice = '\n\nDIAGNÓSTICO:\n';
+        if (isHttpsPage && isHttpUrl) {
+          advice += '⚠️ ERROR DE PROTOCOLO: Estás en HTTPS pero la URL es HTTP (Bloqueado por el navegador).\n';
+        }
+        advice += '1. URL intentada: ' + url + '\n' +
+          '2. VPN: Si es una IP privada (100.x.x.x), ¿estás en Tailscale?\n' +
+          '3. Vercel Settings: ¿Actualizaste las variables de entorno en el panel de Vercel?';
       }
 
       alert('Error al sincronizar: ' + errorMessage + advice);
