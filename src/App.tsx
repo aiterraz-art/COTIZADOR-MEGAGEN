@@ -51,7 +51,6 @@ interface SavedQuotation {
 }
 
 const App: React.FC = () => {
-  console.log('App component initialized');
   const [products, setProducts] = useState<Product[]>([]);
   const [dealItems, setDealItems] = useState<DealItem[]>([]);
   const [targetSalePrice, setTargetSalePrice] = useState<number>(0);
@@ -87,7 +86,6 @@ const App: React.FC = () => {
 
   // Fetch products and exchange rate on mount
   useEffect(() => {
-    console.log('App mounted, fetching data...');
     fetchProducts();
     fetchExchangeRate();
 
@@ -143,7 +141,6 @@ const App: React.FC = () => {
       }
     } catch (error) {
       console.error('Error fetching products:', error);
-      alert('FALLO CARGA INICIAL: ' + (error as Error).message);
       setProducts(initialProducts); // Fallback
     } finally {
       setIsLoading(false);
@@ -648,7 +645,7 @@ const App: React.FC = () => {
       </header>
 
       {/* Tab Navigation */}
-      <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem', borderBottom: '2px solid rgba(255,255,255,0.1)', padding: '0 1rem' }}>
+      <div className="tabs-nav" style={{ display: 'flex', gap: '0.5rem', marginBottom: '2rem', borderBottom: '2px solid rgba(255,255,255,0.1)', padding: '0 0.5rem' }}>
         <button
           className={`btn ${activeTab === 'simulator' ? 'btn-primary' : ''}`}
           style={{
