@@ -51,6 +51,7 @@ interface SavedQuotation {
 }
 
 const App: React.FC = () => {
+  console.log('App component initialized');
   const [products, setProducts] = useState<Product[]>([]);
   const [dealItems, setDealItems] = useState<DealItem[]>([]);
   const [targetSalePrice, setTargetSalePrice] = useState<number>(0);
@@ -86,6 +87,7 @@ const App: React.FC = () => {
 
   // Fetch products and exchange rate on mount
   useEffect(() => {
+    console.log('App mounted, fetching data...');
     fetchProducts();
     fetchExchangeRate();
 
@@ -141,6 +143,7 @@ const App: React.FC = () => {
       }
     } catch (error) {
       console.error('Error fetching products:', error);
+      alert('FALLO CARGA INICIAL: ' + (error as Error).message);
       setProducts(initialProducts); // Fallback
     } finally {
       setIsLoading(false);
