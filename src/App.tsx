@@ -424,7 +424,7 @@ const App: React.FC = () => {
               </tr>
             </thead>
             <tbody>
-              ${quotation.items.map((item, idx) => `
+              ${quotation.items.map((item) => `
                 <tr style="border-bottom: 1px solid #eee;">
                   <td style="padding: 10px; font-size: 12px;">${item.name}</td>
                   <td style="padding: 10px; text-align: center; font-size: 12px;">${item.qty}</td>
