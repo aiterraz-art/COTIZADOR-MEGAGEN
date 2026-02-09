@@ -5,9 +5,9 @@ import type { Product } from './data/mockProducts';
 import { parseFile } from './utils/fileParser';
 import { supabase } from './lib/supabase';
 import html2canvas from 'html2canvas';
+import logoMegaGen from './assets/MegaGen.jpg';
 import {
   Calculator,
-  TrendingUp,
   DollarSign,
   Search,
   Plus,
@@ -410,7 +410,7 @@ const App: React.FC = () => {
       tempDiv.innerHTML = `
         <div style="background: rgba(255,255,255,0.95); color: #1a1a2e; border-radius: 20px; padding: 30px;">
           <div style="text-align: center; border-bottom: 3px solid #667eea; padding-bottom: 20px; margin-bottom: 30px;">
-            <h1 style="margin: 0; font-size: 32px; color: #667eea;">MegaGen Chile</h1>
+            <img src="${logoMegaGen}" alt="MegaGen Chile" style="height: 60px; max-width: 100%; object-fit: contain;" />
             <p style="margin: 5px 0 0 0; font-size: 14px; color: #666;">Cotización Financiera</p>
             <p style="margin: 5px 0 0 0; font-size: 12px; color: #999;">Fecha: ${date}</p>
           </div>
@@ -596,9 +596,9 @@ const App: React.FC = () => {
     <div className="app-container">
       <header className="header">
         <div className="logo-group">
-          <TrendingUp className="positive" size={32} />
+          <img src={logoMegaGen} alt="MegaGen Logo" style={{ height: '40px', objectFit: 'contain' }} />
           <div>
-            <h1>MegaGen Chile</h1>
+            <h1 style={{ display: 'none' }}>MegaGen Chile</h1>
             <p className="text-muted">Finance Deal Analyzer v2.5 (Supabase Cloud)</p>
           </div>
         </div>
