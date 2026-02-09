@@ -435,6 +435,10 @@ const App: React.FC = () => {
           </table>
 
           <div style="background: #f9f9f9; padding: 20px; border-radius: 12px; margin-bottom: 20px;">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 10px; border-bottom: 1px dashed #ddd; padding-bottom: 10px;">
+              <span style="font-size: 14px; color: #666;">Costo Total (CLP):</span>
+              <span style="font-size: 14px; font-weight: 600; color: #666;">$${quotation.total_cost_clp.toLocaleString('es-CL')}</span>
+            </div>
             <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
               <span style="font-size: 14px; color: #666;">Subtotal (sin IVA):</span>
               <span style="font-size: 16px; font-weight: 600;">$${subtotal.toLocaleString('es-CL')}</span>
@@ -950,8 +954,34 @@ const App: React.FC = () => {
                   />
                 </div>
                 {targetSalePrice > 0 && (
-                  <div style={{ marginTop: '0.3rem', textAlign: 'right', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                    Total con IVA: <span style={{ fontWeight: '600', color: '#fff' }}>{formatCLP(targetSalePrice * 1.19)}</span>
+                  <div style={{ marginTop: '0.3rem', textAlign: 'right', fontSize: '0.8rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.5rem' }}>
+                    <span>Total con IVA:</span>
+                    <div style={{ position: 'relative', width: '120px' }}>
+                      <span style={{ position: 'absolute', left: '8px', top: '50%', transform: 'translateY(-50%)', fontWeight: 'bold', color: '#fff' }}>$</span>
+                      <input
+                        type="number"
+                        className="input-field"
+                        style={{
+                          width: '100%',
+                          paddingLeft: '20px',
+                          paddingRight: '5px',
+                          textAlign: 'right',
+                          fontWeight: '600',
+                          color: '#fff',
+                          background: 'rgba(255,255,255,0.1)',
+                          border: '1px solid rgba(255,255,255,0.2)'
+                        }}
+                        value={Math.round(targetSalePrice * 1.19)}
+                        onChange={(e) => {
+                          const priceWithIva = parseFloat(e.target.value);
+                          if (!isNaN(priceWithIva)) {
+                            setTargetSalePrice(Math.round(priceWithIva / 1.19));
+                          } else {
+                            setTargetSalePrice(0);
+                          }
+                        }}
+                      />
+                    </div>
                   </div>
                 )}
                 {dealItems.length > 0 && targetSalePrice > 0 && (
