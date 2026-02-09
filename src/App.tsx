@@ -617,7 +617,7 @@ const App: React.FC = () => {
               <button
                 onClick={fetchExchangeRate}
                 className="btn-icon"
-                style={{ padding: '0.2rem', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.05)', borderRadius: '4px' }}
+                style={{ padding: '0.2rem', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f1f5f9', borderRadius: '4px', border: '1px solid var(--border)' }}
                 title="Actualizar tipo de cambio"
               >
                 <RefreshCw size={14} className="text-muted" />
@@ -649,7 +649,7 @@ const App: React.FC = () => {
       </header>
 
       {/* Tab Navigation */}
-      <div className="tabs-nav" style={{ display: 'flex', gap: '0.5rem', marginBottom: '2rem', borderBottom: '2px solid rgba(255,255,255,0.1)', padding: '0 0.5rem' }}>
+      <div className="tabs-nav" style={{ display: 'flex', gap: '0.5rem', marginBottom: '2rem', borderBottom: '2px solid var(--border)', padding: '0 0.5rem' }}>
         <button
           className={`btn ${activeTab === 'simulator' ? 'btn-primary' : ''}`}
           style={{
@@ -691,7 +691,7 @@ const App: React.FC = () => {
               <span className="badge">{products.length} Items</span>
             </div>
 
-            <div style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'rgba(0,0,0,0.2)', padding: '0.5rem 1rem', borderRadius: '8px' }}>
+            <div style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem', background: '#f1f5f9', padding: '0.5rem 1rem', borderRadius: '8px', border: '1px solid var(--border)' }}>
               <Search size={18} className="text-muted" />
               <input
                 type="text"

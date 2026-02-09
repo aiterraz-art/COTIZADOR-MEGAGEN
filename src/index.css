@@ -1,17 +1,23 @@
 :root {
   --primary: #00A7E9;
+  /* Megagen Cyan */
   --primary-hover: #008bc5;
-  --secondary: #003B71;
-  --background: #020617;
-  --surface: rgba(15, 23, 42, 0.7);
-  --card-bg: rgba(30, 41, 59, 0.5);
-  --text: #f8fafc;
-  --text-muted: #94a3b8;
+  --secondary: #E93237;
+  /* Megagen Red/Pink */
+  --background: #ffffff;
+  --surface: #f8fafc;
+  --card-bg: #ffffff;
+  --text: #0f172a;
+  /* Slate 900 */
+  --text-muted: #64748b;
+  /* Slate 500 */
   --success: #1AA258;
   --warning: #f59e0b;
   --error: #ef4444;
-  --accent: #E93237;
-  --border: rgba(255, 255, 255, 0.1);
+  --accent: #003B71;
+  /* Deep Blue as accent now */
+  --border: #e2e8f0;
+  /* Slate 200 */
 }
 
 * {
@@ -22,7 +28,7 @@
 
 body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  background: radial-gradient(circle at top right, #1e293b, #020617);
+  background: var(--background);
   color: var(--text);
   min-height: 100vh;
   line-height: 1.6;
@@ -61,11 +67,9 @@ h1 {
 
 .glass {
   background: var(--surface);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
   border: 1px solid var(--border);
   border-radius: 16px;
-  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
 }
 
 .card {
@@ -79,7 +83,7 @@ h1 {
 }
 
 .finance-card {
-  background: var(--card-bg);
+  background: var(--surface);
   border: 1px solid var(--border);
   padding: 1rem;
   border-radius: 12px;
@@ -87,8 +91,8 @@ h1 {
 }
 
 .finance-card:hover {
-  border-color: var(--secondary);
-  background: rgba(30, 41, 59, 0.8);
+  border-color: var(--primary);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
 }
 
 .btn {
@@ -116,18 +120,18 @@ h1 {
 .input-field {
   width: 100%;
   padding: 0.75rem;
-  background: rgba(0, 0, 0, 0.2);
+  background: #ffffff;
   border: 1px solid var(--border);
   border-radius: 8px;
-  color: white;
+  color: var(--text);
   font-family: inherit;
   transition: all 0.2s;
 }
 
 .input-field:focus {
   outline: none;
-  border-color: var(--secondary);
-  background: rgba(0, 0, 0, 0.4);
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(0, 167, 233, 0.2);
 }
 
 .table-container {
