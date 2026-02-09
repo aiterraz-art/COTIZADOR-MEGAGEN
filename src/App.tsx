@@ -599,7 +599,7 @@ const App: React.FC = () => {
           <img src={logoMegaGen} alt="MegaGen Logo" style={{ height: '40px', objectFit: 'contain' }} />
           <div>
             <h1 style={{ display: 'none' }}>MegaGen Chile</h1>
-            <p className="text-muted">Finance Deal Analyzer v2.5 (Supabase Cloud)</p>
+            <p className="text-muted">Finance Deal Analyzer v2.6 (Supabase Cloud)</p>
           </div>
         </div>
 
