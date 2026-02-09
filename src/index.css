@@ -1,15 +1,16 @@
 :root {
-  --primary: #004a99;
-  --primary-hover: #003d80;
-  --secondary: #00a0e3;
+  --primary: #00A7E9;
+  --primary-hover: #008bc5;
+  --secondary: #003B71;
   --background: #020617;
   --surface: rgba(15, 23, 42, 0.7);
   --card-bg: rgba(30, 41, 59, 0.5);
   --text: #f8fafc;
   --text-muted: #94a3b8;
-  --success: #10b981;
+  --success: #1AA258;
   --warning: #f59e0b;
   --error: #ef4444;
+  --accent: #E93237;
   --border: rgba(255, 255, 255, 0.1);
 }
 
