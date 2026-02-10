@@ -388,7 +388,7 @@ const App: React.FC = () => {
     return amount * 0.19;
   };
 
-  const generateQuotationImage = async (quotation: SavedQuotation) => {
+  const generateInternalExport = async (quotation: SavedQuotation) => {
     try {
       // Create a temporary element for the quotation
       const tempDiv = document.createElement('div');
@@ -480,6 +480,113 @@ const App: React.FC = () => {
       link.click();
 
       alert('Imagen de cotización generada. ¡Lista para compartir!');
+    } catch (error) {
+      console.error('Error generating image:', error);
+      alert('Error al generar imagen: ' + (error as Error).message);
+    }
+  };
+
+  const generateClientExport = async (quotation: SavedQuotation) => {
+    try {
+      // Create a temporary element for the quotation
+      const tempDiv = document.createElement('div');
+      tempDiv.style.cssText = `
+        position: absolute;
+        left: -9999px;
+        width: 800px;
+        padding: 40px;
+        background: white;
+        color: #1a1a2e;
+        font-family: 'Inter', -apple-system, system-ui, sans-serif;
+      `;
+
+      const subtotal = quotation.sale_price_clp;
+      const iva = calculateIVA(subtotal);
+      const total = subtotal + iva;
+      const date = new Date(quotation.created_at).toLocaleDateString('es-CL');
+
+      // Calculate multipliers for proportional distribution
+      // Multiplier = Total Sale Price / Total Cost
+      // If Total Cost is 0 (shouldn't happen but safety first), use 1
+      const multiplier = quotation.total_cost_clp > 0 ? quotation.sale_price_clp / quotation.total_cost_clp : 1;
+
+      tempDiv.innerHTML = `
+        <div style="background: white; padding: 20px;">
+          <div style="text-align: center; border-bottom: 3px solid #667eea; padding-bottom: 20px; margin-bottom: 30px;">
+            <img src="${logoMegaGen}" alt="MegaGen Chile" style="height: 60px; max-width: 100%; object-fit: contain;" />
+            <p style="margin: 5px 0 0 0; font-size: 14px; color: #666;">Cotización Formal</p>
+            <p style="margin: 5px 0 0 0; font-size: 12px; color: #999;">Fecha: ${date}</p>
+          </div>
+
+          <table style="width: 100%; border-collapse: collapse; margin-bottom: 30px;">
+            <thead>
+              <tr style="background: #f8fafc; border-bottom: 2px solid #667eea;">
+                <th style="padding: 12px; text-align: left; font-size: 13px; color: #475569;">Producto</th>
+                <th style="padding: 12px; text-align: center; font-size: 13px; color: #475569;">Cantidad</th>
+                <th style="padding: 12px; text-align: right; font-size: 13px; color: #475569;">Precio Unit. (Neto)</th>
+                <th style="padding: 12px; text-align: right; font-size: 13px; color: #475569;">Total (Neto)</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${quotation.items.map((item) => {
+        // Derive unit price based on cost * multiplier
+        // We use the proportional cost to determine the "sale price" of this specific item
+        const itemTotalRef = (item.cost_usd * quotation.exchange_rate) * multiplier;
+        const itemUnitRef = itemTotalRef / (item.qty || 1);
+
+        return `
+                <tr style="border-bottom: 1px solid #eee;">
+                  <td style="padding: 10px; font-size: 12px; color: #334155;">${item.name}</td>
+                  <td style="padding: 10px; text-align: center; font-size: 12px; color: #334155;">${item.qty}</td>
+                  <td style="padding: 10px; text-align: right; font-size: 12px; color: #334155;">$${Math.round(itemUnitRef).toLocaleString('es-CL')}</td>
+                  <td style="padding: 10px; text-align: right; font-size: 12px; font-weight: 600; color: #334155;">$${Math.round(itemTotalRef).toLocaleString('es-CL')}</td>
+                </tr>
+              `;
+      }).join('')}
+            </tbody>
+          </table>
+
+          <div style="display: flex; justify-content: flex-end;">
+            <div style="width: 280px; background: #f8fafc; padding: 20px; border-radius: 12px;">
+              <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                <span style="font-size: 14px; color: #64748b;">Neto:</span>
+                <span style="font-size: 16px; font-weight: 600; color: #334155;">$${subtotal.toLocaleString('es-CL')}</span>
+              </div>
+              <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                <span style="font-size: 14px; color: #64748b;">IVA (19%):</span>
+                <span style="font-size: 16px; font-weight: 600; color: #334155;">$${iva.toLocaleString('es-CL')}</span>
+              </div>
+              <div style="display: flex; justify-content: space-between; padding-top: 10px; border-top: 2px solid #667eea; margin-top: 10px;">
+                <span style="font-size: 18px; font-weight: 700; color: #667eea;">TOTAL:</span>
+                <span style="font-size: 22px; font-weight: 800; color: #667eea;">$${total.toLocaleString('es-CL')}</span>
+              </div>
+            </div>
+          </div>
+
+          <div style="margin-top: 40px; text-align: center; font-size: 10px; color: #94a3b8;">
+            <p>Cotización válida por 15 días. Precios sujetos a disponibilidad de stock.</p>
+          </div>
+        </div>
+      `;
+
+      document.body.appendChild(tempDiv);
+
+      // Generate image
+      const canvas = await html2canvas(tempDiv, {
+        backgroundColor: '#ffffff',
+        scale: 2,
+        logging: false
+      });
+
+      document.body.removeChild(tempDiv);
+
+      // Download the image
+      const link = document.createElement('a');
+      link.download = `cotizacion-cliente-${date.replace(/\//g, '-')}.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+
+      alert('Cotización para cliente generada (Precios Netos + IVA).');
     } catch (error) {
       console.error('Error generating image:', error);
       alert('Error al generar imagen: ' + (error as Error).message);
@@ -719,11 +826,13 @@ const App: React.FC = () => {
                   className={`badge ${selectedCategory === cat ? 'active-badge' : ''}`}
                   style={{
                     cursor: 'pointer',
-                    border: 'none',
-                    opacity: selectedCategory === cat ? 1 : 0.6,
-                    background: selectedCategory === cat ? 'var(--secondary)' : 'var(--card-bg)',
+                    border: '1px solid var(--secondary)',
+                    background: selectedCategory === cat ? 'var(--secondary)' : 'transparent',
+                    color: selectedCategory === cat ? 'white' : 'var(--secondary)',
                     padding: '0.3rem 0.75rem',
-                    fontSize: '0.7rem'
+                    fontSize: '0.7rem',
+                    fontWeight: '600',
+                    transition: 'all 0.2s'
                   }}
                 >
                   {cat}
@@ -1209,10 +1318,18 @@ const App: React.FC = () => {
                             <button
                               className="btn btn-secondary"
                               style={{ background: 'var(--success)', whiteSpace: 'nowrap', fontSize: '0.85rem', padding: '0.6rem 1rem' }}
-                              onClick={() => generateQuotationImage(quotation)}
-                              title="Descargar imagen de cotización"
+                              onClick={() => generateInternalExport(quotation)}
+                              title="Descargar imagen interna (con costos y margenes)"
                             >
-                              <ImageIcon size={16} style={{ marginRight: '0.5rem' }} /> Exportar
+                              <ImageIcon size={16} style={{ marginRight: '0.5rem' }} /> Exportar (Interno)
+                            </button>
+                            <button
+                              className="btn btn-secondary"
+                              style={{ background: '#3b82f6', whiteSpace: 'nowrap', fontSize: '0.85rem', padding: '0.6rem 1rem', color: 'white' }}
+                              onClick={() => generateClientExport(quotation)}
+                              title="Descargar imagen para cliente (sin costos)"
+                            >
+                              <ImageIcon size={16} style={{ marginRight: '0.5rem' }} /> Exportar (Cliente)
                             </button>
                           </div>
                         </div>
