@@ -225,11 +225,42 @@ td {
     font-size: 0.65rem;
   }
 
+
   /* Stack tab buttons vertically or scroll them */
   .tabs-nav {
     overflow-x: auto;
     white-space: nowrap;
     -webkit-overflow-scrolling: touch;
+  }
+
+  /* History Card Mobile Adjustments */
+  .mobile-stack {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 1.5rem !important;
+  }
+
+  .mobile-full-width {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  .finance-summary-grid {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    padding-bottom: 1rem;
+    margin-bottom: 1.5rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .mobile-col-span-full {
+    grid-column: 1 / -1 !important;
+  }
+
+  /* Hide specific elements on mobile if needed */
+  .hide-mobile {
+    display: none !important;
   }
 }
 

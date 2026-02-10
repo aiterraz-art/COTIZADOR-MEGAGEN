@@ -1238,11 +1238,11 @@ const App: React.FC = () => {
 
                     return (
                       <div key={quotation.id} className="finance-card" style={{ padding: '1.5rem' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '2rem', flexWrap: 'wrap' }}>
+                        <div className="mobile-stack" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '2rem', flexWrap: 'wrap' }}>
 
                           {/* Left Group: Financials AND Products */}
-                          <div style={{ flex: 1, minWidth: '300px' }}>
-                            <div style={{ display: 'flex', gap: '2rem', alignItems: 'center', marginBottom: '1.5rem', paddingBottom: '1rem', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                          <div className="mobile-full-width" style={{ flex: 1, minWidth: '300px' }}>
+                            <div className="finance-summary-grid" style={{ display: 'flex', gap: '2rem', alignItems: 'center', marginBottom: '1.5rem', paddingBottom: '1rem', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
                               <div>
                                 <div className="text-muted" style={{ fontSize: '0.65rem', textTransform: 'uppercase' }}>Total con IVA</div>
                                 <div style={{ fontSize: '1.8rem', fontWeight: '800', color: 'var(--success)' }}>{formatCLP(total)}</div>
@@ -1256,12 +1256,12 @@ const App: React.FC = () => {
                                   {Math.round(quotation.margin_percent)}%
                                 </div>
                               </div>
-                              <div style={{ marginLeft: 'auto', textAlign: 'right', display: 'flex', gap: '1.5rem' }}>
+                              <div style={{ marginLeft: 'auto', textAlign: 'right', display: 'flex', gap: '1.5rem' }} className="mobile-stack mobile-full-width mobile-col-span-full">
                                 <div>
                                   <div className="text-muted" style={{ fontSize: '0.65rem', textTransform: 'uppercase' }}>Neto</div>
                                   <div style={{ fontWeight: '600', fontSize: '1.1rem' }}>{formatCLP(subtotal)}</div>
                                 </div>
-                                <div className="hide-mobile">
+                                <div>
                                   <div className="text-muted" style={{ fontSize: '0.65rem', textTransform: 'uppercase' }}>IVA (19%)</div>
                                   <div style={{ fontWeight: '600', fontSize: '1.1rem', color: 'var(--warning)' }}>{formatCLP(iva)}</div>
                                 </div>
@@ -1306,9 +1306,9 @@ const App: React.FC = () => {
                           </div>
 
                           {/* Right Group: Actions */}
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                          <div className="mobile-full-width" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                             <button
-                              className="btn btn-secondary"
+                              className="btn btn-secondary mobile-full-width"
                               style={{ background: 'var(--primary)', whiteSpace: 'nowrap', fontSize: '0.85rem', padding: '0.6rem 1rem' }}
                               onClick={() => duplicateQuotation(quotation)}
                               title="Cargar esta cotización en el simulador"
@@ -1316,7 +1316,7 @@ const App: React.FC = () => {
                               <Copy size={16} style={{ marginRight: '0.5rem' }} /> Duplicar
                             </button>
                             <button
-                              className="btn btn-secondary"
+                              className="btn btn-secondary mobile-full-width"
                               style={{ background: 'var(--success)', whiteSpace: 'nowrap', fontSize: '0.85rem', padding: '0.6rem 1rem' }}
                               onClick={() => generateInternalExport(quotation)}
                               title="Descargar imagen interna (con costos y margenes)"
@@ -1324,7 +1324,7 @@ const App: React.FC = () => {
                               <ImageIcon size={16} style={{ marginRight: '0.5rem' }} /> Exportar (Interno)
                             </button>
                             <button
-                              className="btn btn-secondary"
+                              className="btn btn-secondary mobile-full-width"
                               style={{ background: '#3b82f6', whiteSpace: 'nowrap', fontSize: '0.85rem', padding: '0.6rem 1rem', color: 'white' }}
                               onClick={() => generateClientExport(quotation)}
                               title="Descargar imagen para cliente (sin costos)"
