@@ -529,17 +529,17 @@ const App: React.FC = () => {
             </thead>
             <tbody>
               ${quotation.items.map((item) => {
-        // Derive unit price based on cost * multiplier
-        // We use the proportional cost to determine the "sale price" of this specific item
-        const itemTotalRef = (item.cost_usd * quotation.exchange_rate) * multiplier;
-        const itemUnitRef = itemTotalRef / (item.qty || 1);
+        // Derive CORRECT unit price based on cost * multiplier
+        const unitCostCLP = item.cost_usd * quotation.exchange_rate;
+        const unitPriceCLP = unitCostCLP * multiplier;
+        const lineTotalCLP = unitPriceCLP * item.qty;
 
         return `
                 <tr style="border-bottom: 1px solid #eee;">
                   <td style="padding: 10px; font-size: 12px; color: #334155;">${item.name}</td>
                   <td style="padding: 10px; text-align: center; font-size: 12px; color: #334155;">${item.qty}</td>
-                  <td style="padding: 10px; text-align: right; font-size: 12px; color: #334155;">$${Math.round(itemUnitRef).toLocaleString('es-CL', { maximumFractionDigits: 0 })}</td>
-                  <td style="padding: 10px; text-align: right; font-size: 12px; font-weight: 600; color: #334155;">$${Math.round(itemTotalRef).toLocaleString('es-CL', { maximumFractionDigits: 0 })}</td>
+                  <td style="padding: 10px; text-align: right; font-size: 12px; color: #334155;">$${Math.round(unitPriceCLP).toLocaleString('es-CL', { maximumFractionDigits: 0 })}</td>
+                  <td style="padding: 10px; text-align: right; font-size: 12px; font-weight: 600; color: #334155;">$${Math.round(lineTotalCLP).toLocaleString('es-CL', { maximumFractionDigits: 0 })}</td>
                 </tr>
               `;
       }).join('')}
