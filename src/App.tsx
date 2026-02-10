@@ -402,8 +402,8 @@ const App: React.FC = () => {
         font-family: 'Inter', -apple-system, system-ui, sans-serif;
       `;
 
-      const subtotal = quotation.sale_price_clp;
-      const iva = calculateIVA(subtotal);
+      const subtotal = Math.round(quotation.sale_price_clp);
+      const iva = Math.round(subtotal * 0.19);
       const total = subtotal + iva;
       const date = new Date(quotation.created_at).toLocaleDateString('es-CL');
 
@@ -500,8 +500,8 @@ const App: React.FC = () => {
         font-family: 'Inter', -apple-system, system-ui, sans-serif;
       `;
 
-      const subtotal = quotation.sale_price_clp;
-      const iva = calculateIVA(subtotal);
+      const subtotal = Math.round(quotation.sale_price_clp);
+      const iva = Math.round(subtotal * 0.19);
       const total = subtotal + iva;
       const date = new Date(quotation.created_at).toLocaleDateString('es-CL');
 
