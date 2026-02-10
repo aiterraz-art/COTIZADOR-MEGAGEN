@@ -385,7 +385,7 @@ const App: React.FC = () => {
   };
 
   const calculateIVA = (amount: number): number => {
-    return amount * 0.19;
+    return Math.round(amount * 0.19);
   };
 
   const generateInternalExport = async (quotation: SavedQuotation) => {
@@ -428,7 +428,7 @@ const App: React.FC = () => {
                 <tr style="border-bottom: 1px solid #eee;">
                   <td style="padding: 10px; font-size: 12px;">${item.name}</td>
                   <td style="padding: 10px; text-align: center; font-size: 12px;">${item.qty}</td>
-                  <td style="padding: 10px; text-align: right; font-size: 12px;">$${item.cost_usd.toFixed(2)}</td>
+                  <td style="padding: 10px; text-align: right; font-size: 12px;">$${Math.round(item.cost_usd).toLocaleString('en-US')}</td>
                 </tr>
               `).join('')}
             </tbody>
@@ -437,26 +437,26 @@ const App: React.FC = () => {
           <div style="background: #f9f9f9; padding: 20px; border-radius: 12px; margin-bottom: 20px;">
             <div style="display: flex; justify-content: space-between; margin-bottom: 10px; border-bottom: 1px dashed #ddd; padding-bottom: 10px;">
               <span style="font-size: 14px; color: #666;">Costo Total (CLP):</span>
-              <span style="font-size: 14px; font-weight: 600; color: #666;">$${quotation.total_cost_clp.toLocaleString('es-CL')}</span>
+              <span style="font-size: 14px; font-weight: 600; color: #666;">$${quotation.total_cost_clp.toLocaleString('es-CL', { maximumFractionDigits: 0 })}</span>
             </div>
             <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
               <span style="font-size: 14px; color: #666;">Subtotal (sin IVA):</span>
-              <span style="font-size: 16px; font-weight: 600;">$${subtotal.toLocaleString('es-CL')}</span>
+              <span style="font-size: 16px; font-weight: 600;">$${subtotal.toLocaleString('es-CL', { maximumFractionDigits: 0 })}</span>
             </div>
             <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
               <span style="font-size: 14px; color: #666;">IVA (19%):</span>
-              <span style="font-size: 16px; font-weight: 600;">$${iva.toLocaleString('es-CL')}</span>
+              <span style="font-size: 16px; font-weight: 600;">$${iva.toLocaleString('es-CL', { maximumFractionDigits: 0 })}</span>
             </div>
             <div style="display: flex; justify-content: space-between; padding-top: 10px; border-top: 2px solid #667eea;">
               <span style="font-size: 18px; font-weight: 700; color: #667eea;">TOTAL (con IVA):</span>
-              <span style="font-size: 22px; font-weight: 800; color: #667eea;">$${total.toLocaleString('es-CL')}</span>
+              <span style="font-size: 22px; font-weight: 800; color: #667eea;">$${total.toLocaleString('es-CL', { maximumFractionDigits: 0 })}</span>
             </div>
           </div>
 
           <div style="background: ${quotation.margin_percent >= 50 ? '#dcfce7' : quotation.margin_percent >= 30 ? '#fef9c3' : '#fee2e2'}; padding: 15px; border-radius: 12px; text-align: center;">
             <p style="margin: 0; font-size: 12px; color: #666;">Margen Bruto</p>
             <p style="margin: 5px 0 0 0; font-size: 24px; font-weight: 700; color: ${quotation.margin_percent >= 50 ? '#16a34a' : quotation.margin_percent >= 30 ? '#ca8a04' : '#dc2626'};">
-              ${quotation.margin_percent.toFixed(1)}%
+              ${Math.round(quotation.margin_percent)}%
             </p>
           </div>
         </div>
@@ -538,8 +538,8 @@ const App: React.FC = () => {
                 <tr style="border-bottom: 1px solid #eee;">
                   <td style="padding: 10px; font-size: 12px; color: #334155;">${item.name}</td>
                   <td style="padding: 10px; text-align: center; font-size: 12px; color: #334155;">${item.qty}</td>
-                  <td style="padding: 10px; text-align: right; font-size: 12px; color: #334155;">$${Math.round(itemUnitRef).toLocaleString('es-CL')}</td>
-                  <td style="padding: 10px; text-align: right; font-size: 12px; font-weight: 600; color: #334155;">$${Math.round(itemTotalRef).toLocaleString('es-CL')}</td>
+                  <td style="padding: 10px; text-align: right; font-size: 12px; color: #334155;">$${Math.round(itemUnitRef).toLocaleString('es-CL', { maximumFractionDigits: 0 })}</td>
+                  <td style="padding: 10px; text-align: right; font-size: 12px; font-weight: 600; color: #334155;">$${Math.round(itemTotalRef).toLocaleString('es-CL', { maximumFractionDigits: 0 })}</td>
                 </tr>
               `;
       }).join('')}
@@ -550,15 +550,15 @@ const App: React.FC = () => {
             <div style="width: 280px; background: #f8fafc; padding: 20px; border-radius: 12px;">
               <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
                 <span style="font-size: 14px; color: #64748b;">Neto:</span>
-                <span style="font-size: 16px; font-weight: 600; color: #334155;">$${subtotal.toLocaleString('es-CL')}</span>
+                <span style="font-size: 16px; font-weight: 600; color: #334155;">$${subtotal.toLocaleString('es-CL', { maximumFractionDigits: 0 })}</span>
               </div>
               <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
                 <span style="font-size: 14px; color: #64748b;">IVA (19%):</span>
-                <span style="font-size: 16px; font-weight: 600; color: #334155;">$${iva.toLocaleString('es-CL')}</span>
+                <span style="font-size: 16px; font-weight: 600; color: #334155;">$${iva.toLocaleString('es-CL', { maximumFractionDigits: 0 })}</span>
               </div>
               <div style="display: flex; justify-content: space-between; padding-top: 10px; border-top: 2px solid #667eea; margin-top: 10px;">
                 <span style="font-size: 18px; font-weight: 700; color: #667eea;">TOTAL:</span>
-                <span style="font-size: 22px; font-weight: 800; color: #667eea;">$${total.toLocaleString('es-CL')}</span>
+                <span style="font-size: 22px; font-weight: 800; color: #667eea;">$${total.toLocaleString('es-CL', { maximumFractionDigits: 0 })}</span>
               </div>
             </div>
           </div>
@@ -696,7 +696,7 @@ const App: React.FC = () => {
   };
 
   const formatUSD = (value: number) => {
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(value);
   };
 
   return (
@@ -1097,7 +1097,7 @@ const App: React.FC = () => {
                   <div style={{ marginTop: '0.5rem', fontSize: '0.7rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                     <span>Tu margen actual:</span>
                     <span className={grossMarginPercent >= 50 ? 'positive' : grossMarginPercent >= 30 ? 'warning' : 'negative'} style={{ fontWeight: 'bold' }}>
-                      {grossMarginPercent.toFixed(1)}%
+                      {Math.round(grossMarginPercent)}%
                     </span>
                   </div>
                 )}
@@ -1180,7 +1180,7 @@ const App: React.FC = () => {
                   <div className="finance-card" style={{ padding: '0.6rem', borderLeft: `3px solid ${grossMarginPercent >= 50 ? 'var(--success)' : 'var(--error)'}` }}>
                     <div className="text-muted" style={{ fontSize: '0.6rem' }}>DELTA OBJETIVO</div>
                     <div style={{ fontSize: '1rem', fontWeight: 'bold' }} className={grossMarginPercent >= 50 ? 'positive' : 'negative'}>
-                      {grossMarginPercent >= 50 ? '+' : ''}{(grossMarginPercent - 50).toFixed(1)}%
+                      {grossMarginPercent >= 50 ? '+' : ''}{Math.round(grossMarginPercent - 50)}%
                     </div>
                   </div>
                   <div className="finance-card" style={{ padding: '0.6rem' }}>
@@ -1253,7 +1253,7 @@ const App: React.FC = () => {
                                   style={{ fontSize: '1.8rem', fontWeight: '800' }}
                                   className={quotation.margin_percent >= 50 ? 'positive' : quotation.margin_percent >= 30 ? 'warning' : 'negative'}
                                 >
-                                  {quotation.margin_percent.toFixed(1)}%
+                                  {Math.round(quotation.margin_percent)}%
                                 </div>
                               </div>
                               <div style={{ marginLeft: 'auto', textAlign: 'right', display: 'flex', gap: '1.5rem' }}>
@@ -1289,7 +1289,7 @@ const App: React.FC = () => {
                                       {item.qty}
                                     </div>
                                     <div style={{ fontSize: '1.1rem', fontWeight: '500', flex: 1 }}>{item.name}</div>
-                                    <div className="text-muted" style={{ fontSize: '0.9rem' }}>${item.cost_usd.toFixed(2)} USD</div>
+                                    <div className="text-muted" style={{ fontSize: '0.9rem' }}>${Math.round(item.cost_usd)} USD</div>
                                   </div>
                                 ))}
                               </div>
