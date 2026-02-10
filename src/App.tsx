@@ -101,17 +101,27 @@ const App: React.FC = () => {
     }
   }, [activeTab]);
 
+  const [lastUpdated, setLastUpdated] = useState<string>('');
+
   const fetchExchangeRate = async () => {
+    setIsLoading(true);
     try {
       const response = await fetch(`https://mindicador.cl/api/dolar?t=${Date.now()}`);
+      if (!response.ok) throw new Error('API Response not OK');
+
       const data = await response.json();
       if (data.serie && data.serie.length > 0) {
         const rate = data.serie[0].valor;
+        const date = new Date(data.serie[0].fecha).toLocaleDateString('es-CL');
         setExchangeRate(rate);
-        console.log('Tipo de cambio actualizado:', rate);
+        setLastUpdated(date);
+        console.log('Tipo de cambio actualizado:', rate, 'Fecha:', date);
       }
     } catch (error) {
       console.error('Error fetching exchange rate:', error);
+      alert('No se pudo actualizar el dólar automáticamente. Usando valor anterior o por defecto.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -727,9 +737,14 @@ const App: React.FC = () => {
                 style={{ padding: '0.2rem', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f1f5f9', borderRadius: '4px', border: '1px solid var(--border)' }}
                 title="Actualizar tipo de cambio"
               >
-                <RefreshCw size={14} className="text-muted" />
+                <RefreshCw size={14} className={isLoading ? "text-muted animate-spin" : "text-muted"} />
               </button>
             </div>
+            {lastUpdated && (
+              <div style={{ fontSize: '0.55rem', color: 'var(--text-muted)', marginLeft: '0.5rem' }}>
+                ({lastUpdated})
+              </div>
+            )}
           </div>
 
           <button className="btn btn-primary" onClick={() => fileInputRef.current?.click()}>
