@@ -103,7 +103,7 @@ const App: React.FC = () => {
 
   const fetchExchangeRate = async () => {
     try {
-      const response = await fetch('https://mindicador.cl/api/dolar');
+      const response = await fetch(`https://mindicador.cl/api/dolar?t=${Date.now()}`);
       const data = await response.json();
       if (data.serie && data.serie.length > 0) {
         const rate = data.serie[0].valor;
