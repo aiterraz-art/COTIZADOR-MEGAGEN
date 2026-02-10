@@ -998,36 +998,55 @@ const App: React.FC = () => {
                 <table>
                   <thead>
                     <tr>
-                      <th>Producto</th>
-                      <th>Cant.</th>
-                      <th>Total CLP</th>
-                      <th></th>
+                      <th style={{ width: '35%' }}>Producto</th>
+                      <th style={{ width: '10%', textAlign: 'center' }}>Cant.</th>
+                      <th style={{ width: '15%', textAlign: 'right' }}>Unit. Ref</th>
+                      <th style={{ width: '15%', textAlign: 'right' }}>Total Ref</th>
+                      <th style={{ width: '15%', textAlign: 'right' }}>Costo Real</th>
+                      <th style={{ width: '5%' }}></th>
                     </tr>
                   </thead>
                   <tbody>
-                    {dealItems.map(item => (
-                      <tr key={item.product.id}>
-                        <td style={{ fontSize: '0.75rem' }}>{item.product.name}</td>
-                        <td>
-                          <input
-                            type="number"
-                            className="input-field"
-                            style={{ width: '55px', padding: '0.25rem' }}
-                            value={item.quantity}
-                            onChange={(e) => updateQuantity(item.product.id, parseInt(e.target.value) || 0)}
-                          />
-                        </td>
-                        <td style={{ fontSize: '0.85rem' }}>{formatCLP(item.product.costUSD * item.quantity * exchangeRate)}</td>
-                        <td>
-                          <button onClick={() => removeItem(item.product.id)} style={{ background: 'transparent', border: 'none', color: 'var(--error)', cursor: 'pointer' }}>
-                            <Trash2 size={14} />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                    {dealItems.map(item => {
+                      // Calculate reference prices based on target sale price
+                      // If targetSalePrice is 0 or totalCostCLP is 0, fall back to cost
+                      const multiplier = (targetSalePrice > 0 && totalCostCLP > 0) ? targetSalePrice / totalCostCLP : 1;
+                      const unitCostCLP = item.product.costUSD * exchangeRate;
+                      const unitPriceRef = unitCostCLP * multiplier;
+                      const totalPriceRef = unitPriceRef * item.quantity;
+
+                      return (
+                        <tr key={item.product.id}>
+                          <td style={{ fontSize: '0.75rem' }}>{item.product.name}</td>
+                          <td style={{ textAlign: 'center' }}>
+                            <input
+                              type="number"
+                              className="input-field"
+                              style={{ width: '50px', padding: '0.2rem', textAlign: 'center' }}
+                              value={item.quantity}
+                              onChange={(e) => updateQuantity(item.product.id, parseInt(e.target.value) || 0)}
+                            />
+                          </td>
+                          <td style={{ textAlign: 'right', fontSize: '0.85rem', color: 'var(--primary)', fontWeight: '600' }}>
+                            {formatCLP(unitPriceRef)}
+                          </td>
+                          <td style={{ textAlign: 'right', fontSize: '0.85rem', color: 'var(--primary)', fontWeight: '600' }}>
+                            {formatCLP(totalPriceRef)}
+                          </td>
+                          <td style={{ textAlign: 'right', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                            {formatCLP(unitCostCLP * item.quantity)}
+                          </td>
+                          <td style={{ textAlign: 'center' }}>
+                            <button onClick={() => removeItem(item.product.id)} style={{ background: 'transparent', border: 'none', color: 'var(--error)', cursor: 'pointer' }}>
+                              <Trash2 size={14} />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                     {dealItems.length === 0 && (
                       <tr>
-                        <td colSpan={4} style={{ textAlign: 'center', padding: '1.5rem' }} className="text-muted">
+                        <td colSpan={6} style={{ textAlign: 'center', padding: '1.5rem' }} className="text-muted">
                           Selecciona items del catálogo
                         </td>
                       </tr>
