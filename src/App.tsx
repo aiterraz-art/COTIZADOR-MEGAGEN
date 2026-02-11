@@ -1327,8 +1327,8 @@ const App: React.FC = () => {
                         style={{ paddingRight: '25px', width: '100%' }}
                         onChange={(e) => {
                           const margin = parseFloat(e.target.value);
-                          if (!isNaN(margin) && margin > 0 && margin < 100 && totalCostCLP > 0) {
-                            const newPrice = totalCostCLP / (1 - (margin / 100));
+                          if (!isNaN(margin) && margin > 0 && margin < 100 && priceDetails.totalFlexCost > 0) {
+                            const newPrice = (priceDetails.totalFlexCost / (1 - (margin / 100))) + priceDetails.totalAtCost;
                             setTargetSalePrice(Math.round(newPrice));
                           }
                         }}
