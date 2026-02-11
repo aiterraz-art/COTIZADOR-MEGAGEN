@@ -72,10 +72,6 @@ const App: React.FC = () => {
   const [newProductCost, setNewProductCost] = useState('');
 
 
-  const categories = useMemo(() => {
-    const cats = Array.from(new Set(products.map(p => p.category)));
-    return ['All', ...cats.sort()];
-  }, [products]);
 
   const normalizeText = (text: string) => {
     return text.toString().toLowerCase()
@@ -255,17 +251,74 @@ const App: React.FC = () => {
 
 
 
+  const categories = useMemo(() => {
+    const productCats = Array.from(new Set(products.map(p => p.category)));
+    // Ensure 'Productos Únicos' is always present along with custom categories
+    const merged = new Set([...productCats, ...customCategories, 'Productos Únicos']);
+    // Filter out fixed items to control order
+    const result = Array.from(merged).filter(c =>
+      c !== 'All' &&
+      c !== 'Generales' &&
+      c !== 'General' &&
+      c !== 'Productos Únicos'
+    );
+    return ['All', 'Generales', ...result.sort(), 'Productos Únicos'];
+  }, [products, customCategories]);
+
   const createNewList = () => {
     const listName = prompt("Ingresa el nombre de la nueva lista (Categoría):");
     if (listName && listName.trim() !== "") {
       const normalizedName = listName.trim();
-      if (!allCategories.includes(normalizedName)) {
+      if (!categories.includes(normalizedName)) {
         setCustomCategories([...customCategories, normalizedName]);
         alert(`Lista "${normalizedName}" creada. Ahora puedes agregar productos a ella.`);
         setSelectedCategory(normalizedName);
       } else {
         alert("Esa lista ya existe.");
       }
+    }
+  };
+
+  const deleteQuotation = async (id: string) => {
+    if (!confirm('¿Estás seguro de que deseas eliminar esta cotización permanentemente?')) return;
+
+    try {
+      const { error } = await supabase
+        .from('simulations')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+
+      setSavedQuotations(prev => prev.filter(q => q.id !== id));
+      alert('Cotización eliminada con éxito.');
+    } catch (error) {
+      console.error('Error deleting quotation:', error);
+      alert('Error al eliminar cotización: ' + (error as Error).message);
+    }
+  };
+
+  const deleteProduct = async (product: Product) => {
+    const isUnique = product.id.startsWith('unique-') || product.sku?.startsWith('UNIQUE-');
+    const message = isUnique
+      ? `¿Eliminar "${product.name}" permanentemente de la base de datos?`
+      : `¿Eliminar "${product.name}" del catálogo? (Esto lo quitará de la base de datos)`;
+
+    if (!confirm(message)) return;
+
+    try {
+      const { error } = await supabase
+        .from('products')
+        .delete()
+        .eq('id', product.id);
+
+      if (error) throw error;
+
+      setProducts(prev => prev.filter(p => p.id !== product.id));
+      alert('Producto eliminado con éxito.');
+    } catch (error) {
+      console.error('Error deleting product:', error);
+      alert('Error al eliminar producto: ' + (error as Error).message);
     }
   };
 
@@ -362,15 +415,7 @@ const App: React.FC = () => {
     }
   };
 
-  // Merge derived categories with empty custom ones
-  const allCategories = useMemo(() => {
-    const productCats = Array.from(new Set(products.map(p => p.category)));
-    // Ensure 'Productos Únicos' is always present along with custom categories
-    const merged = new Set([...productCats, ...customCategories, 'Productos Únicos']);
-    // Filter out 'All' if it exists in data to avoid duplication, then add it at start
-    const result = Array.from(merged).filter(c => c !== 'All' && c !== 'Productos Únicos');
-    return ['All', 'Generales', ...result.sort(), 'Productos Únicos'];
-  }, [products, customCategories]);
+  // Merged derived categories with empty custom ones - Consolidated into 'categories' above
 
   // Override the old 'categories' variable with this new one in the UI
   // Note: We need to update the useMemo at line 62 to use this logic or replace it.
@@ -838,7 +883,7 @@ const App: React.FC = () => {
             </div>
 
             <div style={{ marginBottom: '1rem', display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center' }}>
-              {allCategories.map(cat => (
+              {categories.map(cat => (
                 <button
                   key={cat}
                   onClick={() => setSelectedCategory(cat)}
@@ -986,6 +1031,15 @@ const App: React.FC = () => {
                           <X size={14} />
                         </button>
                       )}
+
+                      <button
+                        className="btn"
+                        style={{ padding: '0.4rem', background: 'rgba(239, 68, 68, 0.1)', color: 'var(--error)' }}
+                        onClick={() => deleteProduct(product)}
+                        title="Eliminar permanentemente"
+                      >
+                        <Trash2 size={14} />
+                      </button>
 
                       <button className="btn btn-primary" style={{ padding: '0.4rem' }} onClick={() => addItem(product)}>
                         <Plus size={14} />
@@ -1368,6 +1422,14 @@ const App: React.FC = () => {
                               title="Descargar imagen para cliente (sin costos)"
                             >
                               <ImageIcon size={16} style={{ marginRight: '0.5rem' }} /> Exportar (Cliente)
+                            </button>
+                            <button
+                              className="btn btn-secondary mobile-full-width"
+                              style={{ background: 'var(--error)', whiteSpace: 'nowrap', fontSize: '0.85rem', padding: '0.6rem 1rem', color: 'white', marginTop: 'auto' }}
+                              onClick={() => deleteQuotation(quotation.id)}
+                              title="Eliminar esta cotización"
+                            >
+                              <Trash2 size={16} style={{ marginRight: '0.5rem' }} /> Eliminar
                             </button>
                           </div>
                         </div>
