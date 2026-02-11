@@ -779,8 +779,10 @@ const App: React.FC = () => {
 
   // Auto-calculate the price needed for 50% margin
   const suggested50PercentPrice = useMemo(() => {
-    return totalCostCLP / 0.5;
-  }, [totalCostCLP]);
+    // Target 50% margin ONLY on flexible items, then add fixed costs
+    const flexibleSaleAt50 = priceDetails.totalFlexCost / 0.5;
+    return flexibleSaleAt50 + priceDetails.totalAtCost;
+  }, [priceDetails.totalFlexCost, priceDetails.totalAtCost]);
 
   const grossMarginValue = useMemo(() => {
     return targetSalePrice - totalCostCLP;
@@ -788,9 +790,10 @@ const App: React.FC = () => {
 
   const grossMarginPercent = useMemo(() => {
     const flexibleSalePriceCLP = targetSalePrice - priceDetails.totalAtCost;
+    const flexibleProfitCLP = flexibleSalePriceCLP - priceDetails.totalFlexCost;
     if (flexibleSalePriceCLP <= 0) return 0;
-    return (grossMarginValue / flexibleSalePriceCLP) * 100;
-  }, [grossMarginValue, targetSalePrice, priceDetails.totalAtCost]);
+    return (flexibleProfitCLP / flexibleSalePriceCLP) * 100;
+  }, [targetSalePrice, priceDetails.totalAtCost, priceDetails.totalFlexCost]);
 
   // Auto-update targetSalePrice when deal items change (only if current price is 0)
   useEffect(() => {
@@ -823,7 +826,9 @@ const App: React.FC = () => {
   };
 
   const addItem = (product: Product) => {
+    const isAtCost = checkIsAtCost({ name: product.name, category: product.category });
     const existing = dealItems.find(item => item.product.id === product.id);
+
     if (existing) {
       setDealItems(dealItems.map(item =>
         item.product.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
@@ -831,14 +836,27 @@ const App: React.FC = () => {
     } else {
       setDealItems([...dealItems, { product, quantity: 1 }]);
     }
+
+    if (isAtCost) {
+      setTargetSalePrice(prev => prev + (product.costUSD * exchangeRate));
+    }
     fetchExchangeRate(); // Refresh rate when adding item
   };
 
   const removeItem = (productId: string) => {
+    const item = dealItems.find(i => i.product.id === productId);
+    if (item && checkIsAtCost({ name: item.product.name, category: item.product.category })) {
+      setTargetSalePrice(prev => Math.max(0, prev - (item.product.costUSD * item.quantity * exchangeRate)));
+    }
     setDealItems(dealItems.filter(item => item.product.id !== productId));
   };
 
   const updateQuantity = (productId: string, quantity: number) => {
+    const item = dealItems.find(i => i.product.id === productId);
+    if (item && checkIsAtCost({ name: item.product.name, category: item.product.category })) {
+      const diff = quantity - item.quantity;
+      setTargetSalePrice(prev => Math.max(0, prev + (diff * item.product.costUSD * exchangeRate)));
+    }
     setDealItems(dealItems.map(item =>
       item.product.id === productId ? { ...item, quantity: Math.max(0, quantity) } : item
     ));
