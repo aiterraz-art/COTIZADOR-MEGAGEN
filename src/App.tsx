@@ -36,6 +36,7 @@ import {
 interface DealItem {
   product: Product;
   quantity: number;
+  isAtCost?: boolean;
 }
 
 interface SavedQuotation {
@@ -47,7 +48,7 @@ interface SavedQuotation {
   total_cost_clp: number;
   margin_percent: number;
   net_profit_clp: number;
-  items: Array<{ name: string; qty: number; cost_usd: number }>;
+  items: Array<{ name: string; qty: number; cost_usd: number; is_at_cost?: boolean }>;
 }
 
 const App: React.FC = () => {
@@ -215,7 +216,8 @@ const App: React.FC = () => {
           items: dealItems.map(item => ({
             name: item.product.name,
             qty: item.quantity,
-            cost_usd: item.product.costUSD
+            cost_usd: item.product.costUSD,
+            is_at_cost: item.isAtCost
           }))
         });
 
@@ -457,7 +459,8 @@ const App: React.FC = () => {
         costUSD: item.cost_usd,
         suggestedPriceUSD: 0
       },
-      quantity: item.qty
+      quantity: item.qty,
+      isAtCost: !!item.is_at_cost
     }));
 
     setDealItems(recreatedItems);
@@ -588,10 +591,16 @@ const App: React.FC = () => {
       const total = subtotal + iva;
       const date = new Date(quotation.created_at).toLocaleDateString('es-CL');
 
-      // Calculate multipliers for proportional distribution
-      // Multiplier = Total Sale Price / Total Cost
-      // If Total Cost is 0 (shouldn't happen but safety first), use 1
-      const multiplier = quotation.total_cost_clp > 0 ? quotation.sale_price_clp / quotation.total_cost_clp : 1;
+      // Calculate multipliers based on isAtCost items
+      const totalAtCostCLP = quotation.items.reduce((acc, item) =>
+        item.is_at_cost ? acc + (item.cost_usd * item.qty * quotation.exchange_rate) : acc, 0);
+
+      const totalFlexibleCostCLP = quotation.items.reduce((acc, item) =>
+        !item.is_at_cost ? acc + (item.cost_usd * item.qty * quotation.exchange_rate) : acc, 0);
+
+      const flexMultiplier = totalFlexibleCostCLP > 0
+        ? (quotation.sale_price_clp - totalAtCostCLP) / totalFlexibleCostCLP
+        : 1;
 
       tempDiv.innerHTML = `
         <div style="background: white; padding: 20px;">
@@ -613,8 +622,9 @@ const App: React.FC = () => {
             <tbody>
               ${quotation.items.map((item) => {
         // Derive CORRECT unit price based on cost * multiplier
+        const itemMultiplier = item.is_at_cost ? 1 : flexMultiplier;
         const unitCostCLP = item.cost_usd * quotation.exchange_rate;
-        const unitPriceCLP = unitCostCLP * multiplier;
+        const unitPriceCLP = unitCostCLP * itemMultiplier;
         const lineTotalCLP = unitPriceCLP * item.qty;
 
         return `
@@ -706,10 +716,26 @@ const App: React.FC = () => {
     return totalCostUSD * exchangeRate;
   }, [totalCostUSD, exchangeRate]);
 
+  const totalAtCostCLP = useMemo(() => {
+    return dealItems.reduce((acc, item) =>
+      item.isAtCost ? acc + (item.product.costUSD * item.quantity * exchangeRate) : acc, 0);
+  }, [dealItems, exchangeRate]);
+
+  const totalFlexibleCostCLP = useMemo(() => {
+    return dealItems.reduce((acc, item) =>
+      !item.isAtCost ? acc + (item.product.costUSD * item.quantity * exchangeRate) : acc, 0);
+  }, [dealItems, exchangeRate]);
+
+  const flexibleMultiplier = useMemo(() => {
+    if (totalFlexibleCostCLP === 0) return 1;
+    // We want: targetSalePrice = totalAtCostCLP + (totalFlexibleCostCLP * multiplier)
+    // So: multiplier = (targetSalePrice - totalAtCostCLP) / totalFlexibleCostCLP
+    return Math.max(0, (targetSalePrice - totalAtCostCLP) / totalFlexibleCostCLP);
+  }, [targetSalePrice, totalAtCostCLP, totalFlexibleCostCLP]);
+
   // Auto-calculate the price needed for 50% margin
   const suggested50PercentPrice = useMemo(() => {
-    // Formula: Sale Price = Cost / (1 - Desired Margin as decimal)
-    // For 50% margin: Sale Price = Cost / 0.5
+    // Formula: Sale Price = Cost / 0.5
     return totalCostCLP / 0.5;
   }, [totalCostCLP]);
 
@@ -771,6 +797,12 @@ const App: React.FC = () => {
   const updateQuantity = (productId: string, quantity: number) => {
     setDealItems(dealItems.map(item =>
       item.product.id === productId ? { ...item, quantity: Math.max(0, quantity) } : item
+    ));
+  };
+
+  const toggleItemAtCost = (productId: string) => {
+    setDealItems(dealItems.map(item =>
+      item.product.id === productId ? { ...item, isAtCost: !item.isAtCost } : item
     ));
   };
 
@@ -1095,19 +1127,18 @@ const App: React.FC = () => {
                 <table>
                   <thead>
                     <tr>
-                      <th style={{ width: '35%' }}>Producto</th>
+                      <th style={{ width: '30%' }}>Producto</th>
                       <th style={{ width: '10%', textAlign: 'center' }}>Cant.</th>
                       <th style={{ width: '15%', textAlign: 'right' }}>Unit. Ref</th>
                       <th style={{ width: '15%', textAlign: 'right' }}>Total Ref</th>
                       <th style={{ width: '15%', textAlign: 'right' }}>Costo Real</th>
-                      <th style={{ width: '5%' }}></th>
+                      <th style={{ width: '15%', textAlign: 'center' }}>Acciones</th>
                     </tr>
                   </thead>
                   <tbody>
                     {dealItems.map(item => {
                       // Calculate reference prices based on target sale price
-                      // If targetSalePrice is 0 or totalCostCLP is 0, fall back to cost
-                      const multiplier = (targetSalePrice > 0 && totalCostCLP > 0) ? targetSalePrice / totalCostCLP : 1;
+                      const multiplier = item.isAtCost ? 1 : flexibleMultiplier;
                       const unitCostCLP = item.product.costUSD * exchangeRate;
                       const unitPriceRef = unitCostCLP * multiplier;
                       const totalPriceRef = unitPriceRef * item.quantity;
@@ -1130,13 +1161,28 @@ const App: React.FC = () => {
                           <td style={{ textAlign: 'right', fontSize: '0.85rem', color: 'var(--primary)', fontWeight: '600' }}>
                             {formatCLP(totalPriceRef)}
                           </td>
-                          <td style={{ textAlign: 'right', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                            {formatCLP(unitCostCLP * item.quantity)}
-                          </td>
                           <td style={{ textAlign: 'center' }}>
-                            <button onClick={() => removeItem(item.product.id)} style={{ background: 'transparent', border: 'none', color: 'var(--error)', cursor: 'pointer' }}>
-                              <Trash2 size={14} />
-                            </button>
+                            <div style={{ display: 'flex', gap: '0.4rem', justifyContent: 'center' }}>
+                              <button
+                                onClick={() => toggleItemAtCost(item.product.id)}
+                                style={{
+                                  background: 'transparent',
+                                  border: 'none',
+                                  color: item.isAtCost ? 'var(--success)' : 'var(--text-muted)',
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  padding: '0.2rem',
+                                  opacity: item.isAtCost ? 1 : 0.5
+                                }}
+                                title={item.isAtCost ? "Vendido al COSTO (No afecta margen)" : "Lock at Cost / Al Costo"}
+                              >
+                                {item.isAtCost ? <DollarSign size={14} /> : <Percent size={14} />}
+                              </button>
+                              <button onClick={() => removeItem(item.product.id)} style={{ background: 'transparent', border: 'none', color: 'var(--error)', cursor: 'pointer', padding: '0.2rem' }}>
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );
