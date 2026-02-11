@@ -81,6 +81,14 @@ const App: React.FC = () => {
       .trim();
   };
 
+  const checkIsAtCost = (item: { name: string; category?: string }) => {
+    const isUniqueCategory = item.category === 'Productos Únicos';
+    const hasSpecialName = item.name.toLowerCase().includes('item especial') ||
+      item.name.toLowerCase().includes('manual') ||
+      item.name.toLowerCase().includes('task');
+    return isUniqueCategory || hasSpecialName;
+  };
+
   // Fetch products and exchange rate on mount
   useEffect(() => {
     fetchProducts();
@@ -503,8 +511,7 @@ const App: React.FC = () => {
 
       // Recalculate refined margin for display
       const totalAtCostVal = quotation.items.reduce((acc, item) => {
-        const isAtCost = item.category === 'Productos Únicos' ||
-          (!item.category && (item.name.toLowerCase().includes('item especial') || item.name.toLowerCase().includes('manual')));
+        const isAtCost = checkIsAtCost({ name: item.name, category: item.category });
         return isAtCost ? acc + (item.cost_usd * item.qty * quotation.exchange_rate) : acc;
       }, 0);
       const marginVal = subtotal - quotation.total_cost_clp;
@@ -529,8 +536,7 @@ const App: React.FC = () => {
             </thead>
             <tbody>
               ${quotation.items.map((item) => {
-        const isAtCost = item.category === 'Productos Únicos' ||
-          (!item.category && (item.name.toLowerCase().includes('item especial') || item.name.toLowerCase().includes('manual')));
+        const isAtCost = checkIsAtCost({ name: item.name, category: item.category });
         return `
                 <tr style="border-bottom: 1px solid #eee;">
                   <td style="padding: 10px; font-size: 12px;">${item.name}${isAtCost ? ' <span style="color:#16a34a; font-weight:bold;">(Al Costo)</span>' : ''}</td>
@@ -614,20 +620,18 @@ const App: React.FC = () => {
       const date = new Date(quotation.created_at).toLocaleDateString('es-CL');
 
       // Calculate multipliers based on special items (at cost)
-      const totalAtCostCLP = quotation.items.reduce((acc, item) => {
-        const isAtCost = item.category === 'Productos Únicos' ||
-          (!item.category && (item.name.toLowerCase().includes('item especial') || item.name.toLowerCase().includes('manual')));
+      const totalAtCostVal = quotation.items.reduce((acc, item) => {
+        const isAtCost = checkIsAtCost({ name: item.name, category: item.category });
         return isAtCost ? acc + (item.cost_usd * item.qty * quotation.exchange_rate) : acc;
       }, 0);
 
-      const totalFlexibleCostCLP = quotation.items.reduce((acc, item) => {
-        const isAtCost = item.category === 'Productos Únicos' ||
-          (!item.category && (item.name.toLowerCase().includes('item especial') || item.name.toLowerCase().includes('manual')));
+      const totalFlexibleCostVal = quotation.items.reduce((acc, item) => {
+        const isAtCost = checkIsAtCost({ name: item.name, category: item.category });
         return !isAtCost ? acc + (item.cost_usd * item.qty * quotation.exchange_rate) : acc;
       }, 0);
 
-      const flexMultiplier = totalFlexibleCostCLP > 0
-        ? (quotation.sale_price_clp - totalAtCostCLP) / totalFlexibleCostCLP
+      const flexMultiplierVal = totalFlexibleCostVal > 0
+        ? (quotation.sale_price_clp - totalAtCostVal) / totalFlexibleCostVal
         : 1;
 
       tempDiv.innerHTML = `
@@ -650,9 +654,8 @@ const App: React.FC = () => {
             <tbody>
               ${quotation.items.map((item) => {
         // Derive CORRECT unit price based on cost * multiplier
-        const isAtCost = item.category === 'Productos Únicos' ||
-          (!item.category && (item.name.toLowerCase().includes('item especial') || item.name.toLowerCase().includes('manual')));
-        const itemMultiplier = isAtCost ? 1 : flexMultiplier;
+        const isAtCost = checkIsAtCost({ name: item.name, category: item.category });
+        const itemMultiplier = isAtCost ? 1 : flexMultiplierVal;
         const unitCostCLP = item.cost_usd * quotation.exchange_rate;
         const unitPriceCLP = unitCostCLP * itemMultiplier;
         const lineTotalCLP = unitPriceCLP * item.qty;
@@ -748,12 +751,12 @@ const App: React.FC = () => {
 
   const totalAtCostCLP = useMemo(() => {
     return dealItems.reduce((acc, item) =>
-      item.product.category === 'Productos Únicos' ? acc + (item.product.costUSD * item.quantity * exchangeRate) : acc, 0);
+      checkIsAtCost({ name: item.product.name, category: item.product.category }) ? acc + (item.product.costUSD * item.quantity * exchangeRate) : acc, 0);
   }, [dealItems, exchangeRate]);
 
   const totalFlexibleCostCLP = useMemo(() => {
     return dealItems.reduce((acc, item) =>
-      item.product.category !== 'Productos Únicos' ? acc + (item.product.costUSD * item.quantity * exchangeRate) : acc, 0);
+      !checkIsAtCost({ name: item.product.name, category: item.product.category }) ? acc + (item.product.costUSD * item.quantity * exchangeRate) : acc, 0);
   }, [dealItems, exchangeRate]);
 
   const flexibleMultiplier = useMemo(() => {
@@ -1162,7 +1165,7 @@ const App: React.FC = () => {
                   </thead>
                   <tbody>
                     {dealItems.map(item => {
-                      const isAtCost = item.product.category === 'Productos Únicos';
+                      const isAtCost = checkIsAtCost({ name: item.product.name, category: item.product.category });
                       const multiplier = isAtCost ? 1 : flexibleMultiplier;
                       const unitCostCLP = item.product.costUSD * exchangeRate;
                       const unitPriceRef = unitCostCLP * multiplier;
