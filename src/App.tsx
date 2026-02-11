@@ -1158,14 +1158,24 @@ const App: React.FC = () => {
                     <DollarSign size={12} /> PRECIO DE VENTA DE LA OFERTA (CLP)
                   </label>
                   {dealItems.length > 0 && (
-                    <button
-                      className="btn"
-                      style={{ fontSize: '0.65rem', padding: '0.25rem 0.5rem', background: 'rgba(74, 222, 128, 0.1)', color: 'var(--success)' }}
-                      onClick={() => setTargetSalePrice(Math.round(suggested50PercentPrice))}
-                      title="Aplicar precio con 50% de margen"
-                    >
-                      50% → {formatCLP(Math.round(suggested50PercentPrice))}
-                    </button>
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                      <button
+                        className="btn"
+                        style={{ fontSize: '0.65rem', padding: '0.25rem 0.5rem', background: 'rgba(255, 255, 255, 0.05)', color: 'var(--text-muted)', border: '1px solid rgba(255,255,255,0.1)' }}
+                        onClick={() => setTargetSalePrice(Math.round(totalCostCLP))}
+                        title="Aplicar precio al costo (0% margen)"
+                      >
+                        Venta al Costo
+                      </button>
+                      <button
+                        className="btn"
+                        style={{ fontSize: '0.65rem', padding: '0.25rem 0.5rem', background: 'rgba(74, 222, 128, 0.1)', color: 'var(--success)' }}
+                        onClick={() => setTargetSalePrice(Math.round(suggested50PercentPrice))}
+                        title="Aplicar precio con 50% de margen"
+                      >
+                        50% → {formatCLP(Math.round(suggested50PercentPrice))}
+                      </button>
+                    </div>
                   )}
                 </div>
                 <div style={{ position: 'relative' }}>
