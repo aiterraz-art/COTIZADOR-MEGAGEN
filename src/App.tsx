@@ -493,6 +493,13 @@ const App: React.FC = () => {
       const total = subtotal + iva;
       const date = new Date(quotation.created_at).toLocaleDateString('es-CL');
 
+      // Recalculate refined margin for display
+      const totalAtCostVal = quotation.items.reduce((acc, item) =>
+        item.is_at_cost ? acc + (item.cost_usd * item.qty * quotation.exchange_rate) : acc, 0);
+      const marginVal = subtotal - quotation.total_cost_clp;
+      const flexibleSaleVal = subtotal - totalAtCostVal;
+      const displayMarginPercent = flexibleSaleVal > 0 ? (marginVal / flexibleSaleVal) * 100 : 0;
+
       tempDiv.innerHTML = `
         <div style="background: rgba(255,255,255,0.95); color: #1a1a2e; border-radius: 20px; padding: 30px;">
           <div style="text-align: center; border-bottom: 3px solid #667eea; padding-bottom: 20px; margin-bottom: 30px;">
@@ -512,7 +519,7 @@ const App: React.FC = () => {
             <tbody>
               ${quotation.items.map((item) => `
                 <tr style="border-bottom: 1px solid #eee;">
-                  <td style="padding: 10px; font-size: 12px;">${item.name}</td>
+                  <td style="padding: 10px; font-size: 12px;">${item.name}${item.is_at_cost ? ' <span style="color:#16a34a; font-weight:bold;">(Al Costo)</span>' : ''}</td>
                   <td style="padding: 10px; text-align: center; font-size: 12px;">${item.qty}</td>
                   <td style="padding: 10px; text-align: right; font-size: 12px;">$${Math.round(item.cost_usd).toLocaleString('en-US')}</td>
                 </tr>
@@ -539,10 +546,10 @@ const App: React.FC = () => {
             </div>
           </div>
 
-          <div style="background: ${quotation.margin_percent >= 50 ? '#dcfce7' : quotation.margin_percent >= 30 ? '#fef9c3' : '#fee2e2'}; padding: 15px; border-radius: 12px; text-align: center;">
-            <p style="margin: 0; font-size: 12px; color: #666;">Margen Bruto</p>
-            <p style="margin: 5px 0 0 0; font-size: 24px; font-weight: 700; color: ${quotation.margin_percent >= 50 ? '#16a34a' : quotation.margin_percent >= 30 ? '#ca8a04' : '#dc2626'};">
-              ${Math.round(quotation.margin_percent)}%
+          <div style="background: ${displayMarginPercent >= 50 ? '#dcfce7' : displayMarginPercent >= 30 ? '#fef9c3' : '#fee2e2'}; padding: 15px; border-radius: 12px; text-align: center;">
+            <p style="margin: 0; font-size: 12px; color: #666;">Margen Bruto (solo items con utilidad)</p>
+            <p style="margin: 5px 0 0 0; font-size: 24px; font-weight: 700; color: ${displayMarginPercent >= 50 ? '#16a34a' : displayMarginPercent >= 30 ? '#ca8a04' : '#dc2626'};">
+              ${Math.round(displayMarginPercent)}%
             </p>
           </div>
         </div>
@@ -744,9 +751,10 @@ const App: React.FC = () => {
   }, [targetSalePrice, totalCostCLP]);
 
   const grossMarginPercent = useMemo(() => {
-    if (targetSalePrice === 0) return 0;
-    return (grossMarginValue / targetSalePrice) * 100;
-  }, [grossMarginValue, targetSalePrice]);
+    const flexibleSalePriceCLP = targetSalePrice - totalAtCostCLP;
+    if (flexibleSalePriceCLP <= 0) return 0;
+    return (grossMarginValue / flexibleSalePriceCLP) * 100;
+  }, [grossMarginValue, targetSalePrice, totalAtCostCLP]);
 
   // Auto-update targetSalePrice when deal items change (only if current price is 0)
   useEffect(() => {
