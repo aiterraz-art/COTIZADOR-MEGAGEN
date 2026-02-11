@@ -82,11 +82,12 @@ const App: React.FC = () => {
   };
 
   const checkIsAtCost = (item: { name: string; category?: string }) => {
-    const isUniqueCategory = item.category === 'Productos Únicos';
-    const hasSpecialName = item.name.toLowerCase().includes('item especial') ||
-      item.name.toLowerCase().includes('manual') ||
-      item.name.toLowerCase().includes('task');
-    return isUniqueCategory || hasSpecialName;
+    const name = item.name.toLowerCase();
+    const category = item.category || 'General';
+    return category === 'Productos Únicos' ||
+      name.includes('item especial') ||
+      name.includes('manual') ||
+      name.includes('task');
   };
 
   // Fetch products and exchange rate on mount
@@ -509,13 +510,17 @@ const App: React.FC = () => {
       const total = subtotal + iva;
       const date = new Date(quotation.created_at).toLocaleDateString('es-CL');
 
-      // Recalculate refined margin for display
-      const totalAtCostVal = quotation.items.reduce((acc, item) => {
-        const isAtCost = checkIsAtCost({ name: item.name, category: item.category });
-        return isAtCost ? acc + (item.cost_usd * item.qty * quotation.exchange_rate) : acc;
-      }, 0);
+      const details = calculatePriceDetails(
+        quotation.items.map(item => ({
+          product: { name: item.name, category: item.category, costUSD: item.cost_usd } as any,
+          quantity: item.qty
+        })),
+        quotation.sale_price_clp,
+        quotation.exchange_rate
+      );
+
       const marginVal = subtotal - quotation.total_cost_clp;
-      const flexibleSaleVal = subtotal - totalAtCostVal;
+      const flexibleSaleVal = subtotal - details.totalAtCost;
       const displayMarginPercent = flexibleSaleVal > 0 ? (marginVal / flexibleSaleVal) * 100 : 0;
 
       tempDiv.innerHTML = `
@@ -619,20 +624,14 @@ const App: React.FC = () => {
       const total = subtotal + iva;
       const date = new Date(quotation.created_at).toLocaleDateString('es-CL');
 
-      // Calculate multipliers based on special items (at cost)
-      const totalAtCostVal = quotation.items.reduce((acc, item) => {
-        const isAtCost = checkIsAtCost({ name: item.name, category: item.category });
-        return isAtCost ? acc + (item.cost_usd * item.qty * quotation.exchange_rate) : acc;
-      }, 0);
-
-      const totalFlexibleCostVal = quotation.items.reduce((acc, item) => {
-        const isAtCost = checkIsAtCost({ name: item.name, category: item.category });
-        return !isAtCost ? acc + (item.cost_usd * item.qty * quotation.exchange_rate) : acc;
-      }, 0);
-
-      const flexMultiplierVal = totalFlexibleCostVal > 0
-        ? (quotation.sale_price_clp - totalAtCostVal) / totalFlexibleCostVal
-        : 1;
+      const details = calculatePriceDetails(
+        quotation.items.map(item => ({
+          product: { name: item.name, category: item.category, costUSD: item.cost_usd } as any,
+          quantity: item.qty
+        })),
+        quotation.sale_price_clp,
+        quotation.exchange_rate
+      );
 
       tempDiv.innerHTML = `
         <div style="background: white; padding: 20px;">
@@ -652,18 +651,14 @@ const App: React.FC = () => {
               </tr>
             </thead>
             <tbody>
-              ${quotation.items.map((item) => {
-        // Derive CORRECT unit price based on cost * multiplier
-        const isAtCost = checkIsAtCost({ name: item.name, category: item.category });
-        const itemMultiplier = isAtCost ? 1 : flexMultiplierVal;
-        const unitCostCLP = item.cost_usd * quotation.exchange_rate;
-        const unitPriceCLP = unitCostCLP * itemMultiplier;
-        const lineTotalCLP = unitPriceCLP * item.qty;
+              ${details.items.map((item) => {
+        const unitPriceCLP = item.unitPriceNet;
+        const lineTotalCLP = item.totalPriceNet;
 
         return `
                 <tr style="border-bottom: 1px solid #eee;">
-                  <td style="padding: 10px; font-size: 12px; color: #334155;">${item.name}</td>
-                  <td style="padding: 10px; text-align: center; font-size: 12px; color: #334155;">${item.qty}</td>
+                  <td style="padding: 10px; font-size: 12px; color: #334155;">${item.product.name}</td>
+                  <td style="padding: 10px; text-align: center; font-size: 12px; color: #334155;">${item.quantity}</td>
                   <td style="padding: 10px; text-align: right; font-size: 12px; color: #334155;">$${Math.round(unitPriceCLP).toLocaleString('es-CL', { maximumFractionDigits: 0 })}</td>
                   <td style="padding: 10px; text-align: right; font-size: 12px; font-weight: 600; color: #334155;">$${Math.round(lineTotalCLP).toLocaleString('es-CL', { maximumFractionDigits: 0 })}</td>
                 </tr>
@@ -727,6 +722,35 @@ const App: React.FC = () => {
     }
   };
 
+  const calculatePriceDetails = (items: DealItem[], salePrice: number, rate: number) => {
+    const atCostItems = items.filter(i => checkIsAtCost({ name: i.product.name, category: i.product.category }));
+    const flexItems = items.filter(i => !checkIsAtCost({ name: i.product.name, category: i.product.category }));
+
+    const totalAtCost = atCostItems.reduce((acc, i) => acc + (i.product.costUSD * i.quantity * rate), 0);
+    const totalFlexCost = flexItems.reduce((acc, i) => acc + (i.product.costUSD * i.quantity * rate), 0);
+
+    const multiplier = totalFlexCost > 0 ? Math.max(0, (salePrice - totalAtCost) / totalFlexCost) : 1;
+
+    const mappedItems = items.map(i => {
+      const isAtCost = checkIsAtCost({ name: i.product.name, category: i.product.category });
+      const unitPrice = i.product.costUSD * rate * (isAtCost ? 1 : multiplier);
+      return {
+        ...i,
+        unitPriceNet: unitPrice,
+        totalPriceNet: unitPrice * i.quantity,
+        isAtCost
+      };
+    });
+
+    return {
+      items: mappedItems,
+      totalCostCLP: (totalAtCost + totalFlexCost),
+      multiplier,
+      totalAtCost,
+      totalFlexCost
+    };
+  };
+
   const filteredProducts = useMemo(() => {
     const searchWords = normalizeText(searchTerm).split(/\s+/).filter(w => w.length > 0);
 
@@ -749,24 +773,12 @@ const App: React.FC = () => {
     return totalCostUSD * exchangeRate;
   }, [totalCostUSD, exchangeRate]);
 
-  const totalAtCostCLP = useMemo(() => {
-    return dealItems.reduce((acc, item) =>
-      checkIsAtCost({ name: item.product.name, category: item.product.category }) ? acc + (item.product.costUSD * item.quantity * exchangeRate) : acc, 0);
-  }, [dealItems, exchangeRate]);
-
-  const totalFlexibleCostCLP = useMemo(() => {
-    return dealItems.reduce((acc, item) =>
-      !checkIsAtCost({ name: item.product.name, category: item.product.category }) ? acc + (item.product.costUSD * item.quantity * exchangeRate) : acc, 0);
-  }, [dealItems, exchangeRate]);
-
-  const flexibleMultiplier = useMemo(() => {
-    if (totalFlexibleCostCLP === 0) return 1;
-    return Math.max(0, (targetSalePrice - totalAtCostCLP) / totalFlexibleCostCLP);
-  }, [targetSalePrice, totalAtCostCLP, totalFlexibleCostCLP]);
+  const priceDetails = useMemo(() => {
+    return calculatePriceDetails(dealItems, targetSalePrice, exchangeRate);
+  }, [dealItems, targetSalePrice, exchangeRate]);
 
   // Auto-calculate the price needed for 50% margin
   const suggested50PercentPrice = useMemo(() => {
-    // Formula: Sale Price = Cost / 0.5
     return totalCostCLP / 0.5;
   }, [totalCostCLP]);
 
@@ -775,10 +787,10 @@ const App: React.FC = () => {
   }, [targetSalePrice, totalCostCLP]);
 
   const grossMarginPercent = useMemo(() => {
-    const flexibleSalePriceCLP = targetSalePrice - totalAtCostCLP;
+    const flexibleSalePriceCLP = targetSalePrice - priceDetails.totalAtCost;
     if (flexibleSalePriceCLP <= 0) return 0;
     return (grossMarginValue / flexibleSalePriceCLP) * 100;
-  }, [grossMarginValue, targetSalePrice, totalAtCostCLP]);
+  }, [grossMarginValue, targetSalePrice, priceDetails.totalAtCost]);
 
   // Auto-update targetSalePrice when deal items change (only if current price is 0)
   useEffect(() => {
@@ -1164,12 +1176,10 @@ const App: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {dealItems.map(item => {
-                      const isAtCost = checkIsAtCost({ name: item.product.name, category: item.product.category });
-                      const multiplier = isAtCost ? 1 : flexibleMultiplier;
-                      const unitCostCLP = item.product.costUSD * exchangeRate;
-                      const unitPriceRef = unitCostCLP * multiplier;
-                      const totalPriceRef = unitPriceRef * item.quantity;
+                    {priceDetails.items.map(item => {
+                      const unitPriceRef = item.unitPriceNet;
+                      const totalPriceRef = item.totalPriceNet;
+                      const isAtCost = item.isAtCost;
 
                       return (
                         <tr key={item.product.id}>
@@ -1183,10 +1193,10 @@ const App: React.FC = () => {
                               onChange={(e) => updateQuantity(item.product.id, parseInt(e.target.value) || 0)}
                             />
                           </td>
-                          <td style={{ textAlign: 'right', fontSize: '0.85rem', color: 'var(--primary)', fontWeight: '600' }}>
+                          <td style={{ textAlign: 'right', fontSize: '0.85rem', color: isAtCost ? 'var(--success)' : 'var(--primary)', fontWeight: '600' }}>
                             {formatCLP(unitPriceRef)}
                           </td>
-                          <td style={{ textAlign: 'right', fontSize: '0.85rem', color: 'var(--primary)', fontWeight: '600' }}>
+                          <td style={{ textAlign: 'right', fontSize: '0.85rem', color: isAtCost ? 'var(--success)' : 'var(--primary)', fontWeight: '600' }}>
                             {formatCLP(totalPriceRef)}
                           </td>
                           <td style={{ textAlign: 'center' }}>
