@@ -334,6 +334,13 @@ const App: React.FC = () => {
       return;
     }
 
+    // 1. Pre-check locally for duplicate name
+    const existing = products.find(p => p.name.toLowerCase() === newProductName.toLowerCase());
+    if (existing) {
+      alert(`Ya existe un producto con el nombre "${newProductName}". Por favor usa un nombre diferente.`);
+      return;
+    }
+
     const newProduct: Product = {
       id: `unique-${Date.now()}`,
       name: newProductName,
@@ -343,13 +350,14 @@ const App: React.FC = () => {
       sku: `UNIQUE-${Date.now()}`
     };
 
-    // 1. Optimistic UI update
-    setProducts([newProduct, ...products]);
+    // 2. Optimistic UI update
+    setProducts(prev => [newProduct, ...prev]);
+    const savedName = newProductName; // Backup for error handling
     setNewProductName('');
     setNewProductCost('');
     setShowCreateProductModal(false);
 
-    // 2. Persist to Supabase
+    // 3. Persist to Supabase
     try {
       const { data, error } = await supabase.from('products').insert([{
         name: newProduct.name,
@@ -361,7 +369,20 @@ const App: React.FC = () => {
 
       if (error) {
         console.error('Error saving unique product to Supabase:', error);
-        alert('El producto se creó localmente pero hubo un error al guardar en la base de datos: ' + error.message);
+
+        // Rollback optimistic update
+        setProducts(prev => prev.filter(p => p.id !== newProduct.id));
+
+        if (error.code === '23505') {
+          alert(`El nombre "${savedName}" ya está en uso. Por favor elige otro.`);
+        } else {
+          alert('Error al guardar en la base de datos: ' + error.message);
+        }
+
+        // Restore modal values for retry
+        setNewProductName(savedName);
+        setNewProductCost(cost.toString());
+        setShowCreateProductModal(true);
       } else if (data) {
         // Update local product with real ID from DB
         setProducts(prev => prev.map(p =>
@@ -370,7 +391,10 @@ const App: React.FC = () => {
       }
     } catch (err) {
       console.error('Exception saving product:', err);
+      // Generic rollback
+      setProducts(prev => prev.filter(p => p.id !== newProduct.id));
     }
+
   };
 
   const moveProductToList = async (product: Product) => {
