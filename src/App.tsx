@@ -287,7 +287,7 @@ const App: React.FC = () => {
       costUSD: cost, // Changed to match local Product interface
       suggestedPriceUSD: cost,
       category: 'Productos Únicos',
-      sku: 'UNIQUE'
+      sku: `UNIQUE-${Date.now()}`
     };
 
     // 1. Optimistic UI update
@@ -298,18 +298,22 @@ const App: React.FC = () => {
 
     // 2. Persist to Supabase
     try {
-      const { error } = await supabase.from('products').insert([{
-        id: newProduct.id,
+      const { data, error } = await supabase.from('products').insert([{
         name: newProduct.name,
         cost_usd: newProduct.costUSD,
-        category: newProduct.category
-      }]);
+        category: newProduct.category,
+        sku: newProduct.sku,
+        msrp_usd: newProduct.suggestedPriceUSD
+      }]).select().single();
 
       if (error) {
         console.error('Error saving unique product to Supabase:', error);
-        alert('El producto se creó localmente pero hubo un error al guardar en la base de datos.');
-      } else {
-        // Success
+        alert('El producto se creó localmente pero hubo un error al guardar en la base de datos: ' + error.message);
+      } else if (data) {
+        // Update local product with real ID from DB
+        setProducts(prev => prev.map(p =>
+          p.id === newProduct.id ? { ...p, id: data.id } : p
+        ));
       }
     } catch (err) {
       console.error('Exception saving product:', err);
