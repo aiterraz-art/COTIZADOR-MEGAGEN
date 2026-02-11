@@ -59,6 +59,7 @@ const App: React.FC = () => {
   const [exchangeRate, setExchangeRate] = useState<number>(950);
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [fetchError, setFetchError] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Quotations Manager State
@@ -99,8 +100,9 @@ const App: React.FC = () => {
 
   const [lastUpdated, setLastUpdated] = useState<string>('');
 
-  const fetchExchangeRate = async () => {
+  const fetchExchangeRate = async (retries = 2) => {
     setIsLoading(true);
+    setFetchError(false);
     try {
       const response = await fetch(`https://mindicador.cl/api/dolar?t=${Date.now()}`);
       if (!response.ok) throw new Error('API Response not OK');
@@ -112,10 +114,18 @@ const App: React.FC = () => {
         setExchangeRate(rate);
         setLastUpdated(date);
         console.log('Tipo de cambio actualizado:', rate, 'Fecha:', date);
+      } else {
+        throw new Error('No data in series');
       }
     } catch (error) {
       console.error('Error fetching exchange rate:', error);
-      alert('No se pudo actualizar el dólar automáticamente. Usando valor anterior o por defecto.');
+      if (retries > 0) {
+        console.log(`Retrying fetch... (${retries} left)`);
+        setTimeout(() => fetchExchangeRate(retries - 1), 2000);
+      } else {
+        setFetchError(true);
+        // Silent error, no alert()
+      }
     } finally {
       setIsLoading(false);
     }
@@ -833,23 +843,25 @@ const App: React.FC = () => {
         </div>
 
         <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-          <div className="finance-card" style={{ padding: '0.4rem 0.8rem', display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
-            <div className="text-muted" style={{ fontSize: '0.65rem' }}>TIPO DE CAMBIO</div>
+          <div className="finance-card" style={{ padding: '0.4rem 0.8rem', display: 'flex', alignItems: 'center', gap: '0.8rem', border: fetchError ? '1px solid var(--error)' : '1px solid var(--border)' }}>
+            <div className="text-muted" style={{ fontSize: '0.65rem', color: fetchError ? 'var(--error)' : 'inherit' }}>
+              {fetchError ? 'ERROR DOLAR' : 'TIPO DE CAMBIO'}
+            </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
               <input
                 type="number"
                 className="input-field"
-                style={{ width: '70px', fontWeight: 'bold', padding: '0.25rem', textAlign: 'right', border: 'none', background: 'transparent' }}
+                style={{ width: '70px', fontWeight: 'bold', padding: '0.25rem', textAlign: 'right', border: 'none', background: 'transparent', color: fetchError ? 'var(--error)' : 'inherit' }}
                 value={exchangeRate}
                 onChange={(e) => setExchangeRate(parseFloat(e.target.value) || 0)}
               />
               <button
-                onClick={fetchExchangeRate}
+                onClick={() => fetchExchangeRate()}
                 className="btn-icon"
-                style={{ padding: '0.2rem', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f1f5f9', borderRadius: '4px', border: '1px solid var(--border)' }}
+                style={{ padding: '0.2rem', display: 'flex', alignItems: 'center', justifyContent: 'center', background: fetchError ? 'rgba(239, 68, 68, 0.1)' : '#f1f5f9', borderRadius: '4px', border: '1px solid var(--border)' }}
                 title="Actualizar tipo de cambio"
               >
-                <RefreshCw size={14} className={isLoading ? "text-muted animate-spin" : "text-muted"} />
+                <RefreshCw size={14} className={isLoading ? "text-muted animate-spin" : fetchError ? "text-error" : "text-muted"} style={{ color: fetchError ? 'var(--error)' : '' }} />
               </button>
             </div>
             {lastUpdated && (
