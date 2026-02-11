@@ -36,7 +36,6 @@ import {
 interface DealItem {
   product: Product;
   quantity: number;
-  isAtCost?: boolean;
 }
 
 interface SavedQuotation {
@@ -48,7 +47,7 @@ interface SavedQuotation {
   total_cost_clp: number;
   margin_percent: number;
   net_profit_clp: number;
-  items: Array<{ name: string; qty: number; cost_usd: number; is_at_cost?: boolean }>;
+  items: Array<{ name: string; qty: number; cost_usd: number }>;
 }
 
 const App: React.FC = () => {
@@ -216,8 +215,7 @@ const App: React.FC = () => {
           items: dealItems.map(item => ({
             name: item.product.name,
             qty: item.quantity,
-            cost_usd: item.product.costUSD,
-            is_at_cost: item.isAtCost
+            cost_usd: item.product.costUSD
           }))
         });
 
@@ -459,8 +457,7 @@ const App: React.FC = () => {
         costUSD: item.cost_usd,
         suggestedPriceUSD: 0
       },
-      quantity: item.qty,
-      isAtCost: !!item.is_at_cost
+      quantity: item.qty
     }));
 
     setDealItems(recreatedItems);
@@ -495,7 +492,9 @@ const App: React.FC = () => {
 
       // Recalculate refined margin for display
       const totalAtCostVal = quotation.items.reduce((acc, item) =>
-        item.is_at_cost ? acc + (item.cost_usd * item.qty * quotation.exchange_rate) : acc, 0);
+        item.name.toLowerCase().includes('item especial') || item.name.toLowerCase().includes('manual')
+          ? acc + (item.cost_usd * item.qty * quotation.exchange_rate)
+          : acc, 0);
       const marginVal = subtotal - quotation.total_cost_clp;
       const flexibleSaleVal = subtotal - totalAtCostVal;
       const displayMarginPercent = flexibleSaleVal > 0 ? (marginVal / flexibleSaleVal) * 100 : 0;
@@ -517,13 +516,16 @@ const App: React.FC = () => {
               </tr>
             </thead>
             <tbody>
-              ${quotation.items.map((item) => `
+              ${quotation.items.map((item) => {
+        const isItemEspecial = item.name.toLowerCase().includes('item especial') || item.name.toLowerCase().includes('manual');
+        return `
                 <tr style="border-bottom: 1px solid #eee;">
-                  <td style="padding: 10px; font-size: 12px;">${item.name}${item.is_at_cost ? ' <span style="color:#16a34a; font-weight:bold;">(Al Costo)</span>' : ''}</td>
+                  <td style="padding: 10px; font-size: 12px;">${item.name}${isItemEspecial ? ' <span style="color:#16a34a; font-weight:bold;">(Al Costo)</span>' : ''}</td>
                   <td style="padding: 10px; text-align: center; font-size: 12px;">${item.qty}</td>
                   <td style="padding: 10px; text-align: right; font-size: 12px;">$${Math.round(item.cost_usd).toLocaleString('en-US')}</td>
                 </tr>
-              `).join('')}
+              `;
+      }).join('')}
             </tbody>
           </table>
 
@@ -598,12 +600,16 @@ const App: React.FC = () => {
       const total = subtotal + iva;
       const date = new Date(quotation.created_at).toLocaleDateString('es-CL');
 
-      // Calculate multipliers based on isAtCost items
+      // Calculate multipliers based on special items (at cost)
       const totalAtCostCLP = quotation.items.reduce((acc, item) =>
-        item.is_at_cost ? acc + (item.cost_usd * item.qty * quotation.exchange_rate) : acc, 0);
+        (item.name.toLowerCase().includes('item especial') || item.name.toLowerCase().includes('manual'))
+          ? acc + (item.cost_usd * item.qty * quotation.exchange_rate)
+          : acc, 0);
 
       const totalFlexibleCostCLP = quotation.items.reduce((acc, item) =>
-        !item.is_at_cost ? acc + (item.cost_usd * item.qty * quotation.exchange_rate) : acc, 0);
+        !(item.name.toLowerCase().includes('item especial') || item.name.toLowerCase().includes('manual'))
+          ? acc + (item.cost_usd * item.qty * quotation.exchange_rate)
+          : acc, 0);
 
       const flexMultiplier = totalFlexibleCostCLP > 0
         ? (quotation.sale_price_clp - totalAtCostCLP) / totalFlexibleCostCLP
@@ -629,7 +635,8 @@ const App: React.FC = () => {
             <tbody>
               ${quotation.items.map((item) => {
         // Derive CORRECT unit price based on cost * multiplier
-        const itemMultiplier = item.is_at_cost ? 1 : flexMultiplier;
+        const isItemEspecial = item.name.toLowerCase().includes('item especial') || item.name.toLowerCase().includes('manual');
+        const itemMultiplier = isItemEspecial ? 1 : flexMultiplier;
         const unitCostCLP = item.cost_usd * quotation.exchange_rate;
         const unitPriceCLP = unitCostCLP * itemMultiplier;
         const lineTotalCLP = unitPriceCLP * item.qty;
@@ -725,18 +732,16 @@ const App: React.FC = () => {
 
   const totalAtCostCLP = useMemo(() => {
     return dealItems.reduce((acc, item) =>
-      item.isAtCost ? acc + (item.product.costUSD * item.quantity * exchangeRate) : acc, 0);
+      item.product.category === 'Productos Únicos' ? acc + (item.product.costUSD * item.quantity * exchangeRate) : acc, 0);
   }, [dealItems, exchangeRate]);
 
   const totalFlexibleCostCLP = useMemo(() => {
     return dealItems.reduce((acc, item) =>
-      !item.isAtCost ? acc + (item.product.costUSD * item.quantity * exchangeRate) : acc, 0);
+      item.product.category !== 'Productos Únicos' ? acc + (item.product.costUSD * item.quantity * exchangeRate) : acc, 0);
   }, [dealItems, exchangeRate]);
 
   const flexibleMultiplier = useMemo(() => {
     if (totalFlexibleCostCLP === 0) return 1;
-    // We want: targetSalePrice = totalAtCostCLP + (totalFlexibleCostCLP * multiplier)
-    // So: multiplier = (targetSalePrice - totalAtCostCLP) / totalFlexibleCostCLP
     return Math.max(0, (targetSalePrice - totalAtCostCLP) / totalFlexibleCostCLP);
   }, [targetSalePrice, totalAtCostCLP, totalFlexibleCostCLP]);
 
@@ -805,12 +810,6 @@ const App: React.FC = () => {
   const updateQuantity = (productId: string, quantity: number) => {
     setDealItems(dealItems.map(item =>
       item.product.id === productId ? { ...item, quantity: Math.max(0, quantity) } : item
-    ));
-  };
-
-  const toggleItemAtCost = (productId: string) => {
-    setDealItems(dealItems.map(item =>
-      item.product.id === productId ? { ...item, isAtCost: !item.isAtCost } : item
     ));
   };
 
@@ -1145,8 +1144,8 @@ const App: React.FC = () => {
                   </thead>
                   <tbody>
                     {dealItems.map(item => {
-                      // Calculate reference prices based on target sale price
-                      const multiplier = item.isAtCost ? 1 : flexibleMultiplier;
+                      const isAtCost = item.product.category === 'Productos Únicos';
+                      const multiplier = isAtCost ? 1 : flexibleMultiplier;
                       const unitCostCLP = item.product.costUSD * exchangeRate;
                       const unitPriceRef = unitCostCLP * multiplier;
                       const totalPriceRef = unitPriceRef * item.quantity;
@@ -1170,27 +1169,9 @@ const App: React.FC = () => {
                             {formatCLP(totalPriceRef)}
                           </td>
                           <td style={{ textAlign: 'center' }}>
-                            <div style={{ display: 'flex', gap: '0.4rem', justifyContent: 'center' }}>
-                              <button
-                                onClick={() => toggleItemAtCost(item.product.id)}
-                                style={{
-                                  background: 'transparent',
-                                  border: 'none',
-                                  color: item.isAtCost ? 'var(--success)' : 'var(--text-muted)',
-                                  cursor: 'pointer',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  padding: '0.2rem',
-                                  opacity: item.isAtCost ? 1 : 0.5
-                                }}
-                                title={item.isAtCost ? "Vendido al COSTO (No afecta margen)" : "Lock at Cost / Al Costo"}
-                              >
-                                {item.isAtCost ? <DollarSign size={14} /> : <Percent size={14} />}
-                              </button>
-                              <button onClick={() => removeItem(item.product.id)} style={{ background: 'transparent', border: 'none', color: 'var(--error)', cursor: 'pointer', padding: '0.2rem' }}>
-                                <Trash2 size={14} />
-                              </button>
-                            </div>
+                            <button onClick={() => removeItem(item.product.id)} style={{ background: 'transparent', border: 'none', color: 'var(--error)', cursor: 'pointer', padding: '0.2rem' }}>
+                              <Trash2 size={14} />
+                            </button>
                           </td>
                         </tr>
                       );
