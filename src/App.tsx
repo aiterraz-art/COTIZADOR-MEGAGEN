@@ -73,6 +73,9 @@ const App: React.FC = () => {
   const [showCreateProductModal, setShowCreateProductModal] = useState(false);
   const [newProductName, setNewProductName] = useState('');
   const [newProductCost, setNewProductCost] = useState('');
+  const [showMoveProductModal, setShowMoveProductModal] = useState(false);
+  const [productToMove, setProductToMove] = useState<Product | null>(null);
+  const [targetMoveCategory, setTargetMoveCategory] = useState('');
 
 
 
@@ -301,6 +304,11 @@ const App: React.FC = () => {
     return ['All', 'Generales', ...result.sort(), 'Productos Únicos'];
   }, [products, customCategories]);
 
+  const moveTargetCategories = useMemo(() => {
+    const merged = new Set([...products.map(p => p.category), ...customCategories, 'General', 'Productos Únicos']);
+    return Array.from(merged).filter(Boolean).sort((a, b) => a.localeCompare(b, 'es'));
+  }, [products, customCategories]);
+
   const createNewList = () => {
     const listName = prompt("Ingresa el nombre de la nueva lista (Categoría):");
     if (listName && listName.trim() !== "") {
@@ -434,17 +442,16 @@ const App: React.FC = () => {
   };
 
   const moveProductToList = async (product: Product) => {
-    const targetList = prompt(`Mover "${product.name}" a qué lista?\n\nListas disponibles:\n${categories.filter(c => c !== 'All').join('\n')}`);
+    setProductToMove(product);
+    setTargetMoveCategory(product.category || 'General');
+    setShowMoveProductModal(true);
+  };
 
-    if (targetList && categories.includes(targetList)) {
-      updateProductCategory(product, targetList);
-    } else if (targetList) {
-      // Allow creating on the fly if user types a new name
-      if (confirm(`La lista "${targetList}" no existe. ¿Deseas crearla y mover el producto ahí?`)) {
-        setCustomCategories(prev => [...new Set([...prev, targetList])]);
-        updateProductCategory(product, targetList);
-      }
-    }
+  const confirmMoveProduct = () => {
+    if (!productToMove || !targetMoveCategory) return;
+    updateProductCategory(productToMove, targetMoveCategory);
+    setShowMoveProductModal(false);
+    setProductToMove(null);
   };
 
   const updateProductCategory = async (product: Product, newCategory: string) => {
@@ -1116,6 +1123,49 @@ const App: React.FC = () => {
                   <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
                     <button className="btn" onClick={() => setShowCreateProductModal(false)}>Cancelar</button>
                     <button className="btn btn-primary" onClick={createUniqueProduct}>Crear Item</button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Move Product Modal */}
+            {showMoveProductModal && productToMove && (
+              <div style={{
+                position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                background: 'rgba(0,0,0,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000
+              }}>
+                <div style={{ background: '#1e1e1e', padding: '2rem', borderRadius: '12px', width: '90%', maxWidth: '420px', border: '1px solid var(--text-muted)' }}>
+                  <h3 style={{ marginBottom: '1rem' }}>Mover Producto</h3>
+                  <p style={{ marginBottom: '1rem', fontSize: '0.9rem', color: 'var(--text-muted)' }}>
+                    Selecciona la lista destino para <strong style={{ color: '#fff' }}>{productToMove.name}</strong>.
+                  </p>
+
+                  <div style={{ marginBottom: '1.5rem' }}>
+                    <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>Lista destino</label>
+                    <select
+                      className="input-field"
+                      value={targetMoveCategory}
+                      onChange={(e) => setTargetMoveCategory(e.target.value)}
+                    >
+                      {moveTargetCategories.map(category => (
+                        <option key={category} value={category}>{category}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
+                    <button
+                      className="btn"
+                      onClick={() => {
+                        setShowMoveProductModal(false);
+                        setProductToMove(null);
+                      }}
+                    >
+                      Cancelar
+                    </button>
+                    <button className="btn btn-primary" onClick={confirmMoveProduct}>
+                      Mover
+                    </button>
                   </div>
                 </div>
               </div>
