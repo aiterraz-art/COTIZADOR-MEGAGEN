@@ -88,7 +88,7 @@ const mapRowsToProducts = (rows: any[]): RawProduct[] => {
         const rv = Object.values(row);
         const finalSku = sku || (index === 0 ? null : rv[0]);
         const finalName = name || rv[1];
-        const finalCost = cost || rv[3];
+        const finalCost = cost ?? extractFallbackCost(rv);
 
         const productName = finalName?.toString().trim() || '';
         if (!productName && !sku) return;
@@ -114,7 +114,36 @@ const normalizerKey = (text: string): string => {
 
 const parseNumber = (val: any): number => {
     if (val === null || val === undefined) return 0;
-    const clean = val.toString().replace(/[^0-9.,]/g, '').replace(',', '.');
-    const num = parseFloat(clean);
+
+    const raw = val.toString().trim();
+    const clean = raw.replace(/[^\d.,-]/g, '');
+    if (!clean) return 0;
+
+    const hasComma = clean.includes(',');
+    const hasDot = clean.includes('.');
+    let normalized = clean;
+
+    // Handle thousand/decimal separators for both "1.234,56" and "1,234.56"
+    if (hasComma && hasDot) {
+        if (clean.lastIndexOf(',') > clean.lastIndexOf('.')) {
+            normalized = clean.replace(/\./g, '').replace(',', '.');
+        } else {
+            normalized = clean.replace(/,/g, '');
+        }
+    } else if (hasComma) {
+        normalized = clean.replace(',', '.');
+    }
+
+    const num = parseFloat(normalized);
     return isNaN(num) ? 0 : num;
+};
+
+const extractFallbackCost = (values: unknown[]): unknown => {
+    // Prefer right-most numeric value since cost is usually near the end of rows.
+    for (let i = values.length - 1; i >= 0; i -= 1) {
+        const parsed = parseNumber(values[i]);
+        if (parsed > 0) return values[i];
+    }
+
+    return values[3] ?? values[2] ?? values[1] ?? null;
 };

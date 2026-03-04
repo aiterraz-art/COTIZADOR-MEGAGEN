@@ -755,7 +755,9 @@ const App: React.FC = () => {
     const searchWords = normalizeText(searchTerm).split(/\s+/).filter(w => w.length > 0);
 
     return products.filter(p => {
-      const matchesCategory = selectedCategory === 'All' || p.category === selectedCategory;
+      const matchesCategory = selectedCategory === 'All'
+        || (selectedCategory === 'Generales' && (p.category === 'General' || p.category === 'Generales'))
+        || p.category === selectedCategory;
       if (!matchesCategory) return false;
 
       if (searchWords.length === 0) return true;
@@ -808,9 +810,10 @@ const App: React.FC = () => {
     if (!file) return;
 
     try {
+      const uploadBatchId = Date.now();
       const rawProducts = await parseFile(file);
       const newProducts: Product[] = rawProducts.map((p, index) => ({
-        id: p.sku || `upl-${Date.now()}-${index}`,
+        id: `upl-${uploadBatchId}-${index}`,
         sku: p.sku,
         name: p.name,
         category: p.category,
@@ -840,7 +843,6 @@ const App: React.FC = () => {
     if (isAtCost) {
       setTargetSalePrice(prev => prev + (product.costUSD * exchangeRate));
     }
-    fetchExchangeRate(); // Refresh rate when adding item
   };
 
   const removeItem = (productId: string) => {
@@ -857,8 +859,13 @@ const App: React.FC = () => {
       const diff = quantity - item.quantity;
       setTargetSalePrice(prev => Math.max(0, prev + (diff * item.product.costUSD * exchangeRate)));
     }
-    setDealItems(dealItems.map(item =>
-      item.product.id === productId ? { ...item, quantity: Math.max(0, quantity) } : item
+    if (quantity <= 0) {
+      setDealItems(dealItems.filter(existingItem => existingItem.product.id !== productId));
+      return;
+    }
+
+    setDealItems(dealItems.map(existingItem =>
+      existingItem.product.id === productId ? { ...existingItem, quantity } : existingItem
     ));
   };
 
@@ -1198,6 +1205,7 @@ const App: React.FC = () => {
                       const unitPriceRef = item.unitPriceNet;
                       const totalPriceRef = item.totalPriceNet;
                       const isAtCost = item.isAtCost;
+                      const realCost = item.product.costUSD * item.quantity * exchangeRate;
 
                       return (
                         <tr key={item.product.id}>
@@ -1216,6 +1224,9 @@ const App: React.FC = () => {
                           </td>
                           <td style={{ textAlign: 'right', fontSize: '0.85rem', color: isAtCost ? 'var(--success)' : 'var(--primary)', fontWeight: '600' }}>
                             {formatCLP(totalPriceRef)}
+                          </td>
+                          <td style={{ textAlign: 'right', fontSize: '0.85rem' }}>
+                            {formatCLP(realCost)}
                           </td>
                           <td style={{ textAlign: 'center' }}>
                             <button onClick={() => removeItem(item.product.id)} style={{ background: 'transparent', border: 'none', color: 'var(--error)', cursor: 'pointer', padding: '0.2rem' }}>
