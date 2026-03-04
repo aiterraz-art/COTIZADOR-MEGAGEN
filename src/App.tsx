@@ -27,6 +27,8 @@ import {
   X
 } from 'lucide-react';
 
+const CUSTOM_CATEGORIES_STORAGE_KEY = 'megagen.customCategories';
+
 // ... (rest of imports)
 
 // Inside App component...
@@ -267,7 +269,21 @@ const App: React.FC = () => {
   };
 
   // Custom List Management
-  const [customCategories, setCustomCategories] = useState<string[]>([]);
+  const [customCategories, setCustomCategories] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem(CUSTOM_CATEGORIES_STORAGE_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return [];
+      return parsed.filter((cat): cat is string => typeof cat === 'string' && cat.trim().length > 0);
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem(CUSTOM_CATEGORIES_STORAGE_KEY, JSON.stringify(customCategories));
+  }, [customCategories]);
 
 
 
@@ -290,7 +306,7 @@ const App: React.FC = () => {
     if (listName && listName.trim() !== "") {
       const normalizedName = listName.trim();
       if (!categories.includes(normalizedName)) {
-        setCustomCategories([...customCategories, normalizedName]);
+        setCustomCategories(prev => [...new Set([...prev, normalizedName])]);
         alert(`Lista "${normalizedName}" creada. Ahora puedes agregar productos a ella.`);
         setSelectedCategory(normalizedName);
       } else {
@@ -425,7 +441,7 @@ const App: React.FC = () => {
     } else if (targetList) {
       // Allow creating on the fly if user types a new name
       if (confirm(`La lista "${targetList}" no existe. ¿Deseas crearla y mover el producto ahí?`)) {
-        setCustomCategories([...customCategories, targetList]);
+        setCustomCategories(prev => [...new Set([...prev, targetList])]);
         updateProductCategory(product, targetList);
       }
     }
