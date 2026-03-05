@@ -69,6 +69,17 @@ const App: React.FC = () => {
   const [savedQuotations, setSavedQuotations] = useState<SavedQuotation[]>([]);
   const [isLoadingQuotations, setIsLoadingQuotations] = useState(false);
 
+  const ensureSupabaseSession = async () => {
+    const { data, error } = await supabase.auth.getSession();
+    if (error) throw error;
+    if (data.session) return data.session;
+
+    const { data: anonData, error: anonError } = await supabase.auth.signInAnonymously();
+    if (anonError) throw anonError;
+    if (!anonData.session) throw new Error('No se pudo crear sesión en Supabase');
+    return anonData.session;
+  };
+
   // Manual Product Creation
   const [showCreateProductModal, setShowCreateProductModal] = useState(false);
   const [newProductName, setNewProductName] = useState('');
@@ -97,6 +108,10 @@ const App: React.FC = () => {
 
   // Fetch products and exchange rate on mount
   useEffect(() => {
+    ensureSupabaseSession().catch((error) => {
+      console.error('Error creating Supabase anonymous session:', error);
+    });
+
     fetchProducts();
     fetchExchangeRate();
 
@@ -227,9 +242,17 @@ const App: React.FC = () => {
     }
 
     try {
+      await ensureSupabaseSession();
+      const { data: userData, error: userError } = await supabase.auth.getUser();
+      if (userError) throw userError;
+      if (!userData.user) {
+        throw new Error('No hay sesión activa en Supabase para guardar la simulación');
+      }
+
       const { error } = await supabase
         .from('simulations')
         .insert({
+          user_id: userData.user.id,
           sale_price_clp: targetSalePrice,
           exchange_rate: exchangeRate,
           total_cost_usd: totalCostUSD,
@@ -256,6 +279,8 @@ const App: React.FC = () => {
   const fetchSavedQuotations = async () => {
     setIsLoadingQuotations(true);
     try {
+      await ensureSupabaseSession();
+
       const { data, error } = await supabase
         .from('simulations')
         .select('*')
@@ -327,6 +352,8 @@ const App: React.FC = () => {
     if (!confirm('¿Estás seguro de que deseas eliminar esta cotización permanentemente?')) return;
 
     try {
+      await ensureSupabaseSession();
+
       const { error } = await supabase
         .from('simulations')
         .delete()
