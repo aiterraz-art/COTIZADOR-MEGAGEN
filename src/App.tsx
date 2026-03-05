@@ -814,11 +814,9 @@ const App: React.FC = () => {
   }, [targetSalePrice, totalCostCLP]);
 
   const grossMarginPercent = useMemo(() => {
-    const flexibleSalePriceCLP = targetSalePrice - priceDetails.totalAtCost;
-    const flexibleProfitCLP = flexibleSalePriceCLP - priceDetails.totalFlexCost;
-    if (flexibleSalePriceCLP <= 0) return 0;
-    return (flexibleProfitCLP / flexibleSalePriceCLP) * 100;
-  }, [targetSalePrice, priceDetails.totalAtCost, priceDetails.totalFlexCost]);
+    if (targetSalePrice <= 0) return 0;
+    return (grossMarginValue / targetSalePrice) * 100;
+  }, [grossMarginValue, targetSalePrice]);
 
   // Auto-update targetSalePrice when deal items change (only if current price is 0)
   useEffect(() => {
@@ -898,6 +896,27 @@ const App: React.FC = () => {
 
   const formatUSD = (value: number) => {
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(value);
+  };
+
+  const parseInputNumber = (rawValue: string): number | null => {
+    const normalized = rawValue.trim().replace(',', '.');
+    if (!normalized) return 0;
+    const parsed = Number(normalized);
+    if (!Number.isFinite(parsed)) return null;
+    return parsed;
+  };
+
+  const handleNetSalePriceChange = (rawValue: string) => {
+    const parsed = parseInputNumber(rawValue);
+    if (parsed === null) return;
+    setTargetSalePrice(Math.max(0, Math.round(parsed)));
+  };
+
+  const handleSalePriceWithIvaChange = (rawValue: string) => {
+    const parsedGross = parseInputNumber(rawValue);
+    if (parsedGross === null) return;
+    const netPrice = parsedGross / 1.19;
+    setTargetSalePrice(Math.max(0, Math.round(netPrice)));
   };
 
   return (
@@ -1348,7 +1367,7 @@ const App: React.FC = () => {
                     className="input-field"
                     style={{ paddingLeft: '28px', fontSize: '1.25rem', fontWeight: 'bold' }}
                     value={targetSalePrice}
-                    onChange={(e) => setTargetSalePrice(parseFloat(e.target.value) || 0)}
+                    onChange={(e) => handleNetSalePriceChange(e.target.value)}
                   />
                 </div>
                 {targetSalePrice > 0 && (
@@ -1370,14 +1389,7 @@ const App: React.FC = () => {
                           border: '1px solid rgba(255,255,255,0.2)'
                         }}
                         value={Math.round(targetSalePrice * 1.19)}
-                        onChange={(e) => {
-                          const priceWithIva = parseFloat(e.target.value);
-                          if (!isNaN(priceWithIva)) {
-                            setTargetSalePrice(Math.round(priceWithIva / 1.19));
-                          } else {
-                            setTargetSalePrice(0);
-                          }
-                        }}
+                        onChange={(e) => handleSalePriceWithIvaChange(e.target.value)}
                       />
                     </div>
                   </div>
