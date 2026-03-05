@@ -1219,14 +1219,16 @@ const App: React.FC = () => {
                         </button>
                       )}
 
-                      <button
-                        className="btn"
-                        style={{ padding: '0.4rem', background: 'rgba(239, 68, 68, 0.1)', color: 'var(--error)' }}
-                        onClick={() => deleteProduct(product)}
-                        title="Eliminar permanentemente"
-                      >
-                        <Trash2 size={14} />
-                      </button>
+                      {selectedCategory !== 'All' && (
+                        <button
+                          className="btn"
+                          style={{ padding: '0.4rem', background: 'rgba(239, 68, 68, 0.1)', color: 'var(--error)' }}
+                          onClick={() => deleteProduct(product)}
+                          title="Eliminar permanentemente"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
 
                       <button className="btn btn-primary" style={{ padding: '0.4rem' }} onClick={() => addItem(product)}>
                         <Plus size={14} />
