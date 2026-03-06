@@ -1163,32 +1163,42 @@ const App: React.FC = () => {
       return;
     }
 
+    const exportItems = importItems;
+    const exportCurrency = importCurrency;
+    const exportImportUsdRate = importUsdRate;
+    const exportEuroRate = euroRate;
+    const exportShippingCost = shippingCostCLP;
+    const exportShippingCurrency = shippingCurrency;
+    const exportCustomsCost = customsCostCLP;
+    const exportMargin = targetGrossMarginPercentImport;
+    const exportSourceFile = importSourceFile;
+
     const headerRow = 12;
     const dataStartRow = headerRow + 1;
-    const dataEndRow = dataStartRow + importItems.length - 1;
+    const dataEndRow = dataStartRow + exportItems.length - 1;
     const totalRow = dataEndRow + 1;
     const hRange = `$H$${dataStartRow}:$H$${dataEndRow}`;
 
     const summaryRows: Array<Array<string | number>> = [
       ['Resumen Costos de Importacion'],
-      ['Archivo fuente', importSourceFile || '-'],
-      ['USD Importacion (CLP)', Number(importUsdRate.toFixed(4))],
-      ['EUR (CLP)', Number(euroRate.toFixed(4))],
-      ['Moneda flete', shippingCurrency],
-      ['Gasto envio original', Number(shippingCostCLP.toFixed(4))],
+      ['Archivo fuente', exportSourceFile || '-'],
+      ['USD Importacion (CLP)', Number(exportImportUsdRate.toFixed(4))],
+      ['EUR (CLP)', Number(exportEuroRate.toFixed(4))],
+      ['Moneda flete', exportShippingCurrency],
+      ['Gasto envio original', Number(exportShippingCost.toFixed(4))],
       ['Gasto envio convertido CLP', ''],
-      ['Gasto aduana (CLP)', Math.round(customsCostCLP)],
-      ['Margen bruto objetivo (%)', Number(targetGrossMarginPercentImport.toFixed(2))],
+      ['Gasto aduana (CLP)', Math.round(exportCustomsCost)],
+      ['Margen bruto objetivo (%)', Number(exportMargin.toFixed(2))],
       [''],
       ['Tabla de productos y precios calculados'],
       ['SKU', 'Producto', 'Cantidad', 'Moneda', 'Costo Unitario Moneda', 'Costo Total Moneda', 'Tipo Cambio CLP', 'Costo Base CLP', 'Flete Asignado CLP', 'Aduana Asignada CLP', 'Costo Puesto Chile Total CLP', 'Costo Puesto Chile Unit CLP', 'Precio Venta Neto Unit CLP', 'Precio Venta Unit con IVA CLP'],
     ];
 
-    const dataRows = importItems.map((item) => ([
+    const dataRows = exportItems.map((item) => ([
       item.sku,
       item.name,
       item.quantity,
-      importCurrency,
+      exportCurrency,
       Number(item.unitCost.toFixed(4)),
       null,
       null,
@@ -1252,6 +1262,114 @@ const App: React.FC = () => {
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Importaciones');
     const fileStamp = new Date().toISOString().slice(0, 10);
     XLSX.writeFile(workbook, `importaciones-calculadas-${fileStamp}.xlsx`);
+  };
+
+  const downloadImportSnapshot = (snapshot: ImportCalculationSnapshot) => {
+    const exportItems = snapshot.items;
+    if (!exportItems.length) {
+      alert('Este guardado no tiene productos para exportar.');
+      return;
+    }
+
+    const exportCurrency = snapshot.currency;
+    const exportImportUsdRate = snapshot.importUsdRate;
+    const exportEuroRate = snapshot.euroRate;
+    const exportShippingCost = snapshot.shippingCost;
+    const exportShippingCurrency = snapshot.shippingCurrency;
+    const exportCustomsCost = snapshot.customsCostCLP;
+    const exportMargin = snapshot.targetGrossMarginPercent;
+    const exportSourceFile = snapshot.sourceFile;
+
+    const headerRow = 12;
+    const dataStartRow = headerRow + 1;
+    const dataEndRow = dataStartRow + exportItems.length - 1;
+    const totalRow = dataEndRow + 1;
+    const hRange = `$H$${dataStartRow}:$H$${dataEndRow}`;
+
+    const summaryRows: Array<Array<string | number>> = [
+      ['Resumen Costos de Importacion'],
+      ['Archivo fuente', exportSourceFile || '-'],
+      ['USD Importacion (CLP)', Number(exportImportUsdRate.toFixed(4))],
+      ['EUR (CLP)', Number(exportEuroRate.toFixed(4))],
+      ['Moneda flete', exportShippingCurrency],
+      ['Gasto envio original', Number(exportShippingCost.toFixed(4))],
+      ['Gasto envio convertido CLP', ''],
+      ['Gasto aduana (CLP)', Math.round(exportCustomsCost)],
+      ['Margen bruto objetivo (%)', Number(exportMargin.toFixed(2))],
+      [''],
+      ['Tabla de productos y precios calculados'],
+      ['SKU', 'Producto', 'Cantidad', 'Moneda', 'Costo Unitario Moneda', 'Costo Total Moneda', 'Tipo Cambio CLP', 'Costo Base CLP', 'Flete Asignado CLP', 'Aduana Asignada CLP', 'Costo Puesto Chile Total CLP', 'Costo Puesto Chile Unit CLP', 'Precio Venta Neto Unit CLP', 'Precio Venta Unit con IVA CLP'],
+    ];
+
+    const dataRows = exportItems.map((item) => ([
+      item.sku,
+      item.name,
+      item.quantity,
+      exportCurrency,
+      Number(item.unitCost.toFixed(4)),
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+    ]));
+
+    const totalRowData: Array<string | number | null> = [
+      'TOTAL',
+      '',
+      null,
+      '',
+      '',
+      null,
+      '',
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+    ];
+
+    const worksheet = XLSX.utils.aoa_to_sheet([...summaryRows, ...dataRows, totalRowData]);
+
+    worksheet.B7 = {
+      t: 'n',
+      f: '=IF(B5="USD",B6*B3,IF(B5="EUR",B6*B4,B6))'
+    };
+
+    for (let i = 0; i < exportItems.length; i += 1) {
+      const row = dataStartRow + i;
+      worksheet[`F${row}`] = { t: 'n', f: `=C${row}*E${row}` };
+      worksheet[`G${row}`] = { t: 'n', f: `=IF(D${row}="USD",$B$3,IF(D${row}="EUR",$B$4,1))` };
+      worksheet[`H${row}`] = { t: 'n', f: `=F${row}*G${row}` };
+      worksheet[`I${row}`] = { t: 'n', f: `=IF(SUM(${hRange})=0,0,$B$7*H${row}/SUM(${hRange}))` };
+      worksheet[`J${row}`] = { t: 'n', f: `=IF(SUM(${hRange})=0,0,$B$8*H${row}/SUM(${hRange}))` };
+      worksheet[`K${row}`] = { t: 'n', f: `=H${row}+I${row}+J${row}` };
+      worksheet[`L${row}`] = { t: 'n', f: `=IF(C${row}=0,0,K${row}/C${row})` };
+      worksheet[`M${row}`] = { t: 'n', f: `=IF(1-$B$9/100<=0,L${row},L${row}/(1-$B$9/100))` };
+      worksheet[`N${row}`] = { t: 'n', f: `=M${row}*1.19` };
+    }
+
+    worksheet[`C${totalRow}`] = { t: 'n', f: `=SUM(C${dataStartRow}:C${dataEndRow})` };
+    worksheet[`F${totalRow}`] = { t: 'n', f: `=SUM(F${dataStartRow}:F${dataEndRow})` };
+    worksheet[`H${totalRow}`] = { t: 'n', f: `=SUM(H${dataStartRow}:H${dataEndRow})` };
+    worksheet[`I${totalRow}`] = { t: 'n', f: `=SUM(I${dataStartRow}:I${dataEndRow})` };
+    worksheet[`J${totalRow}`] = { t: 'n', f: `=SUM(J${dataStartRow}:J${dataEndRow})` };
+    worksheet[`K${totalRow}`] = { t: 'n', f: `=SUM(K${dataStartRow}:K${dataEndRow})` };
+    worksheet[`L${totalRow}`] = { t: 'n', f: `=IF(C${totalRow}=0,0,K${totalRow}/C${totalRow})` };
+    worksheet[`M${totalRow}`] = { t: 'n', f: `=IF(C${totalRow}=0,0,SUMPRODUCT(M${dataStartRow}:M${dataEndRow},C${dataStartRow}:C${dataEndRow})/C${totalRow})` };
+    worksheet[`N${totalRow}`] = { t: 'n', f: `=IF(C${totalRow}=0,0,SUMPRODUCT(N${dataStartRow}:N${dataEndRow},C${dataStartRow}:C${dataEndRow})/C${totalRow})` };
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Importaciones');
+    const fileStamp = new Date().toISOString().slice(0, 10);
+    const safeName = snapshot.name.replace(/[^\w\-]+/g, '_').slice(0, 30);
+    XLSX.writeFile(workbook, `importacion-guardada-${safeName || 'snapshot'}-${fileStamp}.xlsx`);
   };
 
   const openSaveImportDialog = () => {
@@ -2663,6 +2781,13 @@ const App: React.FC = () => {
                         <div style={{ display: 'flex', gap: '0.45rem' }}>
                           <button className="btn btn-primary" style={{ padding: '0.45rem 0.7rem' }} onClick={() => loadImportSnapshot(snapshot)}>
                             Cargar
+                          </button>
+                          <button
+                            className="btn"
+                            style={{ padding: '0.45rem 0.7rem', background: 'var(--accent)', color: 'white' }}
+                            onClick={() => downloadImportSnapshot(snapshot)}
+                          >
+                            Descargar
                           </button>
                           <button
                             className="btn"
