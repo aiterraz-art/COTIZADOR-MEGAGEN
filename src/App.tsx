@@ -1147,7 +1147,21 @@ const App: React.FC = () => {
       'Precio Venta Unit con IVA CLP': 0,
     });
 
-    const worksheet = XLSX.utils.json_to_sheet(rows);
+    const summaryRows: Array<Array<string | number>> = [
+      ['Resumen Costos de Importacion'],
+      ['Archivo fuente', importSourceFile || '-'],
+      ['Moneda productos', importCurrency],
+      ['Tipo cambio aplicado productos (CLP)', Number(importFxRate.toFixed(4))],
+      ['Gasto de envio', `${Number(shippingCostCLP.toFixed(4))} ${shippingCurrency}`],
+      ['Gasto de envio convertido a CLP', Math.round(shippingCostInCLP)],
+      ['Gasto de aduana (CLP)', Math.round(customsCostCLP)],
+      ['Margen bruto objetivo (%)', Number(targetGrossMarginPercentImport.toFixed(2))],
+      [''],
+      ['Tabla de productos y precios calculados'],
+    ];
+
+    const worksheet = XLSX.utils.aoa_to_sheet(summaryRows);
+    XLSX.utils.sheet_add_json(worksheet, rows, { origin: 'A12' });
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Importaciones');
     const fileStamp = new Date().toISOString().slice(0, 10);
