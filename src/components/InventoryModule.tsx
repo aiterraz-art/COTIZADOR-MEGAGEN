@@ -260,6 +260,40 @@ const InventoryModule: React.FC = () => {
     XLSX.writeFile(workbook, `PO-${providerSafe}-${datePart}.xlsx`);
   };
 
+  const downloadImporterTemplate = (dataset: 'suppliers' | 'rotation' | 'stock') => {
+    let rows: Array<Record<string, string | number>> = [];
+    let filename = '';
+
+    if (dataset === 'suppliers') {
+      rows = [
+        { SKU: 'AR384507C', Nombre: 'XPEED AnyRidge Internal Fixture [AR]', Proveedor: 'MEGAGEN KOREA', 'Lead Time (dias)': 35 },
+        { SKU: 'IF4008C', Nombre: 'AnyOne Internal Fixture [AO]', Proveedor: 'MEGAGEN KOREA', 'Lead Time (dias)': 35 },
+      ];
+      filename = 'importador-base-proveedores.xlsx';
+    }
+
+    if (dataset === 'rotation') {
+      rows = [
+        { SKU: 'AR384507C', 'Salidas 90 dias': 120 },
+        { SKU: 'IF4008C', 'Salidas 90 dias': 60 },
+      ];
+      filename = 'importador-rotacion-90d.xlsx';
+    }
+
+    if (dataset === 'stock') {
+      rows = [
+        { SKU: 'AR384507C', Stock: 45, Fecha: '2026-03-06' },
+        { SKU: 'IF4008C', Stock: 20, Fecha: '2026-03-06' },
+      ];
+      filename = 'importador-stock-semanal.xlsx';
+    }
+
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Importador');
+    XLSX.writeFile(workbook, filename);
+  };
+
   const renderUploadMeta = (meta?: DatasetUploadMeta) => {
     if (!meta) return <span className="text-muted" style={{ fontSize: '0.74rem' }}>Sin cargas recientes</span>;
 
@@ -304,9 +338,14 @@ const InventoryModule: React.FC = () => {
         <div className="finance-card">
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
             <strong style={{ fontSize: '0.9rem' }}>Base Proveedores</strong>
-            <button className="btn btn-primary" style={{ padding: '0.35rem 0.6rem' }} onClick={() => supplierInputRef.current?.click()}>
-              <Upload size={14} />
-            </button>
+            <div style={{ display: 'flex', gap: '0.35rem' }}>
+              <button className="btn" style={{ padding: '0.35rem 0.6rem' }} onClick={() => downloadImporterTemplate('suppliers')}>
+                <Download size={14} />
+              </button>
+              <button className="btn btn-primary" style={{ padding: '0.35rem 0.6rem' }} onClick={() => supplierInputRef.current?.click()}>
+                <Upload size={14} />
+              </button>
+            </div>
           </div>
           {renderUploadMeta(uploadMeta.suppliers)}
           <input ref={supplierInputRef} type="file" style={{ display: 'none' }} accept=".csv,.xlsx,.xls" onChange={handleSupplierUpload} />
@@ -315,9 +354,14 @@ const InventoryModule: React.FC = () => {
         <div className="finance-card">
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
             <strong style={{ fontSize: '0.9rem' }}>Rotación 3 meses</strong>
-            <button className="btn btn-primary" style={{ padding: '0.35rem 0.6rem' }} onClick={() => rotationInputRef.current?.click()}>
-              <Upload size={14} />
-            </button>
+            <div style={{ display: 'flex', gap: '0.35rem' }}>
+              <button className="btn" style={{ padding: '0.35rem 0.6rem' }} onClick={() => downloadImporterTemplate('rotation')}>
+                <Download size={14} />
+              </button>
+              <button className="btn btn-primary" style={{ padding: '0.35rem 0.6rem' }} onClick={() => rotationInputRef.current?.click()}>
+                <Upload size={14} />
+              </button>
+            </div>
           </div>
           {renderUploadMeta(uploadMeta.rotation)}
           <input ref={rotationInputRef} type="file" style={{ display: 'none' }} accept=".csv,.xlsx,.xls" onChange={handleRotationUpload} />
@@ -326,9 +370,14 @@ const InventoryModule: React.FC = () => {
         <div className="finance-card">
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
             <strong style={{ fontSize: '0.9rem' }}>Stock semanal</strong>
-            <button className="btn btn-primary" style={{ padding: '0.35rem 0.6rem' }} onClick={() => stockInputRef.current?.click()}>
-              <Upload size={14} />
-            </button>
+            <div style={{ display: 'flex', gap: '0.35rem' }}>
+              <button className="btn" style={{ padding: '0.35rem 0.6rem' }} onClick={() => downloadImporterTemplate('stock')}>
+                <Download size={14} />
+              </button>
+              <button className="btn btn-primary" style={{ padding: '0.35rem 0.6rem' }} onClick={() => stockInputRef.current?.click()}>
+                <Upload size={14} />
+              </button>
+            </div>
           </div>
           {renderUploadMeta(uploadMeta.stock)}
           <input ref={stockInputRef} type="file" style={{ display: 'none' }} accept=".csv,.xlsx,.xls" onChange={handleStockUpload} />
