@@ -1367,9 +1367,8 @@ const App: React.FC = () => {
 
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Importaciones');
-    const fileStamp = new Date().toISOString().slice(0, 10);
-    const safeName = snapshot.name.replace(/[^\w\-]+/g, '_').slice(0, 30);
-    XLSX.writeFile(workbook, `importacion-guardada-${safeName || 'snapshot'}-${fileStamp}.xlsx`);
+    const safeName = snapshot.name.trim().replace(/[\\/:*?"<>|]/g, '_');
+    XLSX.writeFile(workbook, `${safeName || 'snapshot'}.xlsx`);
   };
 
   const openSaveImportDialog = () => {
