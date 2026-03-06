@@ -36,6 +36,22 @@ import {
 } from 'lucide-react';
 
 const CUSTOM_CATEGORIES_STORAGE_KEY = 'megagen.customCategories';
+const EXCHANGE_RATE_STORAGE_KEY = 'megagen.exchangeRate';
+const EXCHANGE_RATE_UPDATED_STORAGE_KEY = 'megagen.exchangeRateUpdatedAt';
+const CASH_FLOW_SUMMARY_STORAGE_KEY = 'megagen.analysis.cashFlowSummary';
+const CASH_FLOW_FILE_STORAGE_KEY = 'megagen.analysis.cashFlowFileName';
+const DAILY_SALES_SUMMARY_STORAGE_KEY = 'megagen.analysis.dailySalesSummary';
+const DAILY_SALES_FILE_STORAGE_KEY = 'megagen.analysis.dailySalesFileName';
+
+const readStoredJSON = <T,>(key: string): T | null => {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+};
 
 // ... (rest of imports)
 
@@ -68,7 +84,11 @@ const App: React.FC = () => {
   const [targetSalePrice, setTargetSalePrice] = useState<number>(0);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
-  const [exchangeRate, setExchangeRate] = useState<number>(950);
+  const [exchangeRate, setExchangeRate] = useState<number>(() => {
+    const storedRate = Number(localStorage.getItem(EXCHANGE_RATE_STORAGE_KEY));
+    return Number.isFinite(storedRate) && storedRate > 0 ? storedRate : 950;
+  });
+  const [lastUpdated, setLastUpdated] = useState<string>(() => localStorage.getItem(EXCHANGE_RATE_UPDATED_STORAGE_KEY) || '');
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [fetchError, setFetchError] = useState(false);
@@ -81,10 +101,10 @@ const App: React.FC = () => {
   const [activeModule, setActiveModule] = useState<ModuleKey>('cotizador');
   const [savedQuotations, setSavedQuotations] = useState<SavedQuotation[]>([]);
   const [isLoadingQuotations, setIsLoadingQuotations] = useState(false);
-  const [cashFlowSummary, setCashFlowSummary] = useState<CashFlowSummary | null>(null);
-  const [analysisSourceFile, setAnalysisSourceFile] = useState('');
-  const [dailySalesSummary, setDailySalesSummary] = useState<DailySalesSummary | null>(null);
-  const [salesSourceFile, setSalesSourceFile] = useState('');
+  const [cashFlowSummary, setCashFlowSummary] = useState<CashFlowSummary | null>(() => readStoredJSON<CashFlowSummary>(CASH_FLOW_SUMMARY_STORAGE_KEY));
+  const [analysisSourceFile, setAnalysisSourceFile] = useState(() => localStorage.getItem(CASH_FLOW_FILE_STORAGE_KEY) || '');
+  const [dailySalesSummary, setDailySalesSummary] = useState<DailySalesSummary | null>(() => readStoredJSON<DailySalesSummary>(DAILY_SALES_SUMMARY_STORAGE_KEY));
+  const [salesSourceFile, setSalesSourceFile] = useState(() => localStorage.getItem(DAILY_SALES_FILE_STORAGE_KEY) || '');
   const [reportDate, setReportDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
   const [salesTargetKUSD, setSalesTargetKUSD] = useState<number>(0);
   const [collectionTargetKUSD, setCollectionTargetKUSD] = useState<number>(0);
@@ -122,14 +142,9 @@ const App: React.FC = () => {
       name.includes('task');
   };
 
-  // Fetch products and exchange rate on mount
+  // Fetch products on mount (exchange rate remains persistent until manually changed/refreshed)
   useEffect(() => {
     fetchProducts();
-    fetchExchangeRate();
-
-    // Refresh exchange rate every 30 minutes if page is left open
-    const interval = setInterval(fetchExchangeRate, 30 * 60 * 1000);
-    return () => clearInterval(interval);
   }, []);
 
   // Fetch quotations when switching to history tab
@@ -139,7 +154,37 @@ const App: React.FC = () => {
     }
   }, [activeTab]);
 
-  const [lastUpdated, setLastUpdated] = useState<string>('');
+  useEffect(() => {
+    localStorage.setItem(EXCHANGE_RATE_STORAGE_KEY, String(exchangeRate));
+  }, [exchangeRate]);
+
+  useEffect(() => {
+    localStorage.setItem(EXCHANGE_RATE_UPDATED_STORAGE_KEY, lastUpdated);
+  }, [lastUpdated]);
+
+  useEffect(() => {
+    if (cashFlowSummary) {
+      localStorage.setItem(CASH_FLOW_SUMMARY_STORAGE_KEY, JSON.stringify(cashFlowSummary));
+    } else {
+      localStorage.removeItem(CASH_FLOW_SUMMARY_STORAGE_KEY);
+    }
+  }, [cashFlowSummary]);
+
+  useEffect(() => {
+    localStorage.setItem(CASH_FLOW_FILE_STORAGE_KEY, analysisSourceFile);
+  }, [analysisSourceFile]);
+
+  useEffect(() => {
+    if (dailySalesSummary) {
+      localStorage.setItem(DAILY_SALES_SUMMARY_STORAGE_KEY, JSON.stringify(dailySalesSummary));
+    } else {
+      localStorage.removeItem(DAILY_SALES_SUMMARY_STORAGE_KEY);
+    }
+  }, [dailySalesSummary]);
+
+  useEffect(() => {
+    localStorage.setItem(DAILY_SALES_FILE_STORAGE_KEY, salesSourceFile);
+  }, [salesSourceFile]);
 
   const fetchExchangeRate = async (retries = 2) => {
     setIsLoading(true);
@@ -273,7 +318,6 @@ const App: React.FC = () => {
 
       if (error) throw error;
       alert('Simulación guardada en el historial de Supabase.');
-      fetchExchangeRate(); // Refresh rate on save
       fetchSavedQuotations(); // Refresh quotations list
     } catch (error) {
       alert('Error al guardar simulación: ' + (error as Error).message);
@@ -870,7 +914,6 @@ const App: React.FC = () => {
       }));
       setProducts(newProducts);
       setDealItems([]);
-      fetchExchangeRate(); // Update rate on new file upload
     } catch (error) {
       alert('Error al procesar el archivo: ' + (error as Error).message);
     }
