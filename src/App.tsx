@@ -24,7 +24,11 @@ import {
   Image as ImageIcon,
   FolderPlus,
   ArrowRight,
-  X
+  X,
+  LayoutGrid,
+  BriefcaseBusiness,
+  Users,
+  ReceiptText
 } from 'lucide-react';
 
 const CUSTOM_CATEGORIES_STORAGE_KEY = 'megagen.customCategories';
@@ -52,6 +56,8 @@ interface SavedQuotation {
   items: Array<{ name: string; qty: number; cost_usd: number; category?: string }>;
 }
 
+type ModuleKey = 'cotizador' | 'crm' | 'clientes' | 'facturacion';
+
 const App: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [dealItems, setDealItems] = useState<DealItem[]>([]);
@@ -66,6 +72,7 @@ const App: React.FC = () => {
 
   // Quotations Manager State
   const [activeTab, setActiveTab] = useState<'simulator' | 'history'>('simulator');
+  const [activeModule, setActiveModule] = useState<ModuleKey>('cotizador');
   const [savedQuotations, setSavedQuotations] = useState<SavedQuotation[]>([]);
   const [isLoadingQuotations, setIsLoadingQuotations] = useState(false);
 
@@ -919,9 +926,80 @@ const App: React.FC = () => {
     setTargetSalePrice(Math.max(0, Math.round(netPrice)));
   };
 
+  const modules: Array<{
+    key: ModuleKey;
+    name: string;
+    description: string;
+    icon: React.ReactNode;
+    isReady: boolean;
+  }> = [
+      {
+        key: 'cotizador',
+        name: 'Cotizador',
+        description: 'Simulación de márgenes, historial y exportaciones.',
+        icon: <Calculator size={18} />,
+        isReady: true
+      },
+      {
+        key: 'crm',
+        name: 'CRM Comercial',
+        description: 'Pipeline, oportunidades y seguimiento de cuentas.',
+        icon: <BriefcaseBusiness size={18} />,
+        isReady: false
+      },
+      {
+        key: 'clientes',
+        name: 'Gestión de Clientes',
+        description: 'Fichas, contactos, estado y asignaciones.',
+        icon: <Users size={18} />,
+        isReady: false
+      },
+      {
+        key: 'facturacion',
+        name: 'Facturación',
+        description: 'Documentos, pagos y control de cobranza.',
+        icon: <ReceiptText size={18} />,
+        isReady: false
+      }
+    ];
+  const selectedModule = modules.find((module) => module.key === activeModule);
+
   return (
     <div className="app-container">
-      <header className="header">
+      <section className="modules-shell">
+        <div className="modules-head">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <LayoutGrid size={18} />
+            <strong style={{ fontSize: '1rem' }}>Plataforma MegaGen</strong>
+          </div>
+          <span className="text-muted" style={{ fontSize: '0.8rem' }}>Módulos operativos y próximos lanzamientos</span>
+        </div>
+        <div className="modules-grid">
+          {modules.map((module) => (
+            <button
+              key={module.key}
+              type="button"
+              className={`module-card ${activeModule === module.key ? 'module-card-active' : ''}`}
+              onClick={() => setActiveModule(module.key)}
+            >
+              <div className="module-card-title">
+                {module.icon}
+                <span>{module.name}</span>
+              </div>
+              <p style={{ fontSize: '0.8rem', marginTop: '0.5rem', color: 'var(--text-muted)', textAlign: 'left' }}>
+                {module.description}
+              </p>
+              <span className={`module-state ${module.isReady ? 'module-state-ready' : 'module-state-soon'}`}>
+                {module.isReady ? 'Disponible' : 'Próximamente'}
+              </span>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      {activeModule === 'cotizador' ? (
+        <>
+          <header className="header">
         <div className="logo-group">
           <img src={logoMegaGen} alt="MegaGen Logo" style={{ height: '40px', objectFit: 'contain' }} />
           <div>
@@ -980,7 +1058,7 @@ const App: React.FC = () => {
             onChange={handleFileUpload}
           />
         </div>
-      </header>
+          </header>
 
       {/* Tab Navigation */}
       <div className="tabs-nav" style={{ display: 'flex', gap: '0.5rem', marginBottom: '2rem', borderBottom: '2px solid var(--border)', padding: '0 0.5rem' }}>
@@ -1497,8 +1575,7 @@ const App: React.FC = () => {
         </div >
       )}
 
-      {
-        activeTab === 'history' && (
+      {activeTab === 'history' && (
           <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
             <div className="glass card">
               <h2 style={{ marginBottom: '2rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -1653,6 +1730,26 @@ const App: React.FC = () => {
           </div >
         )
       }
+        </>
+      ) : (
+        <section className="glass card" style={{ marginTop: '1rem', textAlign: 'left' }}>
+          <h2 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
+            {selectedModule?.icon}
+            {selectedModule?.name}
+          </h2>
+          <p className="text-muted" style={{ marginBottom: '1rem' }}>
+            Este módulo quedará integrado en esta misma plataforma. El cotizador ya funciona como módulo independiente.
+          </p>
+          <div style={{
+            padding: '1rem',
+            borderRadius: '12px',
+            border: '1px dashed var(--border)',
+            background: 'var(--surface)'
+          }}>
+            <strong>Base lista:</strong> navegación por módulos, estado por módulo y layout común para escalar nuevas áreas.
+          </div>
+        </section>
+      )}
     </div >
   );
 };
