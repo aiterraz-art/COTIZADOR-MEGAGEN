@@ -47,11 +47,13 @@ const CASH_FLOW_FILE_STORAGE_KEY = 'megagen.analysis.cashFlowFileName';
 const DAILY_SALES_SUMMARY_STORAGE_KEY = 'megagen.analysis.dailySalesSummary';
 const DAILY_SALES_FILE_STORAGE_KEY = 'megagen.analysis.dailySalesFileName';
 const IMPORT_CURRENCY_STORAGE_KEY = 'megagen.import.currency';
+const IMPORT_USD_RATE_STORAGE_KEY = 'megagen.import.usdRate';
 const EURO_RATE_STORAGE_KEY = 'megagen.euroRate';
 const EURO_RATE_UPDATED_STORAGE_KEY = 'megagen.euroRateUpdatedAt';
 const IMPORT_ITEMS_STORAGE_KEY = 'megagen.import.items';
 const IMPORT_FILE_STORAGE_KEY = 'megagen.import.fileName';
 const IMPORT_SHIPPING_STORAGE_KEY = 'megagen.import.shipping';
+const IMPORT_SHIPPING_CURRENCY_STORAGE_KEY = 'megagen.import.shippingCurrency';
 const IMPORT_CUSTOMS_STORAGE_KEY = 'megagen.import.customs';
 const IMPORT_MARGIN_STORAGE_KEY = 'megagen.import.margin';
 
@@ -143,6 +145,10 @@ const App: React.FC = () => {
     const stored = localStorage.getItem(IMPORT_CURRENCY_STORAGE_KEY);
     return stored === 'EUR' ? 'EUR' : 'USD';
   });
+  const [importUsdRate, setImportUsdRate] = useState<number>(() => {
+    const storedRate = Number(localStorage.getItem(IMPORT_USD_RATE_STORAGE_KEY));
+    return Number.isFinite(storedRate) && storedRate > 0 ? storedRate : 950;
+  });
   const [euroRate, setEuroRate] = useState<number>(() => {
     const storedRate = Number(localStorage.getItem(EURO_RATE_STORAGE_KEY));
     return Number.isFinite(storedRate) && storedRate > 0 ? storedRate : 1050;
@@ -152,6 +158,10 @@ const App: React.FC = () => {
   const [importItems, setImportItems] = useState<ImportItemRaw[]>(() => readStoredJSON<ImportItemRaw[]>(IMPORT_ITEMS_STORAGE_KEY) || []);
   const [importSourceFile, setImportSourceFile] = useState(() => localStorage.getItem(IMPORT_FILE_STORAGE_KEY) || '');
   const [shippingCostCLP, setShippingCostCLP] = useState<number>(() => Number(localStorage.getItem(IMPORT_SHIPPING_STORAGE_KEY)) || 0);
+  const [shippingCurrency, setShippingCurrency] = useState<'CLP' | 'USD' | 'EUR'>(() => {
+    const stored = localStorage.getItem(IMPORT_SHIPPING_CURRENCY_STORAGE_KEY);
+    return stored === 'USD' || stored === 'EUR' ? stored : 'CLP';
+  });
   const [customsCostCLP, setCustomsCostCLP] = useState<number>(() => Number(localStorage.getItem(IMPORT_CUSTOMS_STORAGE_KEY)) || 0);
   const [targetGrossMarginPercentImport, setTargetGrossMarginPercentImport] = useState<number>(() => Number(localStorage.getItem(IMPORT_MARGIN_STORAGE_KEY)) || 50);
 
@@ -230,6 +240,10 @@ const App: React.FC = () => {
   }, [importCurrency]);
 
   useEffect(() => {
+    localStorage.setItem(IMPORT_USD_RATE_STORAGE_KEY, String(importUsdRate));
+  }, [importUsdRate]);
+
+  useEffect(() => {
     localStorage.setItem(EURO_RATE_STORAGE_KEY, String(euroRate));
   }, [euroRate]);
 
@@ -252,6 +266,10 @@ const App: React.FC = () => {
   useEffect(() => {
     localStorage.setItem(IMPORT_SHIPPING_STORAGE_KEY, String(shippingCostCLP));
   }, [shippingCostCLP]);
+
+  useEffect(() => {
+    localStorage.setItem(IMPORT_SHIPPING_CURRENCY_STORAGE_KEY, shippingCurrency);
+  }, [shippingCurrency]);
 
   useEffect(() => {
     localStorage.setItem(IMPORT_CUSTOMS_STORAGE_KEY, String(customsCostCLP));
@@ -1123,7 +1141,7 @@ const App: React.FC = () => {
       'Costo Total Moneda': Number(importTotals.baseForeign.toFixed(4)),
       'Tipo Cambio CLP': Number(importFxRate.toFixed(4)),
       'Costo Base CLP': Math.round(importTotals.baseCLP),
-      'Flete Asignado CLP': Math.round(shippingCostCLP),
+      'Flete Asignado CLP': Math.round(shippingCostInCLP),
       'Aduana Asignada CLP': Math.round(customsCostCLP),
       'Costo Puesto Chile Total CLP': Math.round(importTotals.landedCLP),
       'Costo Puesto Chile Unit CLP': 0,
@@ -1225,7 +1243,12 @@ const App: React.FC = () => {
     };
   }, [dailySalesSummary, exchangeRate]);
 
-  const importFxRate = importCurrency === 'USD' ? exchangeRate : euroRate;
+  const importFxRate = importCurrency === 'USD' ? importUsdRate : euroRate;
+  const shippingCostInCLP = useMemo(() => {
+    if (shippingCurrency === 'USD') return shippingCostCLP * importUsdRate;
+    if (shippingCurrency === 'EUR') return shippingCostCLP * euroRate;
+    return shippingCostCLP;
+  }, [shippingCostCLP, shippingCurrency, importUsdRate, euroRate]);
 
   const importCalculatedItems = useMemo<ImportItemCalculated[]>(() => {
     if (!importItems.length || importFxRate <= 0) return [];
@@ -1246,7 +1269,7 @@ const App: React.FC = () => {
 
     return baseRows.map((row) => {
       const weight = baseTotalAllCLP > 0 ? row.baseTotalCLP / baseTotalAllCLP : 0;
-      const shippingCLPAllocated = shippingCostCLP * weight;
+      const shippingCLPAllocated = shippingCostInCLP * weight;
       const customsCLPAllocated = customsCostCLP * weight;
       const landedTotalCLP = row.baseTotalCLP + shippingCLPAllocated + customsCLPAllocated;
       const landedUnitCLP = row.quantity > 0 ? landedTotalCLP / row.quantity : 0;
@@ -1263,7 +1286,7 @@ const App: React.FC = () => {
         suggestedIvaUnitCLP,
       };
     });
-  }, [importItems, importFxRate, shippingCostCLP, customsCostCLP, targetGrossMarginPercentImport]);
+  }, [importItems, importFxRate, shippingCostInCLP, customsCostCLP, targetGrossMarginPercentImport]);
 
   const importTotals = useMemo(() => {
     const baseForeign = importCalculatedItems.reduce((acc, row) => acc + row.baseTotalForeign, 0);
@@ -2240,6 +2263,22 @@ const App: React.FC = () => {
             </div>
 
             <div className="finance-card">
+              <div className="text-muted" style={{ fontSize: '0.7rem', marginBottom: '0.45rem' }}>VALOR USD IMPORTACIÓN (CLP)</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                <input
+                  type="number"
+                  className="input-field"
+                  style={{ width: '100px', textAlign: 'right' }}
+                  value={importUsdRate}
+                  onChange={(e) => setImportUsdRate(parseFloat(e.target.value) || 0)}
+                />
+              </div>
+              <div className="text-muted" style={{ fontSize: '0.68rem', marginTop: '0.3rem' }}>
+                Aislado del USD global.
+              </div>
+            </div>
+
+            <div className="finance-card">
               <div className="text-muted" style={{ fontSize: '0.7rem', marginBottom: '0.45rem' }}>VALOR EURO (CLP)</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                 <input
@@ -2259,13 +2298,42 @@ const App: React.FC = () => {
             </div>
 
             <label className="finance-card" style={{ display: 'block' }}>
-              <div className="text-muted" style={{ fontSize: '0.7rem', marginBottom: '0.45rem' }}>COSTO TOTAL FLETE (CLP)</div>
+              <div className="text-muted" style={{ fontSize: '0.7rem', marginBottom: '0.45rem' }}>COSTO TOTAL FLETE</div>
+              <div style={{ display: 'flex', gap: '0.35rem', marginBottom: '0.45rem' }}>
+                <button
+                  type="button"
+                  className="btn"
+                  style={{ padding: '0.3rem 0.5rem', fontSize: '0.72rem', background: shippingCurrency === 'CLP' ? 'var(--primary)' : 'var(--surface)', color: shippingCurrency === 'CLP' ? 'white' : 'var(--text)' }}
+                  onClick={() => setShippingCurrency('CLP')}
+                >
+                  CLP
+                </button>
+                <button
+                  type="button"
+                  className="btn"
+                  style={{ padding: '0.3rem 0.5rem', fontSize: '0.72rem', background: shippingCurrency === 'USD' ? 'var(--primary)' : 'var(--surface)', color: shippingCurrency === 'USD' ? 'white' : 'var(--text)' }}
+                  onClick={() => setShippingCurrency('USD')}
+                >
+                  USD
+                </button>
+                <button
+                  type="button"
+                  className="btn"
+                  style={{ padding: '0.3rem 0.5rem', fontSize: '0.72rem', background: shippingCurrency === 'EUR' ? 'var(--primary)' : 'var(--surface)', color: shippingCurrency === 'EUR' ? 'white' : 'var(--text)' }}
+                  onClick={() => setShippingCurrency('EUR')}
+                >
+                  EUR
+                </button>
+              </div>
               <input
                 type="number"
                 className="input-field"
                 value={shippingCostCLP}
                 onChange={(e) => setShippingCostCLP(parseFloat(e.target.value) || 0)}
               />
+              <div className="text-muted" style={{ fontSize: '0.68rem', marginTop: '0.3rem' }}>
+                Equivalente CLP para cálculo: {formatCLP(shippingCostInCLP)}
+              </div>
             </label>
 
             <label className="finance-card" style={{ display: 'block' }}>
