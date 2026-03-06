@@ -1128,8 +1128,6 @@ const App: React.FC = () => {
       'Costo Puesto Chile Unit CLP': Math.round(item.landedUnitCLP),
       'Precio Venta Neto Unit CLP': Math.round(item.suggestedNetUnitCLP),
       'Precio Venta Unit con IVA CLP': Math.round(item.suggestedIvaUnitCLP),
-      'Precio Venta Neto Total CLP': Math.round(item.suggestedNetUnitCLP * item.quantity),
-      'Precio Venta Total con IVA CLP': Math.round(item.suggestedIvaUnitCLP * item.quantity),
     }));
 
     rows.push({
@@ -1147,8 +1145,6 @@ const App: React.FC = () => {
       'Costo Puesto Chile Unit CLP': 0,
       'Precio Venta Neto Unit CLP': 0,
       'Precio Venta Unit con IVA CLP': 0,
-      'Precio Venta Neto Total CLP': Math.round(importTotals.suggestedNetCLP),
-      'Precio Venta Total con IVA CLP': Math.round(importTotals.suggestedIvaCLP),
     });
 
     const worksheet = XLSX.utils.json_to_sheet(rows);
