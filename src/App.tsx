@@ -2411,6 +2411,19 @@ const App: React.FC = () => {
                         <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--success)' }}>{formatCLP(item.suggestedIvaUnitCLP)}</td>
                       </tr>
                     ))}
+                    <tr style={{ background: 'rgba(0, 167, 233, 0.08)' }}>
+                      <td style={{ fontWeight: 800 }}>TOTAL</td>
+                      <td style={{ fontWeight: 800 }}>-</td>
+                      <td style={{ textAlign: 'right', fontWeight: 800 }}>{importTotals.totalQty}</td>
+                      <td style={{ textAlign: 'right', fontWeight: 800 }}>-</td>
+                      <td style={{ textAlign: 'right', fontWeight: 800 }}>{formatImportCurrency(importTotals.baseForeign)}</td>
+                      <td style={{ textAlign: 'right', fontWeight: 800 }}>{formatCLP(importTotals.baseCLP)}</td>
+                      <td style={{ textAlign: 'right', fontWeight: 800 }}>{formatCLP(shippingCostInCLP)}</td>
+                      <td style={{ textAlign: 'right', fontWeight: 800 }}>{formatCLP(customsCostCLP)}</td>
+                      <td style={{ textAlign: 'right', fontWeight: 800 }}>{formatCLP(importTotals.totalQty > 0 ? importTotals.landedCLP / importTotals.totalQty : 0)}</td>
+                      <td style={{ textAlign: 'right', fontWeight: 800 }}>{formatCLP(importTotals.totalQty > 0 ? importTotals.suggestedNetCLP / importTotals.totalQty : 0)}</td>
+                      <td style={{ textAlign: 'right', fontWeight: 800 }}>{formatCLP(importTotals.totalQty > 0 ? importTotals.suggestedIvaCLP / importTotals.totalQty : 0)}</td>
+                    </tr>
                   </tbody>
                 </table>
               </div>
