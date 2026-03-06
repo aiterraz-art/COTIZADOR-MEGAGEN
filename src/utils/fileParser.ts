@@ -19,6 +19,16 @@ export interface CashFlowSummary {
     dateTo?: string;
 }
 
+export interface DailySalesSummary {
+    totalSalesCLPExcludingDispatch: number;
+    totalCostCLPExcludingDispatch: number;
+    movementCount: number;
+    dateFrom?: string;
+    dateTo?: string;
+    implantsByModel: Record<'AR' | 'AO' | 'ST' | 'BD' | 'MN' | 'ARiE', number>;
+    totalImplants: number;
+}
+
 const normalize = (text: string): string => {
     return text.toString().toLowerCase()
         .normalize("NFD")
@@ -270,6 +280,134 @@ export const parseCashFlowFile = (file: File): Promise<CashFlowSummary> => {
                     movementCount,
                     dateFrom: minTimestamp ? new Date(minTimestamp).toLocaleDateString('es-CL') : undefined,
                     dateTo: maxTimestamp ? new Date(maxTimestamp).toLocaleDateString('es-CL') : undefined,
+                });
+            } catch (error) {
+                reject(error instanceof Error ? error : new Error('No fue posible procesar el archivo.'));
+            }
+        };
+
+        reader.readAsArrayBuffer(file);
+    });
+};
+
+export const parseDailySalesFile = (file: File): Promise<DailySalesSummary> => {
+    return new Promise((resolve, reject) => {
+        const extension = file.name.split('.').pop()?.toLowerCase();
+        if (extension !== 'xlsx' && extension !== 'xls') {
+            reject(new Error('El archivo de ventas debe ser Excel (.xlsx o .xls).'));
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const data = new Uint8Array(e.target?.result as ArrayBuffer);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const sheetName = workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[sheetName];
+                const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' }) as unknown[][];
+
+                if (rows.length === 0) {
+                    reject(new Error('El archivo está vacío.'));
+                    return;
+                }
+
+                const headerRowIndex = rows.findIndex((row) => {
+                    const rowText = row.map((cell) => normalize(String(cell ?? ''))).join(' ');
+                    return rowText.includes('desc. producto')
+                        && rowText.includes('cantidad')
+                        && rowText.includes('total detalle')
+                        && rowText.includes('costo vigente');
+                });
+
+                if (headerRowIndex === -1) {
+                    reject(new Error('No se encontró la cabecera esperada de ventas.'));
+                    return;
+                }
+
+                const header = rows[headerRowIndex].map((cell) => normalize(String(cell ?? '')));
+                const findColumn = (candidates: string[]): number => {
+                    return header.findIndex((cell) => candidates.some((candidate) => cell.includes(candidate)));
+                };
+
+                const dateIdx = findColumn(['fecha']);
+                const codeIdx = findColumn(['cod. producto', 'cod producto']);
+                const descriptionIdx = findColumn(['desc. producto', 'desc producto']);
+                const quantityIdx = findColumn(['cantidad']);
+                const totalIdx = findColumn(['total detalle']);
+                const costIdx = findColumn(['costo vigente']);
+
+                if (descriptionIdx < 0 || quantityIdx < 0 || totalIdx < 0 || costIdx < 0) {
+                    reject(new Error('Faltan columnas requeridas (producto, cantidad, total o costo).'));
+                    return;
+                }
+
+                const implantMatchers: Array<{ key: 'AR' | 'AO' | 'ST' | 'BD' | 'MN' | 'ARiE'; label: string }> = [
+                    { key: 'AR', label: 'xpeed anyridge internal fixture [ar]' },
+                    { key: 'AO', label: 'anyone internal fixture [ao]' },
+                    { key: 'ST', label: 'st internal fixture [st]' },
+                    { key: 'BD', label: 'bluediamond implant [bd]' },
+                    { key: 'MN', label: 'mini internal fixture [mn]' },
+                    { key: 'ARiE', label: 'ari excon implant [arie]' },
+                ];
+
+                const implantsByModel: Record<'AR' | 'AO' | 'ST' | 'BD' | 'MN' | 'ARiE', number> = {
+                    AR: 0,
+                    AO: 0,
+                    ST: 0,
+                    BD: 0,
+                    MN: 0,
+                    ARiE: 0,
+                };
+
+                let totalSalesCLPExcludingDispatch = 0;
+                let totalCostCLPExcludingDispatch = 0;
+                let movementCount = 0;
+                const parsedDates: Date[] = [];
+
+                for (let i = headerRowIndex + 1; i < rows.length; i += 1) {
+                    const row = rows[i];
+                    const descriptionRaw = String(row[descriptionIdx] ?? '');
+                    const codeRaw = String(codeIdx >= 0 ? row[codeIdx] ?? '' : '');
+                    const quantity = parseCurrencyCell(row[quantityIdx]);
+                    const totalDetail = parseCurrencyCell(row[totalIdx]);
+                    const currentCost = parseCurrencyCell(row[costIdx]);
+                    const parsedDate = dateIdx >= 0 ? parseExcelDate(row[dateIdx]) : null;
+
+                    if (!descriptionRaw && !codeRaw && !quantity && !totalDetail && !currentCost) continue;
+
+                    const normalizedDescription = normalize(descriptionRaw);
+                    const normalizedCode = normalize(codeRaw);
+                    const isDispatch = normalizedCode === 'despacho'
+                        || normalizedDescription.includes('servicio despacho')
+                        || normalizedDescription.includes('despacho');
+
+                    if (parsedDate) parsedDates.push(parsedDate);
+                    if (isDispatch) continue;
+
+                    totalSalesCLPExcludingDispatch += totalDetail;
+                    totalCostCLPExcludingDispatch += currentCost * quantity;
+                    movementCount += 1;
+
+                    const implant = implantMatchers.find((model) => normalizedDescription.includes(model.label));
+                    if (implant) {
+                        implantsByModel[implant.key] += quantity;
+                    }
+                }
+
+                const totalImplants = Object.values(implantsByModel).reduce((acc, qty) => acc + qty, 0);
+                const timestamps = parsedDates.map((date) => date.getTime());
+                const minTimestamp = timestamps.length ? Math.min(...timestamps) : null;
+                const maxTimestamp = timestamps.length ? Math.max(...timestamps) : null;
+
+                resolve({
+                    totalSalesCLPExcludingDispatch,
+                    totalCostCLPExcludingDispatch,
+                    movementCount,
+                    dateFrom: minTimestamp ? new Date(minTimestamp).toLocaleDateString('es-CL') : undefined,
+                    dateTo: maxTimestamp ? new Date(maxTimestamp).toLocaleDateString('es-CL') : undefined,
+                    implantsByModel,
+                    totalImplants,
                 });
             } catch (error) {
                 reject(error instanceof Error ? error : new Error('No fue posible procesar el archivo.'));

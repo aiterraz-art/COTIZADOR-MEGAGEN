@@ -2,8 +2,9 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 // Force refresh - Fixed JSX Structure
 import { initialProducts } from './data/mockProducts';
 import type { Product } from './data/mockProducts';
-import { parseCashFlowFile, parseFile } from './utils/fileParser';
+import { parseCashFlowFile, parseDailySalesFile, parseFile } from './utils/fileParser';
 import type { CashFlowSummary } from './utils/fileParser';
+import type { DailySalesSummary } from './utils/fileParser';
 import { supabase } from './lib/supabase';
 import html2canvas from 'html2canvas';
 import logoMegaGen from './assets/MegaGen.jpg';
@@ -73,6 +74,7 @@ const App: React.FC = () => {
   const [fetchError, setFetchError] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const analysisFileInputRef = useRef<HTMLInputElement>(null);
+  const salesFileInputRef = useRef<HTMLInputElement>(null);
 
   // Quotations Manager State
   const [activeTab, setActiveTab] = useState<'simulator' | 'history'>('simulator');
@@ -81,6 +83,8 @@ const App: React.FC = () => {
   const [isLoadingQuotations, setIsLoadingQuotations] = useState(false);
   const [cashFlowSummary, setCashFlowSummary] = useState<CashFlowSummary | null>(null);
   const [analysisSourceFile, setAnalysisSourceFile] = useState('');
+  const [dailySalesSummary, setDailySalesSummary] = useState<DailySalesSummary | null>(null);
+  const [salesSourceFile, setSalesSourceFile] = useState('');
 
   // Manual Product Creation
   const [showCreateProductModal, setShowCreateProductModal] = useState(false);
@@ -875,6 +879,19 @@ const App: React.FC = () => {
     }
   };
 
+  const handleSalesFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const summary = await parseDailySalesFile(file);
+      setDailySalesSummary(summary);
+      setSalesSourceFile(file.name);
+    } catch (error) {
+      alert('Error al procesar ventas del día: ' + (error as Error).message);
+    }
+  };
+
   const addItem = (product: Product) => {
     const isAtCost = checkIsAtCost({ name: product.name, category: product.category });
     const existing = dealItems.find(item => item.product.id === product.id);
@@ -943,6 +960,22 @@ const App: React.FC = () => {
       endingBalanceKUSD: toKUSD(cashFlowSummary.endingBalanceCLP),
     };
   }, [cashFlowSummary, exchangeRate]);
+
+  const salesMetrics = useMemo(() => {
+    if (!dailySalesSummary || exchangeRate <= 0) return null;
+
+    const salesUSD = dailySalesSummary.totalSalesCLPExcludingDispatch / exchangeRate;
+    const salesKUSD = salesUSD / 1000;
+    const costUSD = dailySalesSummary.totalCostCLPExcludingDispatch / exchangeRate;
+    const costKUSD = costUSD / 1000;
+
+    return {
+      salesUSD,
+      salesKUSD,
+      costUSD,
+      costKUSD,
+    };
+  }, [dailySalesSummary, exchangeRate]);
 
   const parseInputNumber = (rawValue: string): number | null => {
     const normalized = rawValue.trim().replace(',', '.');
@@ -1783,10 +1816,10 @@ const App: React.FC = () => {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap', marginBottom: '1.5rem' }}>
             <div>
               <h2 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <LineChart size={22} /> Daily Report - Cash Flow
+                <LineChart size={22} /> Daily Report - HQ Analysis
               </h2>
               <p className="text-muted" style={{ fontSize: '0.85rem' }}>
-                Carga el Excel bancario para calcular ingresos/egresos en USD y K USD para envío a HQ.
+                Carga movimientos bancarios y ventas del día para construir el informe diario de Chile en K USD.
               </p>
             </div>
             <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center' }}>
@@ -1800,72 +1833,132 @@ const App: React.FC = () => {
                 accept=".xlsx,.xls"
                 onChange={handleAnalysisFileUpload}
               />
+              <button className="btn btn-primary" style={{ background: 'var(--secondary)' }} onClick={() => salesFileInputRef.current?.click()}>
+                <FileSpreadsheet size={14} /> Cargar Ventas del Día
+              </button>
+              <input
+                type="file"
+                ref={salesFileInputRef}
+                style={{ display: 'none' }}
+                accept=".xlsx,.xls"
+                onChange={handleSalesFileUpload}
+              />
             </div>
           </div>
 
-          {cashFlowSummary && cashFlowMetrics ? (
-            <div style={{ display: 'grid', gap: '1rem' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.75rem' }}>
-                <div className="finance-card">
-                  <div className="text-muted" style={{ fontSize: '0.68rem' }}>CASH-IN TOTAL</div>
-                  <div style={{ fontWeight: 800, fontSize: '1.25rem' }}>{formatKUSD(cashFlowMetrics.incomeKUSD)}</div>
-                  <div className="text-muted" style={{ fontSize: '0.75rem' }}>{formatUSD(cashFlowMetrics.incomeUSD)}</div>
+          <div style={{ display: 'grid', gap: '1.25rem' }}>
+            {cashFlowSummary && cashFlowMetrics ? (
+              <div style={{ display: 'grid', gap: '1rem' }}>
+                <h3 style={{ fontSize: '1rem' }}>Cash Flow (sin cambios)</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.75rem' }}>
+                  <div className="finance-card">
+                    <div className="text-muted" style={{ fontSize: '0.68rem' }}>CASH-IN TOTAL</div>
+                    <div style={{ fontWeight: 800, fontSize: '1.25rem' }}>{formatKUSD(cashFlowMetrics.incomeKUSD)}</div>
+                    <div className="text-muted" style={{ fontSize: '0.75rem' }}>{formatUSD(cashFlowMetrics.incomeUSD)}</div>
+                  </div>
+                  <div className="finance-card">
+                    <div className="text-muted" style={{ fontSize: '0.68rem' }}>CASH-OUT TOTAL</div>
+                    <div style={{ fontWeight: 800, fontSize: '1.25rem' }}>{formatKUSD(cashFlowMetrics.expenseKUSD)}</div>
+                    <div className="text-muted" style={{ fontSize: '0.75rem' }}>{formatUSD(cashFlowMetrics.expenseUSD)}</div>
+                  </div>
+                  <div className="finance-card">
+                    <div className="text-muted" style={{ fontSize: '0.68rem' }}>SALDO FINAL</div>
+                    <div style={{ fontWeight: 800, fontSize: '1.25rem' }}>{formatKUSD(cashFlowMetrics.endingBalanceKUSD)}</div>
+                    <div className="text-muted" style={{ fontSize: '0.75rem' }}>{formatUSD(cashFlowMetrics.endingBalanceUSD)}</div>
+                  </div>
                 </div>
-                <div className="finance-card">
-                  <div className="text-muted" style={{ fontSize: '0.68rem' }}>CASH-OUT TOTAL</div>
-                  <div style={{ fontWeight: 800, fontSize: '1.25rem' }}>{formatKUSD(cashFlowMetrics.expenseKUSD)}</div>
-                  <div className="text-muted" style={{ fontSize: '0.75rem' }}>{formatUSD(cashFlowMetrics.expenseUSD)}</div>
+                <div className="table-container">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Sorting</th>
+                        <th>Description</th>
+                        <th style={{ textAlign: 'right' }}>Accum. (K USD)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>Cash Flow</td>
+                        <td>Beginning Balance (K USD)</td>
+                        <td style={{ textAlign: 'right', fontWeight: 700 }}>{formatKUSD(cashFlowMetrics.beginningBalanceKUSD)}</td>
+                      </tr>
+                      <tr>
+                        <td>Cash Flow</td>
+                        <td>Cash-in (K USD)</td>
+                        <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--success)' }}>{formatKUSD(cashFlowMetrics.incomeKUSD)}</td>
+                      </tr>
+                      <tr>
+                        <td>Cash Flow</td>
+                        <td>Cash-out (K USD)</td>
+                        <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--error)' }}>{formatKUSD(cashFlowMetrics.expenseKUSD)}</td>
+                      </tr>
+                      <tr>
+                        <td>Cash Flow</td>
+                        <td>Remaining Balance (K USD)</td>
+                        <td style={{ textAlign: 'right', fontWeight: 800 }}>{formatKUSD(cashFlowMetrics.endingBalanceKUSD)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
                 </div>
-                <div className="finance-card">
-                  <div className="text-muted" style={{ fontSize: '0.68rem' }}>SALDO FINAL</div>
-                  <div style={{ fontWeight: 800, fontSize: '1.25rem' }}>{formatKUSD(cashFlowMetrics.endingBalanceKUSD)}</div>
-                  <div className="text-muted" style={{ fontSize: '0.75rem' }}>{formatUSD(cashFlowMetrics.endingBalanceUSD)}</div>
+                <div className="text-muted" style={{ fontSize: '0.78rem' }}>
+                  Archivo: <strong>{analysisSourceFile}</strong> | Movimientos: {cashFlowSummary.movementCount} | Rango: {cashFlowSummary.dateFrom || '-'} a {cashFlowSummary.dateTo || '-'} | Dólar aplicado: {exchangeRate}
                 </div>
               </div>
+            ) : (
+              <div style={{ padding: '1rem', border: '1px dashed var(--border)', borderRadius: '12px', background: 'var(--surface)' }}>
+                Carga un archivo de movimientos para calcular automáticamente Cash-in/Cash-out en K USD.
+              </div>
+            )}
 
-              <div className="table-container">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Sorting</th>
-                      <th>Description</th>
-                      <th style={{ textAlign: 'right' }}>Accum. (K USD)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td>Cash Flow</td>
-                      <td>Beginning Balance (K USD)</td>
-                      <td style={{ textAlign: 'right', fontWeight: 700 }}>{formatKUSD(cashFlowMetrics.beginningBalanceKUSD)}</td>
-                    </tr>
-                    <tr>
-                      <td>Cash Flow</td>
-                      <td>Cash-in (K USD)</td>
-                      <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--success)' }}>{formatKUSD(cashFlowMetrics.incomeKUSD)}</td>
-                    </tr>
-                    <tr>
-                      <td>Cash Flow</td>
-                      <td>Cash-out (K USD)</td>
-                      <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--error)' }}>{formatKUSD(cashFlowMetrics.expenseKUSD)}</td>
-                    </tr>
-                    <tr>
-                      <td>Cash Flow</td>
-                      <td>Remaining Balance (K USD)</td>
-                      <td style={{ textAlign: 'right', fontWeight: 800 }}>{formatKUSD(cashFlowMetrics.endingBalanceKUSD)}</td>
-                    </tr>
-                  </tbody>
-                </table>
+            {dailySalesSummary && salesMetrics ? (
+              <div style={{ display: 'grid', gap: '1rem' }}>
+                <h3 style={{ fontSize: '1rem' }}>Sales del Día (sin despacho)</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.75rem' }}>
+                  <div className="finance-card">
+                    <div className="text-muted" style={{ fontSize: '0.68rem' }}>VENTA TOTAL SIN DESPACHO</div>
+                    <div style={{ fontWeight: 800, fontSize: '1.25rem' }}>{formatKUSD(salesMetrics.salesKUSD)}</div>
+                    <div className="text-muted" style={{ fontSize: '0.75rem' }}>{formatUSD(salesMetrics.salesUSD)}</div>
+                  </div>
+                  <div className="finance-card">
+                    <div className="text-muted" style={{ fontSize: '0.68rem' }}>COSTO TOTAL SIN DESPACHO</div>
+                    <div style={{ fontWeight: 800, fontSize: '1.25rem' }}>{formatKUSD(salesMetrics.costKUSD)}</div>
+                    <div className="text-muted" style={{ fontSize: '0.75rem' }}>{formatUSD(salesMetrics.costUSD)}</div>
+                  </div>
+                  <div className="finance-card">
+                    <div className="text-muted" style={{ fontSize: '0.68rem' }}>IMPLANTES TOTALES</div>
+                    <div style={{ fontWeight: 800, fontSize: '1.25rem' }}>{dailySalesSummary.totalImplants.toFixed(0)}</div>
+                    <div className="text-muted" style={{ fontSize: '0.75rem' }}>Unidades</div>
+                  </div>
+                </div>
+                <div className="table-container">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Implante</th>
+                        <th style={{ textAlign: 'right' }}>Cantidad</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr><td>XPEED AnyRidge Internal Fixture [AR]</td><td style={{ textAlign: 'right', fontWeight: 700 }}>{dailySalesSummary.implantsByModel.AR}</td></tr>
+                      <tr><td>AnyOne Internal Fixture [AO]</td><td style={{ textAlign: 'right', fontWeight: 700 }}>{dailySalesSummary.implantsByModel.AO}</td></tr>
+                      <tr><td>ST Internal Fixture [ST]</td><td style={{ textAlign: 'right', fontWeight: 700 }}>{dailySalesSummary.implantsByModel.ST}</td></tr>
+                      <tr><td>BLUEDIAMOND IMPLANT [BD]</td><td style={{ textAlign: 'right', fontWeight: 700 }}>{dailySalesSummary.implantsByModel.BD}</td></tr>
+                      <tr><td>Mini Internal Fixture [MN]</td><td style={{ textAlign: 'right', fontWeight: 700 }}>{dailySalesSummary.implantsByModel.MN}</td></tr>
+                      <tr><td>ARi ExCon Implant [ARiE]</td><td style={{ textAlign: 'right', fontWeight: 700 }}>{dailySalesSummary.implantsByModel.ARiE}</td></tr>
+                      <tr><td><strong>Total Implantes</strong></td><td style={{ textAlign: 'right', fontWeight: 800 }}>{dailySalesSummary.totalImplants}</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div className="text-muted" style={{ fontSize: '0.78rem' }}>
+                  Archivo: <strong>{salesSourceFile}</strong> | Registros: {dailySalesSummary.movementCount} | Rango: {dailySalesSummary.dateFrom || '-'} a {dailySalesSummary.dateTo || '-'} | Dólar aplicado: {exchangeRate}
+                </div>
               </div>
-
-              <div className="text-muted" style={{ fontSize: '0.78rem' }}>
-                Archivo: <strong>{analysisSourceFile}</strong> | Movimientos: {cashFlowSummary.movementCount} | Rango: {cashFlowSummary.dateFrom || '-'} a {cashFlowSummary.dateTo || '-'} | Dólar aplicado: {exchangeRate}
+            ) : (
+              <div style={{ padding: '1rem', border: '1px dashed var(--border)', borderRadius: '12px', background: 'var(--surface)' }}>
+                Carga el archivo de ventas para contar implantes por modelo y calcular venta total sin despacho en K USD.
               </div>
-            </div>
-          ) : (
-            <div style={{ padding: '1rem', border: '1px dashed var(--border)', borderRadius: '12px', background: 'var(--surface)' }}>
-              Carga un archivo de movimientos para calcular automáticamente Cash-in/Cash-out en K USD.
-            </div>
-          )}
+            )}
+          </div>
         </section>
       ) : (
         <section className="glass card" style={{ marginTop: '1rem', textAlign: 'left' }}>
