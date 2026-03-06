@@ -29,6 +29,13 @@ export interface DailySalesSummary {
     totalImplants: number;
 }
 
+export interface ImportItemRaw {
+    sku: string;
+    name: string;
+    quantity: number;
+    unitCost: number;
+}
+
 const normalize = (text: string): string => {
     return text.toString().toLowerCase()
         .normalize("NFD")
@@ -409,6 +416,92 @@ export const parseDailySalesFile = (file: File): Promise<DailySalesSummary> => {
                     implantsByModel,
                     totalImplants,
                 });
+            } catch (error) {
+                reject(error instanceof Error ? error : new Error('No fue posible procesar el archivo.'));
+            }
+        };
+
+        reader.readAsArrayBuffer(file);
+    });
+};
+
+export const parseImportProductsFile = (file: File): Promise<ImportItemRaw[]> => {
+    return new Promise((resolve, reject) => {
+        const extension = file.name.split('.').pop()?.toLowerCase();
+        if (extension !== 'xlsx' && extension !== 'xls' && extension !== 'csv') {
+            reject(new Error('El archivo de importaciones debe ser .xlsx, .xls o .csv.'));
+            return;
+        }
+
+        const mapRowsToImportItems = (rows: Record<string, unknown>[]) => {
+            const items: ImportItemRaw[] = [];
+
+            rows.forEach((row, index) => {
+                const sku = findValue(row, ['sku', 'codigo', 'cod', 'item code']);
+                const name = findValue(row, ['nombre', 'name', 'descripcion', 'description', 'producto', 'item']);
+                const quantity = findValue(row, ['cantidad', 'qty', 'quantity', 'cant']);
+                const unitCost = findValue(row, ['costo', 'cost', 'precio', 'price', 'valor unitario', 'unit cost']);
+
+                const values = Object.values(row);
+                const fallbackSku = values[0];
+                const fallbackName = values[1];
+                const fallbackQty = values[2];
+                const fallbackCost = values[3] ?? extractFallbackCost(values);
+
+                const finalSku = (sku ?? fallbackSku ?? `row-${index + 1}`).toString().trim();
+                const finalName = (name ?? fallbackName ?? '').toString().trim();
+                const finalQty = parseNumber(quantity ?? fallbackQty);
+                const finalUnitCost = parseNumber(unitCost ?? fallbackCost);
+
+                if (!finalName && !finalSku) return;
+                if (finalQty <= 0 || finalUnitCost <= 0) return;
+
+                items.push({
+                    sku: finalSku,
+                    name: finalName || finalSku,
+                    quantity: finalQty,
+                    unitCost: finalUnitCost,
+                });
+            });
+
+            return items;
+        };
+
+        const reader = new FileReader();
+        if (extension === 'csv') {
+            reader.onload = (e) => {
+                const text = e.target?.result as string;
+                Papa.parse(text, {
+                    header: true,
+                    skipEmptyLines: true,
+                    complete: (results: Papa.ParseResult<Record<string, unknown>>) => {
+                        const items = mapRowsToImportItems(results.data);
+                        if (!items.length) {
+                            reject(new Error('No se detectaron productos válidos en el archivo.'));
+                            return;
+                        }
+                        resolve(items);
+                    },
+                    error: (err: Error) => reject(err),
+                });
+            };
+            reader.readAsText(file);
+            return;
+        }
+
+        reader.onload = (e) => {
+            try {
+                const data = new Uint8Array(e.target?.result as ArrayBuffer);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const sheetName = workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[sheetName];
+                const rows = XLSX.utils.sheet_to_json(worksheet) as Record<string, unknown>[];
+                const items = mapRowsToImportItems(rows);
+                if (!items.length) {
+                    reject(new Error('No se detectaron productos válidos en el archivo.'));
+                    return;
+                }
+                resolve(items);
             } catch (error) {
                 reject(error instanceof Error ? error : new Error('No fue posible procesar el archivo.'));
             }

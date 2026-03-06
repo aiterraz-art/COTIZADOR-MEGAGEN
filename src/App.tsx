@@ -1,10 +1,12 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 // Force refresh - Fixed JSX Structure
+import * as XLSX from 'xlsx';
 import { initialProducts } from './data/mockProducts';
 import type { Product } from './data/mockProducts';
-import { parseCashFlowFile, parseDailySalesFile, parseFile } from './utils/fileParser';
+import { parseCashFlowFile, parseDailySalesFile, parseFile, parseImportProductsFile } from './utils/fileParser';
 import type { CashFlowSummary } from './utils/fileParser';
 import type { DailySalesSummary } from './utils/fileParser';
+import type { ImportItemRaw } from './utils/fileParser';
 import { supabase } from './lib/supabase';
 import html2canvas from 'html2canvas';
 import logoMegaGen from './assets/MegaGen.jpg';
@@ -32,7 +34,9 @@ import {
   Users,
   ReceiptText,
   LineChart,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Ship,
+  Download
 } from 'lucide-react';
 
 const CUSTOM_CATEGORIES_STORAGE_KEY = 'megagen.customCategories';
@@ -42,6 +46,14 @@ const CASH_FLOW_SUMMARY_STORAGE_KEY = 'megagen.analysis.cashFlowSummary';
 const CASH_FLOW_FILE_STORAGE_KEY = 'megagen.analysis.cashFlowFileName';
 const DAILY_SALES_SUMMARY_STORAGE_KEY = 'megagen.analysis.dailySalesSummary';
 const DAILY_SALES_FILE_STORAGE_KEY = 'megagen.analysis.dailySalesFileName';
+const IMPORT_CURRENCY_STORAGE_KEY = 'megagen.import.currency';
+const EURO_RATE_STORAGE_KEY = 'megagen.euroRate';
+const EURO_RATE_UPDATED_STORAGE_KEY = 'megagen.euroRateUpdatedAt';
+const IMPORT_ITEMS_STORAGE_KEY = 'megagen.import.items';
+const IMPORT_FILE_STORAGE_KEY = 'megagen.import.fileName';
+const IMPORT_SHIPPING_STORAGE_KEY = 'megagen.import.shipping';
+const IMPORT_CUSTOMS_STORAGE_KEY = 'megagen.import.customs';
+const IMPORT_MARGIN_STORAGE_KEY = 'megagen.import.margin';
 
 const readStoredJSON = <T,>(key: string): T | null => {
   try {
@@ -76,7 +88,18 @@ interface SavedQuotation {
   items: Array<{ name: string; qty: number; cost_usd: number; category?: string }>;
 }
 
-type ModuleKey = 'cotizador' | 'analysis' | 'crm' | 'clientes' | 'facturacion';
+type ModuleKey = 'cotizador' | 'analysis' | 'imports' | 'crm' | 'clientes' | 'facturacion';
+
+interface ImportItemCalculated extends ImportItemRaw {
+  baseTotalForeign: number;
+  baseTotalCLP: number;
+  shippingCLPAllocated: number;
+  customsCLPAllocated: number;
+  landedTotalCLP: number;
+  landedUnitCLP: number;
+  suggestedNetUnitCLP: number;
+  suggestedIvaUnitCLP: number;
+}
 
 const App: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
@@ -95,6 +118,7 @@ const App: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const analysisFileInputRef = useRef<HTMLInputElement>(null);
   const salesFileInputRef = useRef<HTMLInputElement>(null);
+  const importFileInputRef = useRef<HTMLInputElement>(null);
 
   // Quotations Manager State
   const [activeTab, setActiveTab] = useState<'simulator' | 'history'>('simulator');
@@ -115,6 +139,21 @@ const App: React.FC = () => {
   const [hqCreditActualKUSD, setHqCreditActualKUSD] = useState<number>(0);
   const [copiedReport, setCopiedReport] = useState(false);
   const [copiedMetricKey, setCopiedMetricKey] = useState('');
+  const [importCurrency, setImportCurrency] = useState<'USD' | 'EUR'>(() => {
+    const stored = localStorage.getItem(IMPORT_CURRENCY_STORAGE_KEY);
+    return stored === 'EUR' ? 'EUR' : 'USD';
+  });
+  const [euroRate, setEuroRate] = useState<number>(() => {
+    const storedRate = Number(localStorage.getItem(EURO_RATE_STORAGE_KEY));
+    return Number.isFinite(storedRate) && storedRate > 0 ? storedRate : 1050;
+  });
+  const [euroLastUpdated, setEuroLastUpdated] = useState<string>(() => localStorage.getItem(EURO_RATE_UPDATED_STORAGE_KEY) || '');
+  const [euroFetchError, setEuroFetchError] = useState(false);
+  const [importItems, setImportItems] = useState<ImportItemRaw[]>(() => readStoredJSON<ImportItemRaw[]>(IMPORT_ITEMS_STORAGE_KEY) || []);
+  const [importSourceFile, setImportSourceFile] = useState(() => localStorage.getItem(IMPORT_FILE_STORAGE_KEY) || '');
+  const [shippingCostCLP, setShippingCostCLP] = useState<number>(() => Number(localStorage.getItem(IMPORT_SHIPPING_STORAGE_KEY)) || 0);
+  const [customsCostCLP, setCustomsCostCLP] = useState<number>(() => Number(localStorage.getItem(IMPORT_CUSTOMS_STORAGE_KEY)) || 0);
+  const [targetGrossMarginPercentImport, setTargetGrossMarginPercentImport] = useState<number>(() => Number(localStorage.getItem(IMPORT_MARGIN_STORAGE_KEY)) || 50);
 
   // Manual Product Creation
   const [showCreateProductModal, setShowCreateProductModal] = useState(false);
@@ -186,6 +225,42 @@ const App: React.FC = () => {
     localStorage.setItem(DAILY_SALES_FILE_STORAGE_KEY, salesSourceFile);
   }, [salesSourceFile]);
 
+  useEffect(() => {
+    localStorage.setItem(IMPORT_CURRENCY_STORAGE_KEY, importCurrency);
+  }, [importCurrency]);
+
+  useEffect(() => {
+    localStorage.setItem(EURO_RATE_STORAGE_KEY, String(euroRate));
+  }, [euroRate]);
+
+  useEffect(() => {
+    localStorage.setItem(EURO_RATE_UPDATED_STORAGE_KEY, euroLastUpdated);
+  }, [euroLastUpdated]);
+
+  useEffect(() => {
+    if (importItems.length > 0) {
+      localStorage.setItem(IMPORT_ITEMS_STORAGE_KEY, JSON.stringify(importItems));
+    } else {
+      localStorage.removeItem(IMPORT_ITEMS_STORAGE_KEY);
+    }
+  }, [importItems]);
+
+  useEffect(() => {
+    localStorage.setItem(IMPORT_FILE_STORAGE_KEY, importSourceFile);
+  }, [importSourceFile]);
+
+  useEffect(() => {
+    localStorage.setItem(IMPORT_SHIPPING_STORAGE_KEY, String(shippingCostCLP));
+  }, [shippingCostCLP]);
+
+  useEffect(() => {
+    localStorage.setItem(IMPORT_CUSTOMS_STORAGE_KEY, String(customsCostCLP));
+  }, [customsCostCLP]);
+
+  useEffect(() => {
+    localStorage.setItem(IMPORT_MARGIN_STORAGE_KEY, String(targetGrossMarginPercentImport));
+  }, [targetGrossMarginPercentImport]);
+
   const fetchExchangeRate = async (retries = 2) => {
     setIsLoading(true);
     setFetchError(false);
@@ -211,6 +286,34 @@ const App: React.FC = () => {
       } else {
         setFetchError(true);
         // Silent error, no alert()
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const fetchEuroRate = async (retries = 2) => {
+    setIsLoading(true);
+    setEuroFetchError(false);
+    try {
+      const response = await fetch(`https://mindicador.cl/api/euro?t=${Date.now()}`);
+      if (!response.ok) throw new Error('API Response not OK');
+
+      const data = await response.json();
+      if (data.serie && data.serie.length > 0) {
+        const rate = data.serie[0].valor;
+        const date = new Date(data.serie[0].fecha).toLocaleDateString('es-CL');
+        setEuroRate(rate);
+        setEuroLastUpdated(date);
+      } else {
+        throw new Error('No data in series');
+      }
+    } catch (error) {
+      console.error('Error fetching euro rate:', error);
+      if (retries > 0) {
+        setTimeout(() => fetchEuroRate(retries - 1), 2000);
+      } else {
+        setEuroFetchError(true);
       }
     } finally {
       setIsLoading(false);
@@ -945,6 +1048,27 @@ const App: React.FC = () => {
     }
   };
 
+  const handleImportFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const items = await parseImportProductsFile(file);
+      setImportItems(items);
+      setImportSourceFile(file.name);
+    } catch (error) {
+      alert('Error al procesar archivo de importaciones: ' + (error as Error).message);
+    }
+  };
+
+  const formatImportCurrency = (value: number) => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: importCurrency,
+      maximumFractionDigits: 2
+    }).format(value);
+  };
+
   const copyKoreaReport = async () => {
     try {
       await navigator.clipboard.writeText(koreaCopyText);
@@ -963,6 +1087,57 @@ const App: React.FC = () => {
     } catch {
       alert('No fue posible copiar al portapapeles.');
     }
+  };
+
+  const downloadImportCalculation = () => {
+    if (!importCalculatedItems.length) {
+      alert('Primero carga un archivo de importaciones.');
+      return;
+    }
+
+    const rows = importCalculatedItems.map((item) => ({
+      SKU: item.sku,
+      Producto: item.name,
+      Cantidad: item.quantity,
+      Moneda: importCurrency,
+      'Costo Unitario Moneda': Number(item.unitCost.toFixed(4)),
+      'Costo Total Moneda': Number(item.baseTotalForeign.toFixed(4)),
+      'Tipo Cambio CLP': Number(importFxRate.toFixed(4)),
+      'Costo Base CLP': Math.round(item.baseTotalCLP),
+      'Flete Asignado CLP': Math.round(item.shippingCLPAllocated),
+      'Aduana Asignada CLP': Math.round(item.customsCLPAllocated),
+      'Costo Puesto Chile Total CLP': Math.round(item.landedTotalCLP),
+      'Costo Puesto Chile Unit CLP': Math.round(item.landedUnitCLP),
+      'Precio Venta Neto Unit CLP': Math.round(item.suggestedNetUnitCLP),
+      'Precio Venta Unit con IVA CLP': Math.round(item.suggestedIvaUnitCLP),
+      'Precio Venta Neto Total CLP': Math.round(item.suggestedNetUnitCLP * item.quantity),
+      'Precio Venta Total con IVA CLP': Math.round(item.suggestedIvaUnitCLP * item.quantity),
+    }));
+
+    rows.push({
+      SKU: 'TOTAL',
+      Producto: '',
+      Cantidad: importTotals.totalQty,
+      Moneda: importCurrency,
+      'Costo Unitario Moneda': 0,
+      'Costo Total Moneda': Number(importTotals.baseForeign.toFixed(4)),
+      'Tipo Cambio CLP': Number(importFxRate.toFixed(4)),
+      'Costo Base CLP': Math.round(importTotals.baseCLP),
+      'Flete Asignado CLP': Math.round(shippingCostCLP),
+      'Aduana Asignada CLP': Math.round(customsCostCLP),
+      'Costo Puesto Chile Total CLP': Math.round(importTotals.landedCLP),
+      'Costo Puesto Chile Unit CLP': 0,
+      'Precio Venta Neto Unit CLP': 0,
+      'Precio Venta Unit con IVA CLP': 0,
+      'Precio Venta Neto Total CLP': Math.round(importTotals.suggestedNetCLP),
+      'Precio Venta Total con IVA CLP': Math.round(importTotals.suggestedIvaCLP),
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Importaciones');
+    const fileStamp = new Date().toISOString().slice(0, 10);
+    XLSX.writeFile(workbook, `importaciones-calculadas-${fileStamp}.xlsx`);
   };
 
   const addItem = (product: Product) => {
@@ -1049,6 +1224,63 @@ const App: React.FC = () => {
       costKUSD,
     };
   }, [dailySalesSummary, exchangeRate]);
+
+  const importFxRate = importCurrency === 'USD' ? exchangeRate : euroRate;
+
+  const importCalculatedItems = useMemo<ImportItemCalculated[]>(() => {
+    if (!importItems.length || importFxRate <= 0) return [];
+
+    const baseRows = importItems.map((item) => {
+      const baseTotalForeign = item.quantity * item.unitCost;
+      const baseTotalCLP = baseTotalForeign * importFxRate;
+      return {
+        ...item,
+        baseTotalForeign,
+        baseTotalCLP,
+      };
+    });
+
+    const baseTotalAllCLP = baseRows.reduce((acc, row) => acc + row.baseTotalCLP, 0);
+    const marginRatio = Math.min(0.99, Math.max(0, targetGrossMarginPercentImport / 100));
+    const divisor = 1 - marginRatio;
+
+    return baseRows.map((row) => {
+      const weight = baseTotalAllCLP > 0 ? row.baseTotalCLP / baseTotalAllCLP : 0;
+      const shippingCLPAllocated = shippingCostCLP * weight;
+      const customsCLPAllocated = customsCostCLP * weight;
+      const landedTotalCLP = row.baseTotalCLP + shippingCLPAllocated + customsCLPAllocated;
+      const landedUnitCLP = row.quantity > 0 ? landedTotalCLP / row.quantity : 0;
+      const suggestedNetUnitCLP = divisor > 0 ? landedUnitCLP / divisor : landedUnitCLP;
+      const suggestedIvaUnitCLP = suggestedNetUnitCLP * 1.19;
+
+      return {
+        ...row,
+        shippingCLPAllocated,
+        customsCLPAllocated,
+        landedTotalCLP,
+        landedUnitCLP,
+        suggestedNetUnitCLP,
+        suggestedIvaUnitCLP,
+      };
+    });
+  }, [importItems, importFxRate, shippingCostCLP, customsCostCLP, targetGrossMarginPercentImport]);
+
+  const importTotals = useMemo(() => {
+    const baseForeign = importCalculatedItems.reduce((acc, row) => acc + row.baseTotalForeign, 0);
+    const baseCLP = importCalculatedItems.reduce((acc, row) => acc + row.baseTotalCLP, 0);
+    const landedCLP = importCalculatedItems.reduce((acc, row) => acc + row.landedTotalCLP, 0);
+    const suggestedNetCLP = importCalculatedItems.reduce((acc, row) => acc + (row.suggestedNetUnitCLP * row.quantity), 0);
+    const suggestedIvaCLP = importCalculatedItems.reduce((acc, row) => acc + (row.suggestedIvaUnitCLP * row.quantity), 0);
+    const totalQty = importCalculatedItems.reduce((acc, row) => acc + row.quantity, 0);
+    return {
+      baseForeign,
+      baseCLP,
+      landedCLP,
+      suggestedNetCLP,
+      suggestedIvaCLP,
+      totalQty,
+    };
+  }, [importCalculatedItems]);
 
   const dayLabel = useMemo(() => {
     if (!reportDate) return 'Today';
@@ -1157,6 +1389,13 @@ const App: React.FC = () => {
         name: 'Análisis Diario',
         description: 'Consolidado operativo y reporte para HQ Korea.',
         icon: <LineChart size={18} />,
+        isReady: true
+      },
+      {
+        key: 'imports',
+        name: 'Importaciones',
+        description: 'Costo puesto en Chile, margen y precios de venta.',
+        icon: <Ship size={18} />,
         isReady: true
       },
       {
@@ -1951,6 +2190,172 @@ const App: React.FC = () => {
         )
       }
         </>
+      ) : activeModule === 'imports' ? (
+        <section className="glass card" style={{ marginTop: '1rem', textAlign: 'left' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap', marginBottom: '1.25rem' }}>
+            <div>
+              <h2 style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
+                <Ship size={22} /> Cálculo de Importaciones
+              </h2>
+              <p className="text-muted" style={{ fontSize: '0.85rem' }}>
+                Carga productos y calcula costo puesto en Chile, precio neto sugerido y precio con IVA.
+              </p>
+            </div>
+            <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center', flexWrap: 'wrap' }}>
+              <button className="btn btn-primary" onClick={() => importFileInputRef.current?.click()}>
+                <FileSpreadsheet size={14} /> Cargar Archivo de Importación
+              </button>
+              <input
+                type="file"
+                ref={importFileInputRef}
+                style={{ display: 'none' }}
+                accept=".xlsx,.xls,.csv"
+                onChange={handleImportFileUpload}
+              />
+              <button className="btn" onClick={downloadImportCalculation} style={{ background: 'var(--accent)', color: 'white' }}>
+                <Download size={14} /> Descargar Archivo Final
+              </button>
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gap: '0.9rem', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', marginBottom: '1rem' }}>
+            <div className="finance-card">
+              <div className="text-muted" style={{ fontSize: '0.7rem', marginBottom: '0.45rem' }}>MONEDA DE COSTO</div>
+              <div style={{ display: 'flex', gap: '0.4rem' }}>
+                <button
+                  className="btn"
+                  style={{ background: importCurrency === 'USD' ? 'var(--primary)' : 'var(--surface)', color: importCurrency === 'USD' ? 'white' : 'var(--text)' }}
+                  onClick={() => setImportCurrency('USD')}
+                >
+                  USD
+                </button>
+                <button
+                  className="btn"
+                  style={{ background: importCurrency === 'EUR' ? 'var(--primary)' : 'var(--surface)', color: importCurrency === 'EUR' ? 'white' : 'var(--text)' }}
+                  onClick={() => setImportCurrency('EUR')}
+                >
+                  EUR
+                </button>
+              </div>
+            </div>
+
+            <div className="finance-card">
+              <div className="text-muted" style={{ fontSize: '0.7rem', marginBottom: '0.45rem' }}>VALOR EURO (CLP)</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                <input
+                  type="number"
+                  className="input-field"
+                  style={{ width: '100px', textAlign: 'right' }}
+                  value={euroRate}
+                  onChange={(e) => setEuroRate(parseFloat(e.target.value) || 0)}
+                />
+                <button className="btn" onClick={() => fetchEuroRate()} style={{ padding: '0.45rem 0.55rem' }} title="Actualizar euro mercado">
+                  <RefreshCw size={14} className={isLoading ? "text-muted animate-spin" : "text-muted"} />
+                </button>
+              </div>
+              <div className="text-muted" style={{ fontSize: '0.68rem', marginTop: '0.3rem' }}>
+                {euroFetchError ? 'Error actualizando euro' : `Actualizado: ${euroLastUpdated || 'manual'}`}
+              </div>
+            </div>
+
+            <label className="finance-card" style={{ display: 'block' }}>
+              <div className="text-muted" style={{ fontSize: '0.7rem', marginBottom: '0.45rem' }}>COSTO TOTAL FLETE (CLP)</div>
+              <input
+                type="number"
+                className="input-field"
+                value={shippingCostCLP}
+                onChange={(e) => setShippingCostCLP(parseFloat(e.target.value) || 0)}
+              />
+            </label>
+
+            <label className="finance-card" style={{ display: 'block' }}>
+              <div className="text-muted" style={{ fontSize: '0.7rem', marginBottom: '0.45rem' }}>COSTO TOTAL ADUANA (CLP)</div>
+              <input
+                type="number"
+                className="input-field"
+                value={customsCostCLP}
+                onChange={(e) => setCustomsCostCLP(parseFloat(e.target.value) || 0)}
+              />
+            </label>
+
+            <label className="finance-card" style={{ display: 'block' }}>
+              <div className="text-muted" style={{ fontSize: '0.7rem', marginBottom: '0.45rem' }}>MARGEN BRUTO OBJETIVO (%)</div>
+              <input
+                type="number"
+                className="input-field"
+                value={targetGrossMarginPercentImport}
+                onChange={(e) => setTargetGrossMarginPercentImport(parseFloat(e.target.value) || 0)}
+              />
+            </label>
+          </div>
+
+          <div style={{ display: 'grid', gap: '0.75rem', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', marginBottom: '1rem' }}>
+            <div className="finance-card">
+              <div className="text-muted" style={{ fontSize: '0.68rem' }}>TOTAL BASE ({importCurrency})</div>
+              <div style={{ fontWeight: 800, fontSize: '1.15rem' }}>{formatImportCurrency(importTotals.baseForeign)}</div>
+            </div>
+            <div className="finance-card">
+              <div className="text-muted" style={{ fontSize: '0.68rem' }}>TOTAL COSTO PUESTO CHILE (CLP)</div>
+              <div style={{ fontWeight: 800, fontSize: '1.15rem' }}>{formatCLP(importTotals.landedCLP)}</div>
+            </div>
+            <div className="finance-card">
+              <div className="text-muted" style={{ fontSize: '0.68rem' }}>TOTAL VENTA NETA SUGERIDA (CLP)</div>
+              <div style={{ fontWeight: 800, fontSize: '1.15rem' }}>{formatCLP(importTotals.suggestedNetCLP)}</div>
+            </div>
+            <div className="finance-card">
+              <div className="text-muted" style={{ fontSize: '0.68rem' }}>TOTAL VENTA CON IVA (CLP)</div>
+              <div style={{ fontWeight: 800, fontSize: '1.15rem' }}>{formatCLP(importTotals.suggestedIvaCLP)}</div>
+            </div>
+          </div>
+
+          {importCalculatedItems.length > 0 ? (
+            <>
+              <div className="table-container">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>SKU</th>
+                      <th>Producto</th>
+                      <th style={{ textAlign: 'right' }}>Cant.</th>
+                      <th style={{ textAlign: 'right' }}>Costo Unit ({importCurrency})</th>
+                      <th style={{ textAlign: 'right' }}>Costo Total ({importCurrency})</th>
+                      <th style={{ textAlign: 'right' }}>Base CLP</th>
+                      <th style={{ textAlign: 'right' }}>Flete CLP</th>
+                      <th style={{ textAlign: 'right' }}>Aduana CLP</th>
+                      <th style={{ textAlign: 'right' }}>Costo Puesto Unit CLP</th>
+                      <th style={{ textAlign: 'right' }}>Venta Neta Unit CLP</th>
+                      <th style={{ textAlign: 'right' }}>Venta Unit c/IVA CLP</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {importCalculatedItems.map((item, idx) => (
+                      <tr key={`${item.sku}-${idx}`}>
+                        <td>{item.sku}</td>
+                        <td>{item.name}</td>
+                        <td style={{ textAlign: 'right' }}>{item.quantity}</td>
+                        <td style={{ textAlign: 'right' }}>{formatImportCurrency(item.unitCost)}</td>
+                        <td style={{ textAlign: 'right' }}>{formatImportCurrency(item.baseTotalForeign)}</td>
+                        <td style={{ textAlign: 'right' }}>{formatCLP(item.baseTotalCLP)}</td>
+                        <td style={{ textAlign: 'right' }}>{formatCLP(item.shippingCLPAllocated)}</td>
+                        <td style={{ textAlign: 'right' }}>{formatCLP(item.customsCLPAllocated)}</td>
+                        <td style={{ textAlign: 'right', fontWeight: 700 }}>{formatCLP(item.landedUnitCLP)}</td>
+                        <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--primary)' }}>{formatCLP(item.suggestedNetUnitCLP)}</td>
+                        <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--success)' }}>{formatCLP(item.suggestedIvaUnitCLP)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="text-muted" style={{ fontSize: '0.78rem', marginTop: '0.6rem' }}>
+                Archivo: <strong>{importSourceFile}</strong> | Productos: {importCalculatedItems.length} | Moneda: {importCurrency} | Tipo de cambio aplicado: {importFxRate.toFixed(2)} CLP
+              </div>
+            </>
+          ) : (
+            <div style={{ padding: '1rem', border: '1px dashed var(--border)', borderRadius: '12px', background: 'var(--surface)' }}>
+              Carga un archivo de importación con columnas de SKU, nombre, cantidad y costo para calcular precios.
+            </div>
+          )}
+        </section>
       ) : activeModule === 'analysis' ? (
         <section className="glass card" style={{ marginTop: '1rem', textAlign: 'left' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap', marginBottom: '1.5rem' }}>
