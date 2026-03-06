@@ -1113,55 +1113,91 @@ const App: React.FC = () => {
       return;
     }
 
-    const rows = importCalculatedItems.map((item) => ({
-      SKU: item.sku,
-      Producto: item.name,
-      Cantidad: item.quantity,
-      Moneda: importCurrency,
-      'Costo Unitario Moneda': Number(item.unitCost.toFixed(4)),
-      'Costo Total Moneda': Number(item.baseTotalForeign.toFixed(4)),
-      'Tipo Cambio CLP': Number(importFxRate.toFixed(4)),
-      'Costo Base CLP': Math.round(item.baseTotalCLP),
-      'Flete Asignado CLP': Math.round(item.shippingCLPAllocated),
-      'Aduana Asignada CLP': Math.round(item.customsCLPAllocated),
-      'Costo Puesto Chile Total CLP': Math.round(item.landedTotalCLP),
-      'Costo Puesto Chile Unit CLP': Math.round(item.landedUnitCLP),
-      'Precio Venta Neto Unit CLP': Math.round(item.suggestedNetUnitCLP),
-      'Precio Venta Unit con IVA CLP': Math.round(item.suggestedIvaUnitCLP),
-    }));
-
-    rows.push({
-      SKU: 'TOTAL',
-      Producto: '',
-      Cantidad: importTotals.totalQty,
-      Moneda: importCurrency,
-      'Costo Unitario Moneda': 0,
-      'Costo Total Moneda': Number(importTotals.baseForeign.toFixed(4)),
-      'Tipo Cambio CLP': Number(importFxRate.toFixed(4)),
-      'Costo Base CLP': Math.round(importTotals.baseCLP),
-      'Flete Asignado CLP': Math.round(shippingCostInCLP),
-      'Aduana Asignada CLP': Math.round(customsCostCLP),
-      'Costo Puesto Chile Total CLP': Math.round(importTotals.landedCLP),
-      'Costo Puesto Chile Unit CLP': 0,
-      'Precio Venta Neto Unit CLP': 0,
-      'Precio Venta Unit con IVA CLP': 0,
-    });
+    const headerRow = 12;
+    const dataStartRow = headerRow + 1;
+    const dataEndRow = dataStartRow + importItems.length - 1;
+    const totalRow = dataEndRow + 1;
+    const hRange = `$H$${dataStartRow}:$H$${dataEndRow}`;
 
     const summaryRows: Array<Array<string | number>> = [
       ['Resumen Costos de Importacion'],
       ['Archivo fuente', importSourceFile || '-'],
-      ['Moneda productos', importCurrency],
-      ['Tipo cambio aplicado productos (CLP)', Number(importFxRate.toFixed(4))],
-      ['Gasto de envio', `${Number(shippingCostCLP.toFixed(4))} ${shippingCurrency}`],
-      ['Gasto de envio convertido a CLP', Math.round(shippingCostInCLP)],
-      ['Gasto de aduana (CLP)', Math.round(customsCostCLP)],
+      ['USD Importacion (CLP)', Number(importUsdRate.toFixed(4))],
+      ['EUR (CLP)', Number(euroRate.toFixed(4))],
+      ['Moneda flete', shippingCurrency],
+      ['Gasto envio original', Number(shippingCostCLP.toFixed(4))],
+      ['Gasto envio convertido CLP', ''],
+      ['Gasto aduana (CLP)', Math.round(customsCostCLP)],
       ['Margen bruto objetivo (%)', Number(targetGrossMarginPercentImport.toFixed(2))],
       [''],
       ['Tabla de productos y precios calculados'],
+      ['SKU', 'Producto', 'Cantidad', 'Moneda', 'Costo Unitario Moneda', 'Costo Total Moneda', 'Tipo Cambio CLP', 'Costo Base CLP', 'Flete Asignado CLP', 'Aduana Asignada CLP', 'Costo Puesto Chile Total CLP', 'Costo Puesto Chile Unit CLP', 'Precio Venta Neto Unit CLP', 'Precio Venta Unit con IVA CLP'],
     ];
 
-    const worksheet = XLSX.utils.aoa_to_sheet(summaryRows);
-    XLSX.utils.sheet_add_json(worksheet, rows, { origin: 'A12' });
+    const dataRows = importItems.map((item) => ([
+      item.sku,
+      item.name,
+      item.quantity,
+      importCurrency,
+      Number(item.unitCost.toFixed(4)),
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+    ]));
+
+    const totalRowData: Array<string | number | null> = [
+      'TOTAL',
+      '',
+      null,
+      '',
+      '',
+      null,
+      '',
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+    ];
+
+    const worksheet = XLSX.utils.aoa_to_sheet([...summaryRows, ...dataRows, totalRowData]);
+
+    worksheet.B7 = {
+      t: 'n',
+      f: '=IF(B5="USD",B6*B3,IF(B5="EUR",B6*B4,B6))'
+    };
+
+    for (let i = 0; i < importItems.length; i += 1) {
+      const row = dataStartRow + i;
+      worksheet[`F${row}`] = { t: 'n', f: `=C${row}*E${row}` };
+      worksheet[`G${row}`] = { t: 'n', f: `=IF(D${row}="USD",$B$3,IF(D${row}="EUR",$B$4,1))` };
+      worksheet[`H${row}`] = { t: 'n', f: `=F${row}*G${row}` };
+      worksheet[`I${row}`] = { t: 'n', f: `=IF(SUM(${hRange})=0,0,$B$7*H${row}/SUM(${hRange}))` };
+      worksheet[`J${row}`] = { t: 'n', f: `=IF(SUM(${hRange})=0,0,$B$8*H${row}/SUM(${hRange}))` };
+      worksheet[`K${row}`] = { t: 'n', f: `=H${row}+I${row}+J${row}` };
+      worksheet[`L${row}`] = { t: 'n', f: `=IF(C${row}=0,0,K${row}/C${row})` };
+      worksheet[`M${row}`] = { t: 'n', f: `=IF(1-$B$9/100<=0,L${row},L${row}/(1-$B$9/100))` };
+      worksheet[`N${row}`] = { t: 'n', f: `=M${row}*1.19` };
+    }
+
+    worksheet[`C${totalRow}`] = { t: 'n', f: `=SUM(C${dataStartRow}:C${dataEndRow})` };
+    worksheet[`F${totalRow}`] = { t: 'n', f: `=SUM(F${dataStartRow}:F${dataEndRow})` };
+    worksheet[`H${totalRow}`] = { t: 'n', f: `=SUM(H${dataStartRow}:H${dataEndRow})` };
+    worksheet[`I${totalRow}`] = { t: 'n', f: `=SUM(I${dataStartRow}:I${dataEndRow})` };
+    worksheet[`J${totalRow}`] = { t: 'n', f: `=SUM(J${dataStartRow}:J${dataEndRow})` };
+    worksheet[`K${totalRow}`] = { t: 'n', f: `=SUM(K${dataStartRow}:K${dataEndRow})` };
+    worksheet[`L${totalRow}`] = { t: 'n', f: `=IF(C${totalRow}=0,0,K${totalRow}/C${totalRow})` };
+    worksheet[`M${totalRow}`] = { t: 'n', f: `=IF(C${totalRow}=0,0,SUMPRODUCT(M${dataStartRow}:M${dataEndRow},C${dataStartRow}:C${dataEndRow})/C${totalRow})` };
+    worksheet[`N${totalRow}`] = { t: 'n', f: `=IF(C${totalRow}=0,0,SUMPRODUCT(N${dataStartRow}:N${dataEndRow},C${dataStartRow}:C${dataEndRow})/C${totalRow})` };
+
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Importaciones');
     const fileStamp = new Date().toISOString().slice(0, 10);
