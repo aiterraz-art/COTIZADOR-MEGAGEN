@@ -7,6 +7,7 @@ import { parseCashFlowFile, parseDailySalesFile, parseFile, parseImportProductsF
 import type { CashFlowSummary } from './utils/fileParser';
 import type { DailySalesSummary } from './utils/fileParser';
 import type { ImportItemRaw } from './utils/fileParser';
+import { parseImportItemsFromPdf } from './utils/pdfImportParser';
 import { supabase } from './lib/supabase';
 import html2canvas from 'html2canvas';
 import logoMegaGen from './assets/MegaGen.jpg';
@@ -121,6 +122,7 @@ const App: React.FC = () => {
   const analysisFileInputRef = useRef<HTMLInputElement>(null);
   const salesFileInputRef = useRef<HTMLInputElement>(null);
   const importFileInputRef = useRef<HTMLInputElement>(null);
+  const importPdfInputRef = useRef<HTMLInputElement>(null);
 
   // Quotations Manager State
   const [activeTab, setActiveTab] = useState<'simulator' | 'history'>('simulator');
@@ -1076,6 +1078,29 @@ const App: React.FC = () => {
       setImportSourceFile(file.name);
     } catch (error) {
       alert('Error al procesar archivo de importaciones: ' + (error as Error).message);
+    }
+  };
+
+  const handleImportPdfUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const pdfItems = await parseImportItemsFromPdf(file);
+      if (!pdfItems.length) {
+        alert('No se pudieron detectar filas de productos en el PDF. Revisa el formato o sube Excel.');
+        return;
+      }
+      const mapped: ImportItemRaw[] = pdfItems.map((item) => ({
+        sku: item.sku,
+        name: item.name,
+        quantity: item.quantity,
+        unitCost: item.value,
+      }));
+      setImportItems(mapped);
+      setImportSourceFile(file.name);
+    } catch (error) {
+      alert('Error al procesar PDF de importaciones: ' + (error as Error).message);
     }
   };
 
@@ -2280,6 +2305,16 @@ const App: React.FC = () => {
                 style={{ display: 'none' }}
                 accept=".xlsx,.xls,.csv"
                 onChange={handleImportFileUpload}
+              />
+              <button className="btn btn-primary" style={{ background: 'var(--secondary)' }} onClick={() => importPdfInputRef.current?.click()}>
+                <FileSpreadsheet size={14} /> Cargar PDF
+              </button>
+              <input
+                type="file"
+                ref={importPdfInputRef}
+                style={{ display: 'none' }}
+                accept=".pdf"
+                onChange={handleImportPdfUpload}
               />
               <button className="btn" onClick={downloadImportCalculation} style={{ background: 'var(--accent)', color: 'white' }}>
                 <Download size={14} /> Descargar Archivo Final
