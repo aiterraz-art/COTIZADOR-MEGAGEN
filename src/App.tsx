@@ -94,6 +94,7 @@ const App: React.FC = () => {
   const [hqCreditTargetKUSD, setHqCreditTargetKUSD] = useState<number>(0);
   const [hqCreditActualKUSD, setHqCreditActualKUSD] = useState<number>(0);
   const [copiedReport, setCopiedReport] = useState(false);
+  const [copiedMetricKey, setCopiedMetricKey] = useState('');
 
   // Manual Product Creation
   const [showCreateProductModal, setShowCreateProductModal] = useState(false);
@@ -908,6 +909,16 @@ const App: React.FC = () => {
       setTimeout(() => setCopiedReport(false), 1500);
     } catch {
       alert('No fue posible copiar automáticamente. Puedes copiar el texto manualmente.');
+    }
+  };
+
+  const copyMetricValue = async (key: string, value: number, decimals = 2) => {
+    try {
+      await navigator.clipboard.writeText(value.toFixed(decimals));
+      setCopiedMetricKey(key);
+      setTimeout(() => setCopiedMetricKey(''), 1200);
+    } catch {
+      alert('No fue posible copiar al portapapeles.');
     }
   };
 
@@ -1974,6 +1985,75 @@ const App: React.FC = () => {
               />
               <div className="text-muted" style={{ marginTop: '0.5rem', fontSize: '0.75rem' }}>
                 Copia y pega directo en Excel. El formato es TSV (columnas separadas por tabulación).
+              </div>
+            </div>
+
+            <div className="finance-card" style={{ padding: '1rem' }}>
+              <h3 style={{ fontSize: '1rem', marginBottom: '0.8rem' }}>Copia Rápida de Índices</h3>
+              <div style={{ display: 'grid', gap: '0.55rem' }}>
+                {[
+                  {
+                    key: 'sales_actual_kusd',
+                    label: 'Sales - Actual (K USD)',
+                    value: salesMetrics?.salesKUSD ?? 0,
+                    decimals: 2,
+                  },
+                  {
+                    key: 'collection_actual_kusd',
+                    label: 'Collection - Actual (K USD) / Cash-in',
+                    value: cashFlowMetrics?.incomeKUSD ?? 0,
+                    decimals: 2,
+                  },
+                  {
+                    key: 'fx_actual_ea',
+                    label: 'FX Sales - Actual (EA)',
+                    value: dailySalesSummary?.totalImplants ?? 0,
+                    decimals: 0,
+                  },
+                  {
+                    key: 'cash_out_kusd',
+                    label: 'Cash Flow - Cash-out (K USD)',
+                    value: cashFlowMetrics?.expenseKUSD ?? 0,
+                    decimals: 2,
+                  },
+                ].map((metric) => (
+                  <div key={metric.key} style={{
+                    display: 'grid',
+                    gridTemplateColumns: '1.4fr auto auto',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    padding: '0.45rem 0.55rem',
+                    border: '1px solid var(--border)',
+                    borderRadius: '8px',
+                    background: '#fff'
+                  }}>
+                    <div style={{ fontSize: '0.82rem' }}>{metric.label}</div>
+                    <button
+                      className="btn"
+                      style={{ fontSize: '0.85rem', padding: '0.25rem 0.45rem', background: 'var(--surface)', border: '1px solid var(--border)' }}
+                      onClick={() => copyMetricValue(metric.key, metric.value, metric.decimals)}
+                      title="Copiar valor"
+                    >
+                      <Copy size={13} />
+                    </button>
+                    <button
+                      className="btn"
+                      style={{
+                        fontSize: '0.9rem',
+                        padding: '0.25rem 0.55rem',
+                        background: copiedMetricKey === metric.key ? 'rgba(16,185,129,0.12)' : 'rgba(0,167,233,0.1)',
+                        color: copiedMetricKey === metric.key ? 'var(--success)' : 'var(--primary)',
+                        border: '1px solid var(--border)',
+                        minWidth: '88px',
+                        justifyContent: 'center'
+                      }}
+                      onClick={() => copyMetricValue(metric.key, metric.value, metric.decimals)}
+                      title="Click para copiar"
+                    >
+                      {copiedMetricKey === metric.key ? 'Copiado' : metric.value.toFixed(metric.decimals)}
+                    </button>
+                  </div>
+                ))}
               </div>
             </div>
 
