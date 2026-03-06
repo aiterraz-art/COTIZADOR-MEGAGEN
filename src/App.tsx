@@ -8,6 +8,7 @@ import type { CashFlowSummary } from './utils/fileParser';
 import type { DailySalesSummary } from './utils/fileParser';
 import type { ImportItemRaw } from './utils/fileParser';
 import { parseImportItemsFromPdf } from './utils/pdfImportParser';
+import InventoryModule from './components/InventoryModule';
 import { supabase } from './lib/supabase';
 import html2canvas from 'html2canvas';
 import logoMegaGen from './assets/MegaGen.jpg';
@@ -37,7 +38,8 @@ import {
   LineChart,
   FileSpreadsheet,
   Ship,
-  Download
+  Download,
+  Boxes
 } from 'lucide-react';
 
 const CUSTOM_CATEGORIES_STORAGE_KEY = 'megagen.customCategories';
@@ -92,7 +94,7 @@ interface SavedQuotation {
   items: Array<{ name: string; qty: number; cost_usd: number; category?: string }>;
 }
 
-type ModuleKey = 'cotizador' | 'analysis' | 'imports' | 'crm' | 'clientes' | 'facturacion';
+type ModuleKey = 'cotizador' | 'analysis' | 'imports' | 'inventory' | 'crm' | 'clientes' | 'facturacion';
 
 interface ImportItemCalculated extends ImportItemRaw {
   baseTotalForeign: number;
@@ -1697,6 +1699,13 @@ const App: React.FC = () => {
         isReady: true
       },
       {
+        key: 'inventory',
+        name: 'Inventario y Compras',
+        description: 'Quiebres, alertas y órdenes sugeridas por proveedor.',
+        icon: <Boxes size={18} />,
+        isReady: true
+      },
+      {
         key: 'crm',
         name: 'CRM Comercial',
         description: 'Pipeline, oportunidades y seguimiento de cuentas.',
@@ -2846,6 +2855,8 @@ const App: React.FC = () => {
             </div>
           )}
         </section>
+      ) : activeModule === 'inventory' ? (
+        <InventoryModule />
       ) : activeModule === 'analysis' ? (
         <section className="glass card" style={{ marginTop: '1rem', textAlign: 'left' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap', marginBottom: '1.5rem' }}>
