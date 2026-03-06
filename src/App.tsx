@@ -2597,8 +2597,8 @@ const App: React.FC = () => {
                         <td style={{ textAlign: 'right' }}>{formatCLP(item.baseTotalCLP)}</td>
                         <td style={{ textAlign: 'right' }}>{formatCLP(item.shippingCLPAllocated)}</td>
                         <td style={{ textAlign: 'right' }}>{formatCLP(item.customsCLPAllocated)}</td>
-                        <td style={{ textAlign: 'right', fontWeight: 700 }}>{formatCLP(item.landedUnitCLP * item.quantity)}</td>
                         <td style={{ textAlign: 'right', fontWeight: 700 }}>{formatCLP(item.landedUnitCLP)}</td>
+                        <td style={{ textAlign: 'right', fontWeight: 700 }}>{formatCLP(item.landedUnitCLP * item.quantity)}</td>
                         <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--primary)' }}>{formatCLP(item.suggestedNetUnitCLP)}</td>
                         <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--success)' }}>{formatCLP(item.suggestedIvaUnitCLP)}</td>
                       </tr>
@@ -2612,8 +2612,8 @@ const App: React.FC = () => {
                       <td style={{ textAlign: 'right', fontWeight: 800 }}>{formatCLP(importTotals.baseCLP)}</td>
                       <td style={{ textAlign: 'right', fontWeight: 800 }}>{formatCLP(shippingCostInCLP)}</td>
                       <td style={{ textAlign: 'right', fontWeight: 800 }}>{formatCLP(customsCostCLP)}</td>
-                      <td style={{ textAlign: 'right', fontWeight: 800 }}>{formatCLP(importTotals.landedCLP)}</td>
                       <td style={{ textAlign: 'right', fontWeight: 800 }}>{formatCLP(importTotals.totalQty > 0 ? importTotals.landedCLP / importTotals.totalQty : 0)}</td>
+                      <td style={{ textAlign: 'right', fontWeight: 800 }}>{formatCLP(importTotals.landedCLP)}</td>
                       <td style={{ textAlign: 'right', fontWeight: 800 }}>{formatCLP(importTotals.totalQty > 0 ? importTotals.suggestedNetCLP / importTotals.totalQty : 0)}</td>
                       <td style={{ textAlign: 'right', fontWeight: 800 }}>{formatCLP(importTotals.totalQty > 0 ? importTotals.suggestedIvaCLP / importTotals.totalQty : 0)}</td>
                     </tr>
