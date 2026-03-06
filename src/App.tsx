@@ -85,6 +85,15 @@ const App: React.FC = () => {
   const [analysisSourceFile, setAnalysisSourceFile] = useState('');
   const [dailySalesSummary, setDailySalesSummary] = useState<DailySalesSummary | null>(null);
   const [salesSourceFile, setSalesSourceFile] = useState('');
+  const [reportDate, setReportDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [salesTargetKUSD, setSalesTargetKUSD] = useState<number>(0);
+  const [collectionTargetKUSD, setCollectionTargetKUSD] = useState<number>(0);
+  const [fxSalesTargetEA, setFxSalesTargetEA] = useState<number>(0);
+  const [hqPaymentTargetKUSD, setHqPaymentTargetKUSD] = useState<number>(0);
+  const [hqPaymentActualKUSD, setHqPaymentActualKUSD] = useState<number>(0);
+  const [hqCreditTargetKUSD, setHqCreditTargetKUSD] = useState<number>(0);
+  const [hqCreditActualKUSD, setHqCreditActualKUSD] = useState<number>(0);
+  const [copiedReport, setCopiedReport] = useState(false);
 
   // Manual Product Creation
   const [showCreateProductModal, setShowCreateProductModal] = useState(false);
@@ -892,6 +901,16 @@ const App: React.FC = () => {
     }
   };
 
+  const copyKoreaReport = async () => {
+    try {
+      await navigator.clipboard.writeText(koreaCopyText);
+      setCopiedReport(true);
+      setTimeout(() => setCopiedReport(false), 1500);
+    } catch {
+      alert('No fue posible copiar automáticamente. Puedes copiar el texto manualmente.');
+    }
+  };
+
   const addItem = (product: Product) => {
     const isAtCost = checkIsAtCost({ name: product.name, category: product.category });
     const existing = dealItems.find(item => item.product.id === product.id);
@@ -976,6 +995,73 @@ const App: React.FC = () => {
       costKUSD,
     };
   }, [dailySalesSummary, exchangeRate]);
+
+  const dayLabel = useMemo(() => {
+    if (!reportDate) return 'Today';
+    const date = new Date(`${reportDate}T00:00:00`);
+    if (Number.isNaN(date.getTime())) return reportDate;
+    return date.toLocaleDateString('en-US', { day: 'numeric', month: 'short' });
+  }, [reportDate]);
+
+  const percent = (actual: number, target: number) => {
+    if (!target) return 0;
+    return (actual / target) * 100;
+  };
+
+  const formatNumber = (value: number, decimals = 2) => value.toFixed(decimals);
+  const formatPercentNumber = (value: number) => `${Math.round(value)}%`;
+
+  const koreaCopyRows = useMemo(() => {
+    const salesActualKUSD = salesMetrics?.salesKUSD ?? 0;
+    const collectionActualKUSD = cashFlowMetrics?.incomeKUSD ?? 0;
+    const fxActualEA = dailySalesSummary?.totalImplants ?? 0;
+    const beginningBalanceKUSD = cashFlowMetrics?.beginningBalanceKUSD ?? 0;
+    const cashInKUSD = cashFlowMetrics?.incomeKUSD ?? 0;
+    const cashOutKUSD = cashFlowMetrics?.expenseKUSD ?? 0;
+    const remainingBalanceKUSD = cashFlowMetrics?.endingBalanceKUSD ?? 0;
+
+    return [
+      ['Sales', 'Target (K USD)', formatNumber(salesTargetKUSD), ''],
+      ['Sales', 'Actual (K USD)', formatNumber(salesActualKUSD), formatNumber(salesActualKUSD)],
+      ['Sales', 'Achievement Rate (%)', formatPercentNumber(percent(salesActualKUSD, salesTargetKUSD)), ''],
+      ['Sales', 'Growth Rate (%)', '#DIV/0!', ''],
+      ['Collection', 'Target (K USD)', formatNumber(collectionTargetKUSD), ''],
+      ['Collection', 'Actual (K USD)', formatNumber(collectionActualKUSD), formatNumber(collectionActualKUSD)],
+      ['Collection', 'Achievement Rate (%)', formatPercentNumber(percent(collectionActualKUSD, collectionTargetKUSD)), ''],
+      ['Collection', 'Growth Rate (%)', '#DIV/0!', ''],
+      ['FX Sales', 'Target (EA)', formatNumber(fxSalesTargetEA, 0), ''],
+      ['FX Sales', 'Actual (EA)', formatNumber(fxActualEA, 0), formatNumber(fxActualEA, 0)],
+      ['FX Sales', 'Achievement Rate (%)', formatPercentNumber(percent(fxActualEA, fxSalesTargetEA)), ''],
+      ['FX Sales', 'Growth Rate (%)', '#DIV/0!', ''],
+      ['Cash Flow', 'Beginning Balance (K USD)', formatNumber(beginningBalanceKUSD), formatNumber(beginningBalanceKUSD)],
+      ['Cash Flow', 'Cash-in (K USD)', formatNumber(cashInKUSD), formatNumber(cashInKUSD)],
+      ['Cash Flow', 'Cash-out (K USD)', formatNumber(cashOutKUSD), formatNumber(cashOutKUSD)],
+      ['Cash Flow', 'Remaining Balance (K USD)', formatNumber(remainingBalanceKUSD), formatNumber(remainingBalanceKUSD)],
+      ['HQ Payment', 'Target (K USD)', formatNumber(hqPaymentTargetKUSD), ''],
+      ['HQ Payment', 'Actual (K USD)', formatNumber(hqPaymentActualKUSD), formatNumber(hqPaymentActualKUSD)],
+      ['HQ Payment', 'Achievement Rate (%)', formatPercentNumber(percent(hqPaymentActualKUSD, hqPaymentTargetKUSD)), ''],
+      ['HQ Payment', 'Growth Rate (%)', '#DIV/0!', ''],
+      ['HQ Credit', 'Target (K USD)', formatNumber(hqCreditTargetKUSD), ''],
+      ['HQ Credit', 'Actual (K USD)', formatNumber(hqCreditActualKUSD), formatNumber(hqCreditActualKUSD)],
+    ];
+  }, [
+    salesMetrics,
+    cashFlowMetrics,
+    dailySalesSummary,
+    salesTargetKUSD,
+    collectionTargetKUSD,
+    fxSalesTargetEA,
+    hqPaymentTargetKUSD,
+    hqPaymentActualKUSD,
+    hqCreditTargetKUSD,
+    hqCreditActualKUSD,
+  ]);
+
+  const koreaCopyText = useMemo(() => {
+    const header = ['Sorting', 'Description', 'Accum.', dayLabel];
+    const lines = [header.join('\t'), ...koreaCopyRows.map((row) => row.join('\t'))];
+    return lines.join('\n');
+  }, [koreaCopyRows, dayLabel]);
 
   const parseInputNumber = (rawValue: string): number | null => {
     const normalized = rawValue.trim().replace(',', '.');
@@ -1847,6 +1933,50 @@ const App: React.FC = () => {
           </div>
 
           <div style={{ display: 'grid', gap: '1.25rem' }}>
+            <div className="finance-card" style={{ padding: '1rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap', marginBottom: '0.8rem' }}>
+                <h3 style={{ fontSize: '1rem' }}>Bloque Copia Directa para Excel HQ</h3>
+                <button className="btn btn-primary" onClick={copyKoreaReport}>
+                  {copiedReport ? 'Copiado' : 'Copiar tabla para Korea'}
+                </button>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '0.6rem', marginBottom: '0.8rem' }}>
+                <label style={{ fontSize: '0.75rem' }}>Fecha reporte
+                  <input type="date" className="input-field" value={reportDate} onChange={(e) => setReportDate(e.target.value)} />
+                </label>
+                <label style={{ fontSize: '0.75rem' }}>Sales Target (K USD)
+                  <input type="number" className="input-field" value={salesTargetKUSD} onChange={(e) => setSalesTargetKUSD(parseFloat(e.target.value) || 0)} />
+                </label>
+                <label style={{ fontSize: '0.75rem' }}>Collection Target (K USD)
+                  <input type="number" className="input-field" value={collectionTargetKUSD} onChange={(e) => setCollectionTargetKUSD(parseFloat(e.target.value) || 0)} />
+                </label>
+                <label style={{ fontSize: '0.75rem' }}>FX Sales Target (EA)
+                  <input type="number" className="input-field" value={fxSalesTargetEA} onChange={(e) => setFxSalesTargetEA(parseFloat(e.target.value) || 0)} />
+                </label>
+                <label style={{ fontSize: '0.75rem' }}>HQ Payment Target (K USD)
+                  <input type="number" className="input-field" value={hqPaymentTargetKUSD} onChange={(e) => setHqPaymentTargetKUSD(parseFloat(e.target.value) || 0)} />
+                </label>
+                <label style={{ fontSize: '0.75rem' }}>HQ Payment Actual (K USD)
+                  <input type="number" className="input-field" value={hqPaymentActualKUSD} onChange={(e) => setHqPaymentActualKUSD(parseFloat(e.target.value) || 0)} />
+                </label>
+                <label style={{ fontSize: '0.75rem' }}>HQ Credit Target (K USD)
+                  <input type="number" className="input-field" value={hqCreditTargetKUSD} onChange={(e) => setHqCreditTargetKUSD(parseFloat(e.target.value) || 0)} />
+                </label>
+                <label style={{ fontSize: '0.75rem' }}>HQ Credit Actual (K USD)
+                  <input type="number" className="input-field" value={hqCreditActualKUSD} onChange={(e) => setHqCreditActualKUSD(parseFloat(e.target.value) || 0)} />
+                </label>
+              </div>
+              <textarea
+                className="input-field"
+                style={{ minHeight: '180px', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace', fontSize: '0.78rem' }}
+                readOnly
+                value={koreaCopyText}
+              />
+              <div className="text-muted" style={{ marginTop: '0.5rem', fontSize: '0.75rem' }}>
+                Copia y pega directo en Excel. El formato es TSV (columnas separadas por tabulación).
+              </div>
+            </div>
+
             {cashFlowSummary && cashFlowMetrics ? (
               <div style={{ display: 'grid', gap: '1rem' }}>
                 <h3 style={{ fontSize: '1rem' }}>Cash Flow (sin cambios)</h3>
