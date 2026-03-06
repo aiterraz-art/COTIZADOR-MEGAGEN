@@ -57,6 +57,7 @@ const IMPORT_SHIPPING_STORAGE_KEY = 'megagen.import.shipping';
 const IMPORT_SHIPPING_CURRENCY_STORAGE_KEY = 'megagen.import.shippingCurrency';
 const IMPORT_CUSTOMS_STORAGE_KEY = 'megagen.import.customs';
 const IMPORT_MARGIN_STORAGE_KEY = 'megagen.import.margin';
+const IMPORT_SNAPSHOTS_STORAGE_KEY = 'megagen.import.snapshots';
 
 const readStoredJSON = <T,>(key: string): T | null => {
   try {
@@ -102,6 +103,21 @@ interface ImportItemCalculated extends ImportItemRaw {
   landedUnitCLP: number;
   suggestedNetUnitCLP: number;
   suggestedIvaUnitCLP: number;
+}
+
+interface ImportCalculationSnapshot {
+  id: string;
+  name: string;
+  createdAt: string;
+  sourceFile: string;
+  currency: 'USD' | 'EUR';
+  importUsdRate: number;
+  euroRate: number;
+  shippingCost: number;
+  shippingCurrency: 'CLP' | 'USD' | 'EUR';
+  customsCostCLP: number;
+  targetGrossMarginPercent: number;
+  items: ImportItemRaw[];
 }
 
 const App: React.FC = () => {
@@ -166,6 +182,11 @@ const App: React.FC = () => {
   });
   const [customsCostCLP, setCustomsCostCLP] = useState<number>(() => Number(localStorage.getItem(IMPORT_CUSTOMS_STORAGE_KEY)) || 0);
   const [targetGrossMarginPercentImport, setTargetGrossMarginPercentImport] = useState<number>(() => Number(localStorage.getItem(IMPORT_MARGIN_STORAGE_KEY)) || 50);
+  const [importSectionTab, setImportSectionTab] = useState<'calculator' | 'saved'>('calculator');
+  const [importSnapshots, setImportSnapshots] = useState<ImportCalculationSnapshot[]>(() => readStoredJSON<ImportCalculationSnapshot[]>(IMPORT_SNAPSHOTS_STORAGE_KEY) || []);
+  const [importSearchTerm, setImportSearchTerm] = useState('');
+  const [showSaveImportModal, setShowSaveImportModal] = useState(false);
+  const [importSaveName, setImportSaveName] = useState('');
 
   // Manual Product Creation
   const [showCreateProductModal, setShowCreateProductModal] = useState(false);
@@ -280,6 +301,10 @@ const App: React.FC = () => {
   useEffect(() => {
     localStorage.setItem(IMPORT_MARGIN_STORAGE_KEY, String(targetGrossMarginPercentImport));
   }, [targetGrossMarginPercentImport]);
+
+  useEffect(() => {
+    localStorage.setItem(IMPORT_SNAPSHOTS_STORAGE_KEY, JSON.stringify(importSnapshots));
+  }, [importSnapshots]);
 
   const fetchExchangeRate = async (retries = 2) => {
     setIsLoading(true);
@@ -1229,6 +1254,59 @@ const App: React.FC = () => {
     XLSX.writeFile(workbook, `importaciones-calculadas-${fileStamp}.xlsx`);
   };
 
+  const openSaveImportDialog = () => {
+    if (!importItems.length) {
+      alert('Primero carga productos para guardar el cálculo.');
+      return;
+    }
+    setImportSaveName(importSourceFile ? `Importación ${importSourceFile}` : '');
+    setShowSaveImportModal(true);
+  };
+
+  const saveImportCalculationSnapshot = () => {
+    const name = importSaveName.trim();
+    if (!name) {
+      alert('Ingresa un nombre para guardar.');
+      return;
+    }
+
+    const snapshot: ImportCalculationSnapshot = {
+      id: `${Date.now()}`,
+      name,
+      createdAt: new Date().toISOString(),
+      sourceFile: importSourceFile,
+      currency: importCurrency,
+      importUsdRate,
+      euroRate,
+      shippingCost: shippingCostCLP,
+      shippingCurrency,
+      customsCostCLP,
+      targetGrossMarginPercent: targetGrossMarginPercentImport,
+      items: importItems,
+    };
+
+    setImportSnapshots((prev) => [snapshot, ...prev]);
+    setShowSaveImportModal(false);
+    setImportSaveName('');
+  };
+
+  const loadImportSnapshot = (snapshot: ImportCalculationSnapshot) => {
+    setImportItems(snapshot.items);
+    setImportSourceFile(snapshot.sourceFile);
+    setImportCurrency(snapshot.currency);
+    setImportUsdRate(snapshot.importUsdRate);
+    setEuroRate(snapshot.euroRate);
+    setShippingCostCLP(snapshot.shippingCost);
+    setShippingCurrency(snapshot.shippingCurrency);
+    setCustomsCostCLP(snapshot.customsCostCLP);
+    setTargetGrossMarginPercentImport(snapshot.targetGrossMarginPercent);
+    setImportSectionTab('calculator');
+  };
+
+  const deleteImportSnapshot = (snapshotId: string) => {
+    setImportSnapshots((prev) => prev.filter((snapshot) => snapshot.id !== snapshotId));
+  };
+
   const addItem = (product: Product) => {
     const isAtCost = checkIsAtCost({ name: product.name, category: product.category });
     const existing = dealItems.find(item => item.product.id === product.id);
@@ -1375,6 +1453,15 @@ const App: React.FC = () => {
       totalQty,
     };
   }, [importCalculatedItems]);
+
+  const filteredImportSnapshots = useMemo(() => {
+    const query = normalizeText(importSearchTerm);
+    if (!query) return importSnapshots;
+    return importSnapshots.filter((snapshot) => {
+      const content = normalizeText(`${snapshot.name} ${snapshot.sourceFile} ${snapshot.currency} ${snapshot.shippingCurrency}`);
+      return content.includes(query);
+    });
+  }, [importSnapshots, importSearchTerm]);
 
   const dayLabel = useMemo(() => {
     if (!reportDate) return 'Today';
@@ -2319,9 +2406,31 @@ const App: React.FC = () => {
               <button className="btn" onClick={downloadImportCalculation} style={{ background: 'var(--accent)', color: 'white' }}>
                 <Download size={14} /> Descargar Archivo Final
               </button>
+              <button className="btn btn-primary" style={{ background: 'var(--success)' }} onClick={openSaveImportDialog}>
+                <Save size={14} /> Guardar Cálculo
+              </button>
             </div>
           </div>
 
+          <div className="tabs-nav" style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem' }}>
+            <button
+              className="btn"
+              style={{ background: importSectionTab === 'calculator' ? 'var(--primary)' : 'var(--surface)', color: importSectionTab === 'calculator' ? 'white' : 'var(--text)' }}
+              onClick={() => setImportSectionTab('calculator')}
+            >
+              Calculadora
+            </button>
+            <button
+              className="btn"
+              style={{ background: importSectionTab === 'saved' ? 'var(--primary)' : 'var(--surface)', color: importSectionTab === 'saved' ? 'white' : 'var(--text)' }}
+              onClick={() => setImportSectionTab('saved')}
+            >
+              Guardados ({importSnapshots.length})
+            </button>
+          </div>
+
+          {importSectionTab === 'calculator' ? (
+            <>
           <div style={{ display: 'grid', gap: '0.9rem', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', marginBottom: '1rem' }}>
             <div className="finance-card">
               <div className="text-muted" style={{ fontSize: '0.7rem', marginBottom: '0.45rem' }}>MONEDA DE COSTO</div>
@@ -2472,6 +2581,7 @@ const App: React.FC = () => {
                       <th style={{ textAlign: 'right' }}>Flete CLP</th>
                       <th style={{ textAlign: 'right' }}>Aduana CLP</th>
                       <th style={{ textAlign: 'right' }}>Costo Puesto Unit CLP</th>
+                      <th style={{ textAlign: 'right' }}>Costo Puesto Unitario Total CLP</th>
                       <th style={{ textAlign: 'right' }}>Venta Neta Unit CLP</th>
                       <th style={{ textAlign: 'right' }}>Venta Unit c/IVA CLP</th>
                     </tr>
@@ -2488,6 +2598,7 @@ const App: React.FC = () => {
                         <td style={{ textAlign: 'right' }}>{formatCLP(item.shippingCLPAllocated)}</td>
                         <td style={{ textAlign: 'right' }}>{formatCLP(item.customsCLPAllocated)}</td>
                         <td style={{ textAlign: 'right', fontWeight: 700 }}>{formatCLP(item.landedUnitCLP)}</td>
+                        <td style={{ textAlign: 'right', fontWeight: 700 }}>{formatCLP(item.landedUnitCLP)}</td>
                         <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--primary)' }}>{formatCLP(item.suggestedNetUnitCLP)}</td>
                         <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--success)' }}>{formatCLP(item.suggestedIvaUnitCLP)}</td>
                       </tr>
@@ -2502,6 +2613,7 @@ const App: React.FC = () => {
                       <td style={{ textAlign: 'right', fontWeight: 800 }}>{formatCLP(shippingCostInCLP)}</td>
                       <td style={{ textAlign: 'right', fontWeight: 800 }}>{formatCLP(customsCostCLP)}</td>
                       <td style={{ textAlign: 'right', fontWeight: 800 }}>{formatCLP(importTotals.totalQty > 0 ? importTotals.landedCLP / importTotals.totalQty : 0)}</td>
+                      <td style={{ textAlign: 'right', fontWeight: 800 }}>{formatCLP(importTotals.totalQty > 0 ? importTotals.landedCLP / importTotals.totalQty : 0)}</td>
                       <td style={{ textAlign: 'right', fontWeight: 800 }}>{formatCLP(importTotals.totalQty > 0 ? importTotals.suggestedNetCLP / importTotals.totalQty : 0)}</td>
                       <td style={{ textAlign: 'right', fontWeight: 800 }}>{formatCLP(importTotals.totalQty > 0 ? importTotals.suggestedIvaCLP / importTotals.totalQty : 0)}</td>
                     </tr>
@@ -2515,6 +2627,98 @@ const App: React.FC = () => {
           ) : (
             <div style={{ padding: '1rem', border: '1px dashed var(--border)', borderRadius: '12px', background: 'var(--surface)' }}>
               Carga un archivo de importación con columnas de SKU, nombre, cantidad y costo para calcular precios.
+            </div>
+          )}
+            </>
+          ) : (
+            <div style={{ display: 'grid', gap: '0.9rem' }}>
+              <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: '#f8fafc', border: '1px solid var(--border)', borderRadius: '8px', padding: '0.4rem 0.6rem' }}>
+                  <Search size={14} className="text-muted" />
+                  <input
+                    type="text"
+                    className="input-field"
+                    style={{ border: 'none', background: 'transparent', padding: 0, width: '240px' }}
+                    placeholder="Buscar por nombre, archivo o moneda..."
+                    value={importSearchTerm}
+                    onChange={(e) => setImportSearchTerm(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              {filteredImportSnapshots.length > 0 ? (
+                <div style={{ display: 'grid', gap: '0.75rem' }}>
+                  {filteredImportSnapshots.map((snapshot) => (
+                    <div key={snapshot.id} className="finance-card" style={{ padding: '0.9rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.8rem', flexWrap: 'wrap' }}>
+                        <div>
+                          <div style={{ fontWeight: 700 }}>{snapshot.name}</div>
+                          <div className="text-muted" style={{ fontSize: '0.76rem' }}>
+                            {new Date(snapshot.createdAt).toLocaleString('es-CL')} | Archivo: {snapshot.sourceFile || '-'} | Items: {snapshot.items.length}
+                          </div>
+                          <div className="text-muted" style={{ fontSize: '0.76rem' }}>
+                            Moneda: {snapshot.currency} | Flete: {snapshot.shippingCost} {snapshot.shippingCurrency} | Aduana: {formatCLP(snapshot.customsCostCLP)} | Margen: {snapshot.targetGrossMarginPercent}%
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: '0.45rem' }}>
+                          <button className="btn btn-primary" style={{ padding: '0.45rem 0.7rem' }} onClick={() => loadImportSnapshot(snapshot)}>
+                            Cargar
+                          </button>
+                          <button
+                            className="btn"
+                            style={{ padding: '0.45rem 0.7rem', background: 'rgba(239,68,68,0.12)', color: 'var(--error)' }}
+                            onClick={() => deleteImportSnapshot(snapshot.id)}
+                          >
+                            Eliminar
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ padding: '1rem', border: '1px dashed var(--border)', borderRadius: '12px', background: 'var(--surface)' }}>
+                  No hay cálculos guardados para el filtro aplicado.
+                </div>
+              )}
+            </div>
+          )}
+
+          {showSaveImportModal && (
+            <div style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'rgba(0,0,0,0.5)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 1200
+            }}>
+              <div className="glass card" style={{ width: '90%', maxWidth: '460px' }}>
+                <h3 style={{ marginBottom: '0.9rem' }}>Guardar Cálculo de Importación</h3>
+                <label style={{ display: 'block', marginBottom: '0.9rem' }}>
+                  <div className="text-muted" style={{ fontSize: '0.78rem', marginBottom: '0.4rem' }}>Nombre</div>
+                  <input
+                    type="text"
+                    className="input-field"
+                    value={importSaveName}
+                    onChange={(e) => setImportSaveName(e.target.value)}
+                    placeholder="Ej: Importación Marzo Semana 1"
+                    autoFocus
+                  />
+                </label>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.55rem' }}>
+                  <button className="btn" onClick={() => setShowSaveImportModal(false)}>
+                    Cancelar
+                  </button>
+                  <button className="btn btn-primary" onClick={saveImportCalculationSnapshot}>
+                    Guardar
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </section>
