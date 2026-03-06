@@ -9,6 +9,16 @@ export interface RawProduct {
     msrpUSD?: number;
 }
 
+export interface CashFlowSummary {
+    totalIncomeCLP: number;
+    totalExpenseCLP: number;
+    endingBalanceCLP: number;
+    beginningBalanceCLP: number;
+    movementCount: number;
+    dateFrom?: string;
+    dateTo?: string;
+}
+
 const normalize = (text: string): string => {
     return text.toString().toLowerCase()
         .normalize("NFD")
@@ -146,4 +156,126 @@ const extractFallbackCost = (values: unknown[]): unknown => {
     }
 
     return values[3] ?? values[2] ?? values[1] ?? null;
+};
+
+const parseCurrencyCell = (value: unknown): number => {
+    if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+    return parseNumber(value);
+};
+
+const parseExcelDate = (value: unknown): Date | null => {
+    if (typeof value === 'number') {
+        const dateCode = XLSX.SSF.parse_date_code(value);
+        if (!dateCode) return null;
+        return new Date(dateCode.y, dateCode.m - 1, dateCode.d);
+    }
+
+    if (typeof value === 'string' && value.trim()) {
+        const parsed = new Date(value);
+        if (!Number.isNaN(parsed.getTime())) return parsed;
+    }
+
+    return null;
+};
+
+export const parseCashFlowFile = (file: File): Promise<CashFlowSummary> => {
+    return new Promise((resolve, reject) => {
+        const extension = file.name.split('.').pop()?.toLowerCase();
+        if (extension !== 'xlsx' && extension !== 'xls') {
+            reject(new Error('El archivo de movimientos debe ser Excel (.xlsx o .xls).'));
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const data = new Uint8Array(e.target?.result as ArrayBuffer);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const sheetName = workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[sheetName];
+                const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' }) as unknown[][];
+
+                if (rows.length === 0) {
+                    reject(new Error('El archivo está vacío.'));
+                    return;
+                }
+
+                const headerRowIndex = rows.findIndex((row) => {
+                    const rowText = row.map((cell) => normalize(String(cell ?? ''))).join(' ');
+                    return rowText.includes('fecha transaccion')
+                        && rowText.includes('egreso')
+                        && rowText.includes('ingreso')
+                        && rowText.includes('saldo');
+                });
+
+                if (headerRowIndex === -1) {
+                    reject(new Error('No se encontró la cabecera esperada de movimientos bancarios.'));
+                    return;
+                }
+
+                const header = rows[headerRowIndex].map((cell) => normalize(String(cell ?? '')));
+                const findColumn = (candidates: string[]): number => {
+                    return header.findIndex((cell) => candidates.some((candidate) => cell.includes(candidate)));
+                };
+
+                const dateIdx = findColumn(['fecha transaccion', 'fecha']);
+                const expenseIdx = findColumn(['egreso']);
+                const incomeIdx = findColumn(['ingreso']);
+                const balanceIdx = findColumn(['saldo']);
+
+                if (dateIdx < 0 || expenseIdx < 0 || incomeIdx < 0 || balanceIdx < 0) {
+                    reject(new Error('Faltan columnas requeridas (fecha, egreso, ingreso o saldo).'));
+                    return;
+                }
+
+                let totalIncomeCLP = 0;
+                let totalExpenseCLP = 0;
+                let movementCount = 0;
+                let endingBalanceCLP: number | null = null;
+                const parsedDates: Date[] = [];
+
+                for (let i = headerRowIndex + 1; i < rows.length; i += 1) {
+                    const row = rows[i];
+                    const income = parseCurrencyCell(row[incomeIdx]);
+                    const expense = parseCurrencyCell(row[expenseIdx]);
+                    const balance = parseCurrencyCell(row[balanceIdx]);
+                    const parsedDate = parseExcelDate(row[dateIdx]);
+
+                    if (!income && !expense && !balance && !parsedDate) continue;
+
+                    totalIncomeCLP += income;
+                    totalExpenseCLP += expense;
+                    if (income > 0 || expense > 0) movementCount += 1;
+                    if (endingBalanceCLP === null && balance > 0) endingBalanceCLP = balance;
+                    if (parsedDate) parsedDates.push(parsedDate);
+                }
+
+                if (movementCount === 0) {
+                    reject(new Error('No se detectaron movimientos con ingreso/egreso.'));
+                    return;
+                }
+
+                const safeEndingBalance = endingBalanceCLP ?? 0;
+                const beginningBalanceCLP = safeEndingBalance - totalIncomeCLP + totalExpenseCLP;
+
+                const timestamps = parsedDates.map((date) => date.getTime());
+                const minTimestamp = timestamps.length ? Math.min(...timestamps) : null;
+                const maxTimestamp = timestamps.length ? Math.max(...timestamps) : null;
+
+                resolve({
+                    totalIncomeCLP,
+                    totalExpenseCLP,
+                    endingBalanceCLP: safeEndingBalance,
+                    beginningBalanceCLP,
+                    movementCount,
+                    dateFrom: minTimestamp ? new Date(minTimestamp).toLocaleDateString('es-CL') : undefined,
+                    dateTo: maxTimestamp ? new Date(maxTimestamp).toLocaleDateString('es-CL') : undefined,
+                });
+            } catch (error) {
+                reject(error instanceof Error ? error : new Error('No fue posible procesar el archivo.'));
+            }
+        };
+
+        reader.readAsArrayBuffer(file);
+    });
 };

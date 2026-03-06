@@ -2,7 +2,8 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 // Force refresh - Fixed JSX Structure
 import { initialProducts } from './data/mockProducts';
 import type { Product } from './data/mockProducts';
-import { parseFile } from './utils/fileParser';
+import { parseCashFlowFile, parseFile } from './utils/fileParser';
+import type { CashFlowSummary } from './utils/fileParser';
 import { supabase } from './lib/supabase';
 import html2canvas from 'html2canvas';
 import logoMegaGen from './assets/MegaGen.jpg';
@@ -28,7 +29,9 @@ import {
   LayoutGrid,
   BriefcaseBusiness,
   Users,
-  ReceiptText
+  ReceiptText,
+  LineChart,
+  FileSpreadsheet
 } from 'lucide-react';
 
 const CUSTOM_CATEGORIES_STORAGE_KEY = 'megagen.customCategories';
@@ -56,7 +59,7 @@ interface SavedQuotation {
   items: Array<{ name: string; qty: number; cost_usd: number; category?: string }>;
 }
 
-type ModuleKey = 'cotizador' | 'crm' | 'clientes' | 'facturacion';
+type ModuleKey = 'cotizador' | 'analysis' | 'crm' | 'clientes' | 'facturacion';
 
 const App: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
@@ -69,12 +72,15 @@ const App: React.FC = () => {
   const [isSyncing, setIsSyncing] = useState(false);
   const [fetchError, setFetchError] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const analysisFileInputRef = useRef<HTMLInputElement>(null);
 
   // Quotations Manager State
   const [activeTab, setActiveTab] = useState<'simulator' | 'history'>('simulator');
   const [activeModule, setActiveModule] = useState<ModuleKey>('cotizador');
   const [savedQuotations, setSavedQuotations] = useState<SavedQuotation[]>([]);
   const [isLoadingQuotations, setIsLoadingQuotations] = useState(false);
+  const [cashFlowSummary, setCashFlowSummary] = useState<CashFlowSummary | null>(null);
+  const [analysisSourceFile, setAnalysisSourceFile] = useState('');
 
   // Manual Product Creation
   const [showCreateProductModal, setShowCreateProductModal] = useState(false);
@@ -856,6 +862,19 @@ const App: React.FC = () => {
     }
   };
 
+  const handleAnalysisFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const summary = await parseCashFlowFile(file);
+      setCashFlowSummary(summary);
+      setAnalysisSourceFile(file.name);
+    } catch (error) {
+      alert('Error al procesar movimientos de caja: ' + (error as Error).message);
+    }
+  };
+
   const addItem = (product: Product) => {
     const isAtCost = checkIsAtCost({ name: product.name, category: product.category });
     const existing = dealItems.find(item => item.product.id === product.id);
@@ -905,6 +924,26 @@ const App: React.FC = () => {
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(value);
   };
 
+  const formatKUSD = (value: number) => `${value.toFixed(2)} K USD`;
+
+  const cashFlowMetrics = useMemo(() => {
+    if (!cashFlowSummary || exchangeRate <= 0) return null;
+
+    const toUSD = (valueCLP: number) => valueCLP / exchangeRate;
+    const toKUSD = (valueCLP: number) => toUSD(valueCLP) / 1000;
+
+    return {
+      incomeUSD: toUSD(cashFlowSummary.totalIncomeCLP),
+      expenseUSD: toUSD(cashFlowSummary.totalExpenseCLP),
+      beginningBalanceUSD: toUSD(cashFlowSummary.beginningBalanceCLP),
+      endingBalanceUSD: toUSD(cashFlowSummary.endingBalanceCLP),
+      incomeKUSD: toKUSD(cashFlowSummary.totalIncomeCLP),
+      expenseKUSD: toKUSD(cashFlowSummary.totalExpenseCLP),
+      beginningBalanceKUSD: toKUSD(cashFlowSummary.beginningBalanceCLP),
+      endingBalanceKUSD: toKUSD(cashFlowSummary.endingBalanceCLP),
+    };
+  }, [cashFlowSummary, exchangeRate]);
+
   const parseInputNumber = (rawValue: string): number | null => {
     const normalized = rawValue.trim().replace(',', '.');
     if (!normalized) return 0;
@@ -941,6 +980,13 @@ const App: React.FC = () => {
         isReady: true
       },
       {
+        key: 'analysis',
+        name: 'Análisis Diario',
+        description: 'Consolidado operativo y reporte para HQ Korea.',
+        icon: <LineChart size={18} />,
+        isReady: true
+      },
+      {
         key: 'crm',
         name: 'CRM Comercial',
         description: 'Pipeline, oportunidades y seguimiento de cuentas.',
@@ -970,9 +1016,38 @@ const App: React.FC = () => {
         <div className="modules-head">
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
             <LayoutGrid size={18} />
-            <strong style={{ fontSize: '1rem' }}>Plataforma MegaGen</strong>
+            <div>
+              <strong style={{ fontSize: '1rem' }}>Plataforma MegaGen</strong>
+              <div className="text-muted" style={{ fontSize: '0.78rem' }}>Módulos operativos y próximos lanzamientos</div>
+            </div>
           </div>
-          <span className="text-muted" style={{ fontSize: '0.8rem' }}>Módulos operativos y próximos lanzamientos</span>
+          <div className="global-rate-box">
+            <div className="text-muted" style={{ fontSize: '0.68rem' }}>
+              {fetchError ? 'ERROR DOLAR' : 'USD/CLP GLOBAL'}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+              <input
+                type="number"
+                className="input-field"
+                style={{ width: '95px', fontWeight: '700', padding: '0.35rem 0.45rem', textAlign: 'right' }}
+                value={exchangeRate}
+                onChange={(e) => setExchangeRate(parseFloat(e.target.value) || 0)}
+              />
+              <button
+                onClick={() => fetchExchangeRate()}
+                className="btn-icon"
+                style={{ padding: '0.35rem', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f1f5f9', borderRadius: '6px', border: '1px solid var(--border)' }}
+                title="Actualizar tipo de cambio"
+              >
+                <RefreshCw size={14} className={isLoading ? "text-muted animate-spin" : fetchError ? "text-error" : "text-muted"} style={{ color: fetchError ? 'var(--error)' : '' }} />
+              </button>
+            </div>
+            {lastUpdated && (
+              <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)', textAlign: 'right' }}>
+                Actualizado: {lastUpdated}
+              </div>
+            )}
+          </div>
         </div>
         <div className="modules-grid">
           {modules.map((module) => (
@@ -1009,34 +1084,6 @@ const App: React.FC = () => {
         </div>
 
         <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-          <div className="finance-card" style={{ padding: '0.4rem 0.8rem', display: 'flex', alignItems: 'center', gap: '0.8rem', border: fetchError ? '1px solid var(--error)' : '1px solid var(--border)' }}>
-            <div className="text-muted" style={{ fontSize: '0.65rem', color: fetchError ? 'var(--error)' : 'inherit' }}>
-              {fetchError ? 'ERROR DOLAR' : 'TIPO DE CAMBIO'}
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-              <input
-                type="number"
-                className="input-field"
-                style={{ width: '70px', fontWeight: 'bold', padding: '0.25rem', textAlign: 'right', border: 'none', background: 'transparent', color: fetchError ? 'var(--error)' : 'inherit' }}
-                value={exchangeRate}
-                onChange={(e) => setExchangeRate(parseFloat(e.target.value) || 0)}
-              />
-              <button
-                onClick={() => fetchExchangeRate()}
-                className="btn-icon"
-                style={{ padding: '0.2rem', display: 'flex', alignItems: 'center', justifyContent: 'center', background: fetchError ? 'rgba(239, 68, 68, 0.1)' : '#f1f5f9', borderRadius: '4px', border: '1px solid var(--border)' }}
-                title="Actualizar tipo de cambio"
-              >
-                <RefreshCw size={14} className={isLoading ? "text-muted animate-spin" : fetchError ? "text-error" : "text-muted"} style={{ color: fetchError ? 'var(--error)' : '' }} />
-              </button>
-            </div>
-            {lastUpdated && (
-              <div style={{ fontSize: '0.55rem', color: 'var(--text-muted)', marginLeft: '0.5rem' }}>
-                ({lastUpdated})
-              </div>
-            )}
-          </div>
-
           <button className="btn btn-primary" onClick={() => fileInputRef.current?.click()}>
             <Upload size={14} /> Importar
           </button>
@@ -1731,6 +1778,95 @@ const App: React.FC = () => {
         )
       }
         </>
+      ) : activeModule === 'analysis' ? (
+        <section className="glass card" style={{ marginTop: '1rem', textAlign: 'left' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap', marginBottom: '1.5rem' }}>
+            <div>
+              <h2 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <LineChart size={22} /> Daily Report - Cash Flow
+              </h2>
+              <p className="text-muted" style={{ fontSize: '0.85rem' }}>
+                Carga el Excel bancario para calcular ingresos/egresos en USD y K USD para envío a HQ.
+              </p>
+            </div>
+            <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center' }}>
+              <button className="btn btn-primary" onClick={() => analysisFileInputRef.current?.click()}>
+                <FileSpreadsheet size={14} /> Cargar Movimientos
+              </button>
+              <input
+                type="file"
+                ref={analysisFileInputRef}
+                style={{ display: 'none' }}
+                accept=".xlsx,.xls"
+                onChange={handleAnalysisFileUpload}
+              />
+            </div>
+          </div>
+
+          {cashFlowSummary && cashFlowMetrics ? (
+            <div style={{ display: 'grid', gap: '1rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.75rem' }}>
+                <div className="finance-card">
+                  <div className="text-muted" style={{ fontSize: '0.68rem' }}>CASH-IN TOTAL</div>
+                  <div style={{ fontWeight: 800, fontSize: '1.25rem' }}>{formatKUSD(cashFlowMetrics.incomeKUSD)}</div>
+                  <div className="text-muted" style={{ fontSize: '0.75rem' }}>{formatUSD(cashFlowMetrics.incomeUSD)}</div>
+                </div>
+                <div className="finance-card">
+                  <div className="text-muted" style={{ fontSize: '0.68rem' }}>CASH-OUT TOTAL</div>
+                  <div style={{ fontWeight: 800, fontSize: '1.25rem' }}>{formatKUSD(cashFlowMetrics.expenseKUSD)}</div>
+                  <div className="text-muted" style={{ fontSize: '0.75rem' }}>{formatUSD(cashFlowMetrics.expenseUSD)}</div>
+                </div>
+                <div className="finance-card">
+                  <div className="text-muted" style={{ fontSize: '0.68rem' }}>SALDO FINAL</div>
+                  <div style={{ fontWeight: 800, fontSize: '1.25rem' }}>{formatKUSD(cashFlowMetrics.endingBalanceKUSD)}</div>
+                  <div className="text-muted" style={{ fontSize: '0.75rem' }}>{formatUSD(cashFlowMetrics.endingBalanceUSD)}</div>
+                </div>
+              </div>
+
+              <div className="table-container">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Sorting</th>
+                      <th>Description</th>
+                      <th style={{ textAlign: 'right' }}>Accum. (K USD)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>Cash Flow</td>
+                      <td>Beginning Balance (K USD)</td>
+                      <td style={{ textAlign: 'right', fontWeight: 700 }}>{formatKUSD(cashFlowMetrics.beginningBalanceKUSD)}</td>
+                    </tr>
+                    <tr>
+                      <td>Cash Flow</td>
+                      <td>Cash-in (K USD)</td>
+                      <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--success)' }}>{formatKUSD(cashFlowMetrics.incomeKUSD)}</td>
+                    </tr>
+                    <tr>
+                      <td>Cash Flow</td>
+                      <td>Cash-out (K USD)</td>
+                      <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--error)' }}>{formatKUSD(cashFlowMetrics.expenseKUSD)}</td>
+                    </tr>
+                    <tr>
+                      <td>Cash Flow</td>
+                      <td>Remaining Balance (K USD)</td>
+                      <td style={{ textAlign: 'right', fontWeight: 800 }}>{formatKUSD(cashFlowMetrics.endingBalanceKUSD)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="text-muted" style={{ fontSize: '0.78rem' }}>
+                Archivo: <strong>{analysisSourceFile}</strong> | Movimientos: {cashFlowSummary.movementCount} | Rango: {cashFlowSummary.dateFrom || '-'} a {cashFlowSummary.dateTo || '-'} | Dólar aplicado: {exchangeRate}
+              </div>
+            </div>
+          ) : (
+            <div style={{ padding: '1rem', border: '1px dashed var(--border)', borderRadius: '12px', background: 'var(--surface)' }}>
+              Carga un archivo de movimientos para calcular automáticamente Cash-in/Cash-out en K USD.
+            </div>
+          )}
+        </section>
       ) : (
         <section className="glass card" style={{ marginTop: '1rem', textAlign: 'left' }}>
           <h2 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>

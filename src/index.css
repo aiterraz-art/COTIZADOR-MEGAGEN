@@ -56,6 +56,17 @@ body {
   gap: 1rem;
 }
 
+.global-rate-box {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.25rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+}
+
 .modules-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -276,6 +287,11 @@ td {
 @media (max-width: 640px) {
   .modules-head {
     flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .global-rate-box {
+    width: 100%;
     align-items: flex-start;
   }
 
