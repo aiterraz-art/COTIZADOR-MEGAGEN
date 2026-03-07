@@ -3,6 +3,30 @@
 > [!IMPORTANT]
 > **POLÍTICA DE GITHUB:** Todos los cambios en este repositorio deben ser autorizados explícitamente por el usuario antes de realizar un `git push`. El push automático está prohibido.
 
+## Data Backend Switch (Supabase / PocketBase)
+
+La app puede operar con dos backends sin eliminar Supabase:
+
+- `VITE_DATA_PROVIDER=supabase` (default)
+- `VITE_DATA_PROVIDER=pocketbase`
+
+Variables adicionales para PocketBase en frontend:
+
+- `VITE_POCKETBASE_URL=http://127.0.0.1:8090`
+
+### Copia inicial Supabase -> PocketBase
+
+1. Configura en `.env`:
+   - `SUPABASE_URL`
+   - `SUPABASE_SERVICE_ROLE_KEY` (recomendado)
+   - `POCKETBASE_URL`
+   - `POCKETBASE_ADMIN_EMAIL`
+   - `POCKETBASE_ADMIN_PASSWORD`
+2. Ejecuta:
+   - `npm run sync:pocketbase`
+
+El script crea (si faltan) las colecciones mínimas y reemplaza sus datos con una copia de Supabase.
+
 ## React + TypeScript + Vite
 
 

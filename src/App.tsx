@@ -10,7 +10,17 @@ import type { ImportItemRaw } from './utils/fileParser';
 import { parseImportItemsFromPdf } from './utils/pdfImportParser';
 import InventoryModule from './components/InventoryModule';
 import CRMModule from './components/CRMModule';
-import { supabase } from './lib/supabase';
+import {
+  createProductRecord,
+  deleteProductRecord,
+  deleteSimulationRecord,
+  fetchProductsList,
+  fetchSimulationRecords,
+  getDataBackendLabel,
+  replaceProductsCatalog,
+  saveSimulationRecord,
+  updateProductCategoryRecord,
+} from './lib/appDataRepository';
 import html2canvas from 'html2canvas';
 import logoMegaGen from './assets/MegaGen.jpg';
 import {
@@ -371,23 +381,9 @@ const App: React.FC = () => {
   const fetchProducts = async () => {
     setIsLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('products')
-        .select('*')
-        .order('name', { ascending: true });
-
-      if (error) throw error;
-
-      if (data && data.length > 0) {
-        const mappedProducts: Product[] = data.map(p => ({
-          id: p.id,
-          sku: p.sku,
-          name: p.name,
-          category: p.category,
-          costUSD: p.cost_usd,
-          suggestedPriceUSD: p.msrp_usd
-        }));
-        setProducts(mappedProducts);
+      const data = await fetchProductsList();
+      if (data.length > 0) {
+        setProducts(data);
       } else {
         // Fallback to local mock data if DB is empty
         setProducts(initialProducts);
@@ -400,7 +396,7 @@ const App: React.FC = () => {
     }
   };
 
-  const syncProductsToSupabase = async () => {
+  const syncProductsToDatabase = async () => {
     if (products.length === 0) return;
 
     const confirmSync = confirm(
@@ -410,30 +406,8 @@ const App: React.FC = () => {
 
     setIsSyncing(true);
     try {
-      // 1. Delete all current products for a "Master Replace"
-      const { error: deleteError } = await supabase
-        .from('products')
-        .delete()
-        .neq('id', '00000000-0000-0000-0000-000000000000'); // Delete everything
-
-      if (deleteError) throw deleteError;
-
-      const productsToSync = products.map(p => ({
-        sku: p.sku,
-        name: p.name,
-        category: p.category,
-        cost_usd: p.costUSD,
-        msrp_usd: p.suggestedPriceUSD
-      }));
-
-      // 2. Insert new products
-      const { error: insertError } = await supabase
-        .from('products')
-        .insert(productsToSync);
-
-      if (insertError) throw insertError;
-
-      alert('Catálogo maestro actualizado con éxito. El sistema recordará esta lista hasta que subas otra.');
+      await replaceProductsCatalog(products);
+      alert(`Catálogo maestro actualizado con éxito en ${getDataBackendLabel()}. El sistema recordará esta lista hasta que subas otra.`);
       fetchProducts(); // Refresh list from DB to ensure IDs are synced
     } catch (error) {
       console.error('Detailed Sync error:', error);
@@ -450,25 +424,22 @@ const App: React.FC = () => {
     }
 
     try {
-      const { error } = await supabase
-        .from('simulations')
-        .insert({
-          sale_price_clp: targetSalePrice,
-          exchange_rate: exchangeRate,
-          total_cost_usd: totalCostUSD,
-          total_cost_clp: totalCostCLP,
-          margin_percent: grossMarginPercent,
-          net_profit_clp: grossMarginValue,
-          items: dealItems.map(item => ({
-            name: item.product.name,
-            qty: item.quantity,
-            cost_usd: item.product.costUSD,
-            category: item.product.category
-          }))
-        });
+      await saveSimulationRecord({
+        sale_price_clp: targetSalePrice,
+        exchange_rate: exchangeRate,
+        total_cost_usd: totalCostUSD,
+        total_cost_clp: totalCostCLP,
+        margin_percent: grossMarginPercent,
+        net_profit_clp: grossMarginValue,
+        items: dealItems.map(item => ({
+          name: item.product.name,
+          qty: item.quantity,
+          cost_usd: item.product.costUSD,
+          category: item.product.category
+        }))
+      });
 
-      if (error) throw error;
-      alert('Simulación guardada en el historial de Supabase.');
+      alert(`Simulación guardada en el historial de ${getDataBackendLabel()}.`);
       fetchSavedQuotations(); // Refresh quotations list
     } catch (error) {
       alert('Error al guardar simulación: ' + (error as Error).message);
@@ -478,12 +449,7 @@ const App: React.FC = () => {
   const fetchSavedQuotations = async () => {
     setIsLoadingQuotations(true);
     try {
-      const { data, error } = await supabase
-        .from('simulations')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
+      const data = await fetchSimulationRecords();
       setSavedQuotations(data || []);
     } catch (error) {
       console.error('Error fetching quotations:', error);
@@ -549,13 +515,7 @@ const App: React.FC = () => {
     if (!confirm('¿Estás seguro de que deseas eliminar esta cotización permanentemente?')) return;
 
     try {
-      const { error } = await supabase
-        .from('simulations')
-        .delete()
-        .eq('id', id);
-
-      if (error) throw error;
-
+      await deleteSimulationRecord(id);
       setSavedQuotations(prev => prev.filter(q => q.id !== id));
       alert('Cotización eliminada con éxito.');
     } catch (error) {
@@ -573,13 +533,7 @@ const App: React.FC = () => {
     if (!confirm(message)) return;
 
     try {
-      const { error } = await supabase
-        .from('products')
-        .delete()
-        .eq('id', product.id);
-
-      if (error) throw error;
-
+      await deleteProductRecord(product.id);
       setProducts(prev => prev.filter(p => p.id !== product.id));
       alert('Producto eliminado con éxito.');
     } catch (error) {
@@ -623,42 +577,34 @@ const App: React.FC = () => {
     setNewProductCost('');
     setShowCreateProductModal(false);
 
-    // 3. Persist to Supabase
+    // 3. Persist to database
     try {
-      const { data, error } = await supabase.from('products').insert([{
+      const data = await createProductRecord({
         name: newProduct.name,
-        cost_usd: newProduct.costUSD,
         category: newProduct.category,
         sku: newProduct.sku,
-        msrp_usd: newProduct.suggestedPriceUSD
-      }]).select().single();
+        costUSD: newProduct.costUSD,
+        suggestedPriceUSD: newProduct.suggestedPriceUSD
+      });
 
-      if (error) {
-        console.error('Error saving unique product to Supabase:', error);
-
-        // Rollback optimistic update
-        setProducts(prev => prev.filter(p => p.id !== newProduct.id));
-
-        if (error.code === '23505') {
-          alert(`El nombre "${savedName}" ya está en uso. Por favor elige otro.`);
-        } else {
-          alert('Error al guardar en la base de datos: ' + error.message);
-        }
-
-        // Restore modal values for retry
-        setNewProductName(savedName);
-        setNewProductCost(cost.toString());
-        setShowCreateProductModal(true);
-      } else if (data) {
-        // Update local product with real ID from DB
-        setProducts(prev => prev.map(p =>
-          p.id === newProduct.id ? { ...p, id: data.id } : p
-        ));
-      }
+      // Update local product with real ID from DB
+      setProducts(prev => prev.map(p =>
+        p.id === newProduct.id ? { ...p, id: data.id } : p
+      ));
     } catch (err) {
       console.error('Exception saving product:', err);
       // Generic rollback
       setProducts(prev => prev.filter(p => p.id !== newProduct.id));
+      const message = (err as { code?: string; message?: string }).message || 'Error inesperado al guardar.';
+      const code = (err as { code?: string }).code;
+      if (code === '23505') {
+        alert(`El nombre "${savedName}" ya está en uso. Por favor elige otro.`);
+      } else {
+        alert('Error al guardar en la base de datos: ' + message);
+      }
+      setNewProductName(savedName);
+      setNewProductCost(cost.toString());
+      setShowCreateProductModal(true);
     }
 
   };
@@ -678,12 +624,7 @@ const App: React.FC = () => {
 
   const updateProductCategory = async (product: Product, newCategory: string) => {
     try {
-      const { error } = await supabase
-        .from('products')
-        .update({ category: newCategory })
-        .eq('id', product.id);
-
-      if (error) throw error;
+      await updateProductCategoryRecord(product.id, newCategory);
 
       // Optimistic update
       setProducts(products.map(p =>
@@ -1806,7 +1747,7 @@ const App: React.FC = () => {
           <img src={logoMegaGen} alt="MegaGen Logo" style={{ height: '40px', objectFit: 'contain' }} />
           <div>
             <h1 style={{ display: 'none' }}>MegaGen Chile</h1>
-            <p className="text-muted">Finance Deal Analyzer v2.6 (Supabase Cloud)</p>
+            <p className="text-muted">Finance Deal Analyzer v2.6 ({getDataBackendLabel()})</p>
           </div>
         </div>
 
@@ -1818,7 +1759,7 @@ const App: React.FC = () => {
           <button
             className="btn btn-secondary"
             style={{ background: 'var(--success)', color: 'white' }}
-            onClick={syncProductsToSupabase}
+            onClick={syncProductsToDatabase}
             disabled={isSyncing}
           >
             <CloudUpload size={14} /> {isSyncing ? 'Sincronizando...' : 'Sincronizar DB'}

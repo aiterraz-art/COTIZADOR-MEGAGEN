@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "sync:pocketbase": "node scripts/sync-supabase-to-pocketbase.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.95.2",
@@ -16,6 +17,7 @@
     "lucide-react": "^0.563.0",
     "papaparse": "^5.5.3",
     "pdfjs-dist": "^5.5.207",
+    "pocketbase": "^0.26.8",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "xlsx": "^0.18.5"

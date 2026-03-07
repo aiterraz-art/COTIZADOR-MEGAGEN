@@ -2,8 +2,8 @@ import React, { useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { Download, FileSpreadsheet, Filter, RefreshCw, Search, Users } from 'lucide-react';
 import { parseCRMPeriodFile } from '../utils/crmParser';
-import { buildClientAggregates, buildSalesRepSummary } from '../utils/crmEngine';
-import type { CRMParseResult, CRMPeriodRow } from '../types/crm';
+import { buildClientAggregates, buildSalesRepSummary, mergeClientAggregates } from '../utils/crmEngine';
+import type { CRMClientAggregate, CRMParseResult, CRMPeriodRow } from '../types/crm';
 
 const STORAGE_KEY = 'megagen.crm.singleFileData';
 
@@ -11,6 +11,7 @@ interface PersistedCRMData {
   sourceFileName: string;
   parseResult: CRMParseResult;
   rows: CRMPeriodRow[];
+  clientsHistory?: CRMClientAggregate[];
   importedAt: string;
 }
 
@@ -32,16 +33,26 @@ const formatCLP = (value: number) =>
 const CRMModule: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const persisted = useMemo(() => readStored(), []);
+  const initialClientHistory = useMemo(() => {
+    if (persisted?.clientsHistory?.length) {
+      return persisted.clientsHistory;
+    }
+    if (persisted?.rows?.length) {
+      return buildClientAggregates(persisted.rows);
+    }
+    return [];
+  }, [persisted]);
 
   const [rows, setRows] = useState<CRMPeriodRow[]>(persisted?.rows ?? []);
   const [parseResult, setParseResult] = useState<CRMParseResult | null>(persisted?.parseResult ?? null);
   const [sourceFileName, setSourceFileName] = useState<string>(persisted?.sourceFileName ?? '');
+  const [clientHistory, setClientHistory] = useState<CRMClientAggregate[]>(initialClientHistory);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [search, setSearch] = useState('');
   const [repFilter, setRepFilter] = useState('Todos');
 
-  const clients = useMemo(() => buildClientAggregates(rows), [rows]);
+  const clients = useMemo(() => clientHistory, [clientHistory]);
   const salesRepSummary = useMemo(() => buildSalesRepSummary(clients), [clients]);
 
   const reps = useMemo(() => ['Todos', ...Array.from(new Set(clients.map((item) => item.salesRep))).sort((a, b) => a.localeCompare(b, 'es'))], [clients]);
@@ -67,13 +78,17 @@ const CRMModule: React.FC = () => {
     setErrorMessage('');
     try {
       const result = await parseCRMPeriodFile(file);
+      const batchClients = buildClientAggregates(result.rows);
+      const mergedClients = mergeClientAggregates(clientHistory, batchClients);
       setRows(result.rows);
       setParseResult(result);
       setSourceFileName(file.name);
+      setClientHistory(mergedClients);
       const payload: PersistedCRMData = {
         sourceFileName: file.name,
         parseResult: result,
         rows: result.rows,
+        clientsHistory: mergedClients,
         importedAt: new Date().toISOString(),
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
@@ -89,6 +104,7 @@ const CRMModule: React.FC = () => {
     setRows([]);
     setParseResult(null);
     setSourceFileName('');
+    setClientHistory([]);
     setSearch('');
     setRepFilter('Todos');
     localStorage.removeItem(STORAGE_KEY);
@@ -186,7 +202,7 @@ const CRMModule: React.FC = () => {
 
       {parseResult ? (
         <div style={{ marginBottom: '0.8rem' }} className="text-muted">
-          Archivo: <strong>{sourceFileName}</strong> | Filas válidas: {parseResult.validRows}/{parseResult.totalRows} | Descartadas: {parseResult.discardedRows} | Periodo: {parseResult.periodFrom || '-'} a {parseResult.periodTo || '-'}
+          Archivo: <strong>{sourceFileName}</strong> | Filas válidas: {parseResult.validRows}/{parseResult.totalRows} | Descartadas: {parseResult.discardedRows} | Periodo: {parseResult.periodFrom || '-'} a {parseResult.periodTo || '-'} | Clientes históricos: {clients.length}
         </div>
       ) : (
         <div style={{ marginBottom: '0.8rem' }} className="text-muted">No hay archivo cargado.</div>
