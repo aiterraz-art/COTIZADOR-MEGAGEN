@@ -9,6 +9,7 @@ import type { DailySalesSummary } from './utils/fileParser';
 import type { ImportItemRaw } from './utils/fileParser';
 import { parseImportItemsFromPdf } from './utils/pdfImportParser';
 import InventoryModule from './components/InventoryModule';
+import CRMModule from './components/CRMModule';
 import { supabase } from './lib/supabase';
 import html2canvas from 'html2canvas';
 import logoMegaGen from './assets/MegaGen.jpg';
@@ -1715,9 +1716,9 @@ const App: React.FC = () => {
       {
         key: 'crm',
         name: 'CRM Comercial',
-        description: 'Pipeline, oportunidades y seguimiento de cuentas.',
+        description: 'Carga única de ventas para completar CRM automático.',
         icon: <BriefcaseBusiness size={18} />,
-        isReady: false
+        isReady: true
       },
       {
         key: 'clientes',
@@ -2864,6 +2865,8 @@ const App: React.FC = () => {
         </section>
       ) : activeModule === 'inventory' ? (
         <InventoryModule />
+      ) : activeModule === 'crm' ? (
+        <CRMModule />
       ) : activeModule === 'analysis' ? (
         <section className="glass card" style={{ marginTop: '1rem', textAlign: 'left' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap', marginBottom: '1.5rem' }}>
