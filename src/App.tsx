@@ -1095,6 +1095,13 @@ const App: React.FC = () => {
     }
   };
 
+  const clearAnalysisData = () => {
+    setCashFlowSummary(null);
+    setAnalysisSourceFile('');
+    setDailySalesSummary(null);
+    setSalesSourceFile('');
+  };
+
   const handleImportFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -2889,6 +2896,9 @@ const App: React.FC = () => {
                 accept=".xlsx,.xls"
                 onChange={handleSalesFileUpload}
               />
+              <button className="btn" style={{ background: 'rgba(239,68,68,0.12)', color: 'var(--error)' }} onClick={clearAnalysisData}>
+                <Trash2 size={14} /> Limpiar datos
+              </button>
             </div>
           </div>
 
