@@ -271,8 +271,8 @@ const CotizadorModule: React.FC<CotizadorModuleProps> = ({
       </div>
 
       {activeTab === 'simulator' && (
-        <div className="grid-cols-2">
-          <div className="glass card">
+        <div className="grid-cols-2 quote-layout">
+          <div className="glass card quote-catalog-panel">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
               <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <Database size={18} /> Catálogo {isLoading ? '(Cargando...)' : ''}
@@ -405,7 +405,7 @@ const CotizadorModule: React.FC<CotizadorModuleProps> = ({
               </div>
             )}
 
-            <div style={{ maxHeight: '550px', overflowY: 'auto', paddingRight: '0.5rem' }}>
+            <div className="quote-catalog-list" style={{ maxHeight: '550px', overflowY: 'auto', paddingRight: '0.5rem' }}>
               {filteredProducts.length === 0 ? (
                 <div style={{ textAlign: 'center', padding: '3rem 1rem', background: 'rgba(255,255,255,0.03)', borderRadius: '12px' }}>
                   <Search size={40} style={{ opacity: 0.2, marginBottom: '1rem' }} />
@@ -451,8 +451,8 @@ const CotizadorModule: React.FC<CotizadorModuleProps> = ({
             </div>
           </div>
 
-          <div>
-            <div className="glass card" style={{ marginBottom: '1.5rem' }}>
+          <div className="quote-config-column">
+            <div className="glass card quote-config-panel" style={{ marginBottom: '1.5rem' }}>
               <div className="quote-card-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
                 <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                   <Calculator size={18} /> Configuración de la Oferta

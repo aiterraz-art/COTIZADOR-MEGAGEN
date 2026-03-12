@@ -163,8 +163,30 @@ h1 {
   gap: 2rem;
 }
 
+.quote-layout {
+  grid-template-columns: minmax(300px, 0.78fr) minmax(0, 1.22fr);
+  align-items: start;
+}
+
 .grid-cols-2 > * {
   min-width: 0;
+}
+
+.quote-config-column {
+  min-width: 0;
+}
+
+.quote-config-panel {
+  position: sticky;
+  top: 1rem;
+}
+
+.quote-catalog-panel {
+  padding: 1.35rem;
+}
+
+.quote-catalog-list {
+  max-height: 480px !important;
 }
 
 .finance-card {
@@ -285,6 +307,7 @@ h1 {
 
 .quote-catalog-card {
   gap: 0.9rem;
+  padding: 0.75rem;
 }
 
 .quote-catalog-actions {
@@ -357,6 +380,10 @@ td {
     gap: 1.5rem;
   }
 
+  .quote-layout {
+    grid-template-columns: 1fr;
+  }
+
   .quote-strategy-grid,
   .quote-summary-grid,
   .quote-profit-grid {
@@ -397,6 +424,18 @@ td {
 
   .quote-catalog-card {
     align-items: flex-start !important;
+  }
+
+  .quote-config-panel {
+    position: static;
+  }
+
+  .quote-catalog-panel {
+    padding: 1.1rem;
+  }
+
+  .quote-catalog-list {
+    max-height: 360px !important;
   }
 
   .quote-catalog-actions .btn {
@@ -461,6 +500,11 @@ td {
   .quote-card-head-actions,
   .quote-catalog-actions {
     width: 100%;
+  }
+
+  .quote-catalog-list {
+    max-height: 300px !important;
+    padding-right: 0;
   }
 
   .quote-catalog-actions .btn {
