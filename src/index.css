@@ -32,12 +32,14 @@ body {
   color: var(--text);
   min-height: 100vh;
   line-height: 1.6;
+  overflow-x: hidden;
 }
 
 .app-container {
   max-width: 1400px;
   margin: 0 auto;
   padding: 2rem;
+  overflow-x: clip;
 }
 
 .modules-shell {
@@ -159,6 +161,10 @@ h1 {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 2rem;
+}
+
+.grid-cols-2 > * {
+  min-width: 0;
 }
 
 .finance-card {
@@ -400,6 +406,14 @@ td {
   .quote-category-row {
     gap: 0.4rem;
   }
+
+  .quote-line-table {
+    display: none;
+  }
+
+  .quote-line-cards {
+    display: block;
+  }
 }
 
 @media (max-width: 640px) {
@@ -485,14 +499,6 @@ td {
 
   .mobile-col-span-full {
     grid-column: 1 / -1 !important;
-  }
-
-  .quote-line-table {
-    display: none;
-  }
-
-  .quote-line-cards {
-    display: block;
   }
 
   .quote-line-card-grid,
