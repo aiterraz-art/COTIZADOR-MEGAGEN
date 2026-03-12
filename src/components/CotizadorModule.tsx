@@ -215,7 +215,7 @@ const CotizadorModule: React.FC<CotizadorModuleProps> = ({
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+        <div className="quote-header-actions" style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
           <button className="btn btn-primary" onClick={() => fileInputRef.current?.click()}>
             <Upload size={14} /> Importar
           </button>
@@ -300,7 +300,7 @@ const CotizadorModule: React.FC<CotizadorModuleProps> = ({
               )}
             </div>
 
-            <div style={{ marginBottom: '1rem', display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center' }}>
+            <div className="quote-category-row" style={{ marginBottom: '1rem', display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center' }}>
               {categories.map((cat) => (
                 <button
                   key={cat}
@@ -416,7 +416,7 @@ const CotizadorModule: React.FC<CotizadorModuleProps> = ({
                 </div>
               ) : (
                 filteredProducts.map((product) => (
-                  <div key={product.id} className="finance-card" style={{ marginBottom: '0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div key={product.id} className="finance-card quote-catalog-card" style={{ marginBottom: '0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div style={{ flex: 1 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                         <span className="text-muted" style={{ fontSize: '0.7rem' }}>[{product.sku || 'S/SKU'}]</span>
@@ -427,7 +427,7 @@ const CotizadorModule: React.FC<CotizadorModuleProps> = ({
                       </div>
                       <div className="badge" style={{ marginTop: '0.2rem', padding: '0.05rem 0.3rem', fontSize: '0.6rem', opacity: 0.8 }}>{product.category}</div>
                     </div>
-                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <div className="quote-catalog-actions" style={{ display: 'flex', gap: '0.5rem' }}>
                       <button className="btn" style={{ padding: '0.4rem', background: 'rgba(255,255,255,0.1)', color: 'var(--text-muted)' }} onClick={() => moveProductToList(product)} title="Mover a otra lista">
                         <ArrowRight size={14} />
                       </button>
@@ -453,11 +453,11 @@ const CotizadorModule: React.FC<CotizadorModuleProps> = ({
 
           <div>
             <div className="glass card" style={{ marginBottom: '1.5rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+              <div className="quote-card-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
                 <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                   <Calculator size={18} /> Configuración de la Oferta
                 </h3>
-                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <div className="quote-card-head-actions" style={{ display: 'flex', gap: '0.5rem' }}>
                   <button className="btn" style={{ background: 'rgba(239, 68, 68, 0.1)', color: 'var(--error)', fontSize: '0.75rem' }} onClick={clearDeal}>
                     <Trash2 size={14} /> Limpiar
                   </button>
@@ -468,7 +468,7 @@ const CotizadorModule: React.FC<CotizadorModuleProps> = ({
               </div>
 
               <div style={{ marginBottom: '1rem', padding: '1rem', borderRadius: '12px', background: 'rgba(0,0,0,0.18)' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 1fr 1fr', gap: '0.75rem', alignItems: 'end' }}>
+                <div className="quote-strategy-grid" style={{ display: 'grid', gridTemplateColumns: '1.1fr 1fr 1fr', gap: '0.75rem', alignItems: 'end' }}>
                   <div>
                     <label style={{ display: 'block', fontSize: '0.65rem', color: 'var(--text-muted)', marginBottom: '0.35rem' }}>MODO DE CALCULO</label>
                     <select className="input-field" value={quotePricingConfig.mode} onChange={(e) => setQuotePricingConfig((prev) => ({ ...prev, mode: e.target.value as QuotePricingConfig['mode'] }))}>
@@ -517,7 +517,7 @@ const CotizadorModule: React.FC<CotizadorModuleProps> = ({
                 </div>
               </div>
 
-              <div className="table-container" style={{ maxHeight: '340px' }}>
+              <div className="table-container quote-line-table" style={{ maxHeight: '340px' }}>
                 <table>
                   <thead>
                     <tr>
@@ -580,13 +580,68 @@ const CotizadorModule: React.FC<CotizadorModuleProps> = ({
                 </table>
               </div>
 
+              <div className="quote-line-cards">
+                {quoteResult.lines.map((item) => (
+                  <div key={`card-${item.productId}`} className="finance-card quote-line-card">
+                    <div className="quote-line-card-head">
+                      <div style={{ fontWeight: 700 }}>{item.productName}</div>
+                      <button onClick={() => removeItem(item.productId)} style={{ background: 'transparent', border: 'none', color: 'var(--error)', cursor: 'pointer', padding: 0 }}>
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+
+                    <div className="quote-line-card-grid">
+                      <label>
+                        <span className="text-muted quote-field-label">Cantidad</span>
+                        <input type="number" className="input-field" value={item.quantity} onChange={(e) => updateQuantity(item.productId, parseInt(e.target.value) || 0)} />
+                      </label>
+                      <label>
+                        <span className="text-muted quote-field-label">Modo</span>
+                        <select className="input-field" value={item.pricingMode} onChange={(e) => updateQuoteLineMode(item.productId, e.target.value as LinePricingMode)}>
+                          {LINE_PRICING_MODE_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>{option.label}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        <span className="text-muted quote-field-label">Valor regla</span>
+                        <input
+                          type="number"
+                          className="input-field"
+                          disabled={item.pricingMode === 'inherit' || item.pricingMode === 'at_cost'}
+                          value={item.value ?? ''}
+                          onChange={(e) => updateQuoteLineValue(item.productId, e.target.value)}
+                          placeholder={item.pricingMode === 'fixed_margin_percent' ? '%' : 'CLP'}
+                        />
+                      </label>
+                      <label className="quote-lock-field">
+                        <span className="text-muted quote-field-label">Bloquear</span>
+                        <input type="checkbox" checked={item.locked} onChange={() => toggleQuoteLineLock(item.productId)} />
+                      </label>
+                    </div>
+
+                    <div className="quote-line-metrics">
+                      <div><span className="text-muted">Costo</span><strong>{formatCLP(item.costTotalCLP)}</strong></div>
+                      <div><span className="text-muted">Neto</span><strong>{formatCLP(item.netTotalCLP)}</strong></div>
+                      <div><span className="text-muted">Utilidad</span><strong className={item.profitTotalCLP >= 0 ? 'positive' : 'negative'}>{formatCLP(item.profitTotalCLP)}</strong></div>
+                      <div><span className="text-muted">Margen</span><strong className={item.marginPercent >= 0 ? 'positive' : 'negative'}>{item.marginPercent.toFixed(1)}%</strong></div>
+                    </div>
+                  </div>
+                ))}
+                {quoteLines.length === 0 && (
+                  <div className="finance-card text-muted" style={{ textAlign: 'center' }}>
+                    Selecciona items del catálogo
+                  </div>
+                )}
+              </div>
+
               <div style={{ marginTop: '1.5rem', padding: '1.25rem', background: 'rgba(0,0,0,0.2)', borderRadius: '12px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.65rem', color: 'var(--text-muted)' }}>
                     <DollarSign size={12} /> PRECIO DE VENTA DE LA OFERTA (CLP)
                   </label>
                   {quoteLines.length > 0 && (
-                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <div className="quote-price-actions" style={{ display: 'flex', gap: '0.5rem' }}>
                       <button className="btn" style={{ fontSize: '0.65rem', padding: '0.25rem 0.5rem', background: 'rgba(255, 255, 255, 0.05)', color: 'var(--text-muted)', border: '1px solid rgba(255,255,255,0.1)' }} onClick={() => applyPricingPreset('at_cost')} title="Aplicar precio al costo (0% margen)">Venta al Costo</button>
                       <button className="btn" style={{ fontSize: '0.65rem', padding: '0.25rem 0.5rem', background: 'rgba(74, 222, 128, 0.1)', color: 'var(--success)' }} onClick={() => applyPricingPreset('global_margin')} title="Aplicar precio con 50% de margen">50% → {formatCLP(quoteResult.totalNetCLP)}</button>
                     </div>
@@ -597,7 +652,7 @@ const CotizadorModule: React.FC<CotizadorModuleProps> = ({
                   <input type="number" className="input-field" style={{ paddingLeft: '28px', fontSize: '1.25rem', fontWeight: 'bold' }} value={targetSalePrice} onChange={(e) => handleNetSalePriceChange(e.target.value)} disabled={quotePricingConfig.mode === 'manual_lines' || quotePricingConfig.mode === 'at_cost'} />
                 </div>
                 {targetSalePrice > 0 && (
-                  <div style={{ marginTop: '0.3rem', textAlign: 'right', fontSize: '0.8rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.5rem' }}>
+                  <div className="quote-iva-row" style={{ marginTop: '0.3rem', textAlign: 'right', fontSize: '0.8rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.5rem' }}>
                     <span>Total con IVA:</span>
                     <div style={{ position: 'relative', width: '120px' }}>
                       <span style={{ position: 'absolute', left: '8px', top: '50%', transform: 'translateY(-50%)', fontWeight: 'bold', color: '#fff' }}>$</span>
@@ -625,7 +680,7 @@ const CotizadorModule: React.FC<CotizadorModuleProps> = ({
                       <Percent size={12} /> CALCULAR PRECIO POR MARGEN OBJETIVO
                     </div>
                   </label>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <div className="quote-margin-row" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                     <div style={{ position: 'relative', flex: 1 }}>
                       <input type="number" placeholder="Ej: 40" className="input-field" style={{ paddingRight: '25px', width: '100%' }} value={quotePricingConfig.mode === 'global_margin' ? (quotePricingConfig.targetMarginPercent ?? DEFAULT_QUOTE_MARGIN_PERCENT) : ''} onChange={(e) => handleGlobalMarginChange(e.target.value)} />
                       <span style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontSize: '0.8rem' }}>%</span>
@@ -646,7 +701,7 @@ const CotizadorModule: React.FC<CotizadorModuleProps> = ({
                   </div>
                 )}
 
-                <div className="grid" style={{ gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '0.75rem', marginTop: '1rem' }}>
+                <div className="grid quote-summary-grid" style={{ gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '0.75rem', marginTop: '1rem' }}>
                   <div className="finance-card" style={{ padding: '0.75rem' }}>
                     <div className="text-muted" style={{ fontSize: '0.6rem' }}>COSTO TOTAL</div>
                     <div style={{ fontSize: '1rem', fontWeight: 'bold' }}>{formatCLP(quoteResult.totalCostCLP)}</div>
@@ -675,7 +730,7 @@ const CotizadorModule: React.FC<CotizadorModuleProps> = ({
                 </h3>
               </div>
 
-              <div className="grid" style={{ gridTemplateColumns: '1.2fr 0.8fr', gap: '1.25rem' }}>
+              <div className="grid quote-profit-grid" style={{ gridTemplateColumns: '1.2fr 0.8fr', gap: '1.25rem' }}>
                 <div>
                   <div className="text-muted" style={{ fontSize: '0.75rem', marginBottom: '0.25rem' }}>MARGEN BRUTO (%)</div>
                   <div style={{ fontSize: '2.2rem', fontWeight: '800' }} className={grossMarginPercent >= 50 ? 'positive' : grossMarginPercent >= 30 ? 'warning' : 'negative'}>

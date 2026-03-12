@@ -217,6 +217,74 @@ h1 {
   overflow-x: auto;
 }
 
+.quote-line-cards {
+  display: none;
+}
+
+.quote-line-card {
+  margin-top: 0.85rem;
+}
+
+.quote-line-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.85rem;
+}
+
+.quote-line-card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.quote-field-label {
+  display: block;
+  font-size: 0.72rem;
+  margin-bottom: 0.35rem;
+}
+
+.quote-lock-field {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.quote-lock-field input {
+  width: 18px;
+  height: 18px;
+}
+
+.quote-line-metrics {
+  margin-top: 0.9rem;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.quote-line-metrics div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid var(--border);
+}
+
+.quote-line-metrics strong {
+  font-size: 0.92rem;
+}
+
+.quote-catalog-card {
+  gap: 0.9rem;
+}
+
+.quote-catalog-actions {
+  flex-shrink: 0;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
@@ -264,7 +332,7 @@ td {
 /* Responsive Adjustments */
 @media (max-width: 1024px) {
   .app-container {
-    padding: 1rem;
+    padding: 0.85rem;
   }
 
   .modules-grid {
@@ -274,13 +342,63 @@ td {
   .header {
     flex-direction: column;
     align-items: flex-start;
-    gap: 1.5rem;
-    margin-bottom: 2rem;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
   }
 
   .grid-cols-2 {
     grid-template-columns: 1fr;
     gap: 1.5rem;
+  }
+
+  .quote-strategy-grid,
+  .quote-summary-grid,
+  .quote-profit-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .quote-header-actions,
+  .quote-price-actions,
+  .quote-iva-row,
+  .quote-margin-row {
+    flex-wrap: wrap;
+  }
+
+  .card {
+    padding: 1.35rem;
+  }
+
+  .btn {
+    padding: 0.65rem 1rem;
+    font-size: 0.9rem;
+  }
+
+  .input-field {
+    padding: 0.65rem;
+  }
+
+  th,
+  td {
+    padding: 0.7rem;
+  }
+
+  .quote-card-head,
+  .quote-card-head-actions,
+  .quote-catalog-card,
+  .quote-catalog-actions {
+    flex-wrap: wrap;
+  }
+
+  .quote-catalog-card {
+    align-items: flex-start !important;
+  }
+
+  .quote-catalog-actions .btn {
+    padding: 0.45rem 0.55rem;
+  }
+
+  .quote-category-row {
+    gap: 0.4rem;
   }
 }
 
@@ -304,7 +422,7 @@ td {
   }
 
   .card {
-    padding: 1.25rem;
+    padding: 1rem;
   }
 
   .logo-group img,
@@ -314,12 +432,26 @@ td {
   }
 
   .finance-card {
-    padding: 0.75rem;
+    padding: 0.7rem;
   }
 
   .badge {
     padding: 0.15rem 0.4rem;
     font-size: 0.65rem;
+  }
+
+  .btn {
+    font-size: 0.82rem;
+  }
+
+  .quote-card-head-actions,
+  .quote-catalog-actions {
+    width: 100%;
+  }
+
+  .quote-catalog-actions .btn {
+    flex: 1;
+    justify-content: center;
   }
 
 
@@ -353,6 +485,30 @@ td {
 
   .mobile-col-span-full {
     grid-column: 1 / -1 !important;
+  }
+
+  .quote-line-table {
+    display: none;
+  }
+
+  .quote-line-cards {
+    display: block;
+  }
+
+  .quote-line-card-grid,
+  .quote-line-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .quote-iva-row {
+    justify-content: flex-start !important;
+    text-align: left !important;
+  }
+
+  .quote-price-actions .btn,
+  .quote-header-actions .btn {
+    width: 100%;
+    justify-content: center;
   }
 
   /* Hide specific elements on mobile if needed */
