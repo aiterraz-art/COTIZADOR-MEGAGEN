@@ -10,6 +10,7 @@ import type { ImportItemRaw } from './utils/fileParser';
 import { parseImportItemsFromPdf } from './utils/pdfImportParser';
 import InventoryModule from './components/InventoryModule';
 import CRMModule from './components/CRMModule';
+import CotizadorModule from './components/CotizadorModule';
 import {
   createProductRecord,
   deleteProductRecord,
@@ -19,29 +20,22 @@ import {
   getDataBackendLabel,
   replaceProductsCatalog,
   saveSimulationRecord,
+  type SavedSimulationRecord,
+  type SimulationItemPayload,
   updateProductCategoryRecord,
 } from './lib/appDataRepository';
 import html2canvas from 'html2canvas';
 import logoMegaGen from './assets/MegaGen.jpg';
+import { calculateQuote } from './utils/quotePricingEngine';
+import type { LinePricingMode, QuoteLineDraft, QuotePricingConfig } from './types/quotation';
+import { useCotizadorState } from './hooks/useCotizadorState';
 import {
   Calculator,
-  DollarSign,
-  Search,
-  Plus,
-  Trash2,
-  Percent,
-  Upload,
-  Save,
-  CloudUpload,
-  Database,
-  CheckCircle2,
-  RefreshCw,
-  History,
   Copy,
-  Image as ImageIcon,
-  FolderPlus,
-  ArrowRight,
-  X,
+  RefreshCw,
+  Save,
+  Search,
+  Trash2,
   LayoutGrid,
   BriefcaseBusiness,
   Users,
@@ -71,6 +65,7 @@ const IMPORT_SHIPPING_CURRENCY_STORAGE_KEY = 'megagen.import.shippingCurrency';
 const IMPORT_CUSTOMS_STORAGE_KEY = 'megagen.import.customs';
 const IMPORT_MARGIN_STORAGE_KEY = 'megagen.import.margin';
 const IMPORT_SNAPSHOTS_STORAGE_KEY = 'megagen.import.snapshots';
+const DEFAULT_QUOTE_MARGIN_PERCENT = 50;
 
 const readStoredJSON = <T,>(key: string): T | null => {
   try {
@@ -87,23 +82,6 @@ const readStoredJSON = <T,>(key: string): T | null => {
 // Inside App component...
 
 
-
-interface DealItem {
-  product: Product;
-  quantity: number;
-}
-
-interface SavedQuotation {
-  id: string;
-  created_at: string;
-  sale_price_clp: number;
-  exchange_rate: number;
-  total_cost_usd: number;
-  total_cost_clp: number;
-  margin_percent: number;
-  net_profit_clp: number;
-  items: Array<{ name: string; qty: number; cost_usd: number; category?: string }>;
-}
 
 type ModuleKey = 'cotizador' | 'analysis' | 'imports' | 'inventory' | 'crm' | 'clientes' | 'facturacion';
 
@@ -135,10 +113,6 @@ interface ImportCalculationSnapshot {
 
 const App: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
-  const [dealItems, setDealItems] = useState<DealItem[]>([]);
-  const [targetSalePrice, setTargetSalePrice] = useState<number>(0);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [exchangeRate, setExchangeRate] = useState<number>(() => {
     const storedRate = Number(localStorage.getItem(EXCHANGE_RATE_STORAGE_KEY));
     return Number.isFinite(storedRate) && storedRate > 0 ? storedRate : 950;
@@ -154,9 +128,8 @@ const App: React.FC = () => {
   const importPdfInputRef = useRef<HTMLInputElement>(null);
 
   // Quotations Manager State
-  const [activeTab, setActiveTab] = useState<'simulator' | 'history'>('simulator');
   const [activeModule, setActiveModule] = useState<ModuleKey>('cotizador');
-  const [savedQuotations, setSavedQuotations] = useState<SavedQuotation[]>([]);
+  const [savedQuotations, setSavedQuotations] = useState<SavedSimulationRecord[]>([]);
   const [isLoadingQuotations, setIsLoadingQuotations] = useState(false);
   const [cashFlowSummary, setCashFlowSummary] = useState<CashFlowSummary | null>(() => readStoredJSON<CashFlowSummary>(CASH_FLOW_SUMMARY_STORAGE_KEY));
   const [analysisSourceFile, setAnalysisSourceFile] = useState(() => localStorage.getItem(CASH_FLOW_FILE_STORAGE_KEY) || '');
@@ -226,6 +199,41 @@ const App: React.FC = () => {
       name.includes('manual') ||
       name.includes('task');
   };
+
+  const {
+    quoteLines,
+    setQuoteLines,
+    quotePricingConfig,
+    setQuotePricingConfig,
+    searchTerm,
+    setSearchTerm,
+    selectedCategory,
+    setSelectedCategory,
+    activeTab,
+    setActiveTab,
+    filteredProducts,
+    totalCostUSD,
+    quoteResult,
+    targetSalePrice,
+    grossMarginValue,
+    grossMarginPercent,
+    clearDeal,
+    addItem,
+    removeItem,
+    updateQuantity,
+    updateQuoteLineMode,
+    updateQuoteLineValue,
+    toggleQuoteLineLock,
+    handleNetSalePriceChange,
+    handleSalePriceWithIvaChange,
+    handleGlobalMarginChange,
+    applyPricingPreset,
+  } = useCotizadorState({
+    products,
+    exchangeRate,
+    normalizeText,
+    checkIsAtCost,
+  });
 
   // Fetch products on mount (exchange rate remains persistent until manually changed/refreshed)
   useEffect(() => {
@@ -418,24 +426,36 @@ const App: React.FC = () => {
   };
 
   const saveSimulation = async () => {
-    if (dealItems.length === 0 || targetSalePrice <= 0) {
+    if (quoteLines.length === 0 || quoteResult.totalNetCLP <= 0) {
       alert('Ingresa una simulación válida antes de guardar.');
       return;
     }
 
     try {
       await saveSimulationRecord({
-        sale_price_clp: targetSalePrice,
+        sale_price_clp: quoteResult.totalNetCLP,
         exchange_rate: exchangeRate,
         total_cost_usd: totalCostUSD,
-        total_cost_clp: totalCostCLP,
+        total_cost_clp: quoteResult.totalCostCLP,
         margin_percent: grossMarginPercent,
         net_profit_clp: grossMarginValue,
-        items: dealItems.map(item => ({
-          name: item.product.name,
+        pricing_mode: quotePricingConfig.mode,
+        target_margin_percent: quotePricingConfig.targetMarginPercent ?? null,
+        target_net_total_clp: quotePricingConfig.targetNetTotalCLP ?? quoteResult.totalNetCLP,
+        warnings: quoteResult.warnings,
+        items: quoteResult.lines.map(item => ({
+          product_id: item.productId,
+          name: item.productName,
           qty: item.quantity,
-          cost_usd: item.product.costUSD,
-          category: item.product.category
+          cost_usd: item.costUSD,
+          category: item.category,
+          pricing_mode: item.pricingMode,
+          pricing_value: item.value ?? null,
+          locked: item.locked,
+          net_unit_clp: item.netUnitCLP,
+          net_total_clp: item.netTotalCLP,
+          profit_total_clp: item.profitTotalCLP,
+          margin_percent: item.marginPercent,
         }))
       });
 
@@ -652,22 +672,27 @@ const App: React.FC = () => {
   // Since I can't easily replace the generic 'categories' variable in the middle of the file without context, 
   // I will assume I replaced the useMemo block above. Wait, I should replace lines 62-65.
 
-  const duplicateQuotation = (quotation: SavedQuotation) => {
-    // Convert saved items back to DealItems format
-    const recreatedItems: DealItem[] = quotation.items.map((item, index) => ({
-      product: {
-        id: `restored-${index}`,
-        name: item.name,
-        sku: '',
-        category: item.category || 'Restaurado',
-        costUSD: item.cost_usd,
-        suggestedPriceUSD: 0
-      },
-      quantity: item.qty
-    }));
+  const savedItemToQuoteLine = (item: SimulationItemPayload, index: number): QuoteLineDraft => ({
+    productId: item.product_id || `restored-${index}`,
+    productName: item.name,
+    sku: '',
+    quantity: item.qty,
+    costUSD: item.cost_usd,
+    category: item.category,
+    pricingMode: (item.pricing_mode as LinePricingMode | undefined) || 'inherit',
+    value: item.pricing_value ?? item.net_unit_clp ?? undefined,
+    locked: Boolean(item.locked),
+  });
 
-    setDealItems(recreatedItems);
-    setTargetSalePrice(quotation.sale_price_clp);
+  const duplicateQuotation = (quotation: SavedSimulationRecord) => {
+    const recreatedLines = quotation.items.map(savedItemToQuoteLine);
+
+    setQuoteLines(recreatedLines);
+    setQuotePricingConfig({
+      mode: (quotation.pricing_mode as QuotePricingConfig['mode'] | undefined) || 'legacy_global_net',
+      targetMarginPercent: quotation.target_margin_percent ?? DEFAULT_QUOTE_MARGIN_PERCENT,
+      targetNetTotalCLP: quotation.target_net_total_clp ?? quotation.sale_price_clp,
+    });
     setExchangeRate(quotation.exchange_rate);
     setActiveTab('simulator');
     alert('Cotización cargada. Puedes modificarla y guardarla nuevamente.');
@@ -677,7 +702,7 @@ const App: React.FC = () => {
     return Math.round(amount * 0.19);
   };
 
-  const generateInternalExport = async (quotation: SavedQuotation) => {
+  const generateInternalExport = async (quotation: SavedSimulationRecord) => {
     try {
       // Create a temporary element for the quotation
       const tempDiv = document.createElement('div');
@@ -696,18 +721,15 @@ const App: React.FC = () => {
       const total = subtotal + iva;
       const date = new Date(quotation.created_at).toLocaleDateString('es-CL');
 
-      const details = calculatePriceDetails(
-        quotation.items.map(item => ({
-          product: { name: item.name, category: item.category, costUSD: item.cost_usd } as any,
-          quantity: item.qty
-        })),
-        quotation.sale_price_clp,
-        quotation.exchange_rate
-      );
-
-      const marginVal = subtotal - quotation.total_cost_clp;
-      const flexibleSaleVal = subtotal - details.totalAtCost;
-      const displayMarginPercent = flexibleSaleVal > 0 ? (marginVal / flexibleSaleVal) * 100 : 0;
+      const details = calculateQuote({
+        exchangeRate: quotation.exchange_rate,
+        lines: quotation.items.map(savedItemToQuoteLine),
+        pricingConfig: {
+          mode: (quotation.pricing_mode as QuotePricingConfig['mode'] | undefined) || 'legacy_global_net',
+          targetMarginPercent: quotation.target_margin_percent ?? DEFAULT_QUOTE_MARGIN_PERCENT,
+          targetNetTotalCLP: quotation.target_net_total_clp ?? quotation.sale_price_clp,
+        }
+      });
 
       tempDiv.innerHTML = `
         <div style="background: rgba(255,255,255,0.95); color: #1a1a2e; border-radius: 20px; padding: 30px;">
@@ -726,13 +748,12 @@ const App: React.FC = () => {
               </tr>
             </thead>
             <tbody>
-              ${quotation.items.map((item) => {
-        const isAtCost = checkIsAtCost({ name: item.name, category: item.category });
+              ${details.lines.map((item) => {
         return `
                 <tr style="border-bottom: 1px solid #eee;">
-                  <td style="padding: 10px; font-size: 12px;">${item.name}${isAtCost ? ' <span style="color:#16a34a; font-weight:bold;">(Al Costo)</span>' : ''}</td>
-                  <td style="padding: 10px; text-align: center; font-size: 12px;">${item.qty}</td>
-                  <td style="padding: 10px; text-align: right; font-size: 12px;">$${Math.round(item.cost_usd).toLocaleString('en-US')}</td>
+                  <td style="padding: 10px; font-size: 12px;">${item.productName}${item.effectiveMode === 'at_cost' ? ' <span style="color:#16a34a; font-weight:bold;">(Al Costo)</span>' : ''}</td>
+                  <td style="padding: 10px; text-align: center; font-size: 12px;">${item.quantity}</td>
+                  <td style="padding: 10px; text-align: right; font-size: 12px;">$${Math.round(item.costUSD).toLocaleString('en-US')}</td>
                 </tr>
               `;
       }).join('')}
@@ -758,10 +779,10 @@ const App: React.FC = () => {
             </div>
           </div>
 
-          <div style="background: ${displayMarginPercent >= 50 ? '#dcfce7' : displayMarginPercent >= 30 ? '#fef9c3' : '#fee2e2'}; padding: 15px; border-radius: 12px; text-align: center;">
-            <p style="margin: 0; font-size: 12px; color: #666;">Margen Bruto (solo items con utilidad)</p>
-            <p style="margin: 5px 0 0 0; font-size: 24px; font-weight: 700; color: ${displayMarginPercent >= 50 ? '#16a34a' : displayMarginPercent >= 30 ? '#ca8a04' : '#dc2626'};">
-              ${Math.round(displayMarginPercent)}%
+          <div style="background: ${quotation.margin_percent >= 50 ? '#dcfce7' : quotation.margin_percent >= 30 ? '#fef9c3' : '#fee2e2'}; padding: 15px; border-radius: 12px; text-align: center;">
+            <p style="margin: 0; font-size: 12px; color: #666;">Margen Bruto</p>
+            <p style="margin: 5px 0 0 0; font-size: 24px; font-weight: 700; color: ${quotation.margin_percent >= 50 ? '#16a34a' : quotation.margin_percent >= 30 ? '#ca8a04' : '#dc2626'};">
+              ${Math.round(quotation.margin_percent)}%
             </p>
           </div>
         </div>
@@ -791,7 +812,7 @@ const App: React.FC = () => {
     }
   };
 
-  const generateClientExport = async (quotation: SavedQuotation) => {
+  const generateClientExport = async (quotation: SavedSimulationRecord) => {
     try {
       // Create a temporary element for the quotation
       const tempDiv = document.createElement('div');
@@ -810,14 +831,15 @@ const App: React.FC = () => {
       const total = subtotal + iva;
       const date = new Date(quotation.created_at).toLocaleDateString('es-CL');
 
-      const details = calculatePriceDetails(
-        quotation.items.map(item => ({
-          product: { name: item.name, category: item.category, costUSD: item.cost_usd } as any,
-          quantity: item.qty
-        })),
-        quotation.sale_price_clp,
-        quotation.exchange_rate
-      );
+      const details = calculateQuote({
+        exchangeRate: quotation.exchange_rate,
+        lines: quotation.items.map(savedItemToQuoteLine),
+        pricingConfig: {
+          mode: (quotation.pricing_mode as QuotePricingConfig['mode'] | undefined) || 'legacy_global_net',
+          targetMarginPercent: quotation.target_margin_percent ?? DEFAULT_QUOTE_MARGIN_PERCENT,
+          targetNetTotalCLP: quotation.target_net_total_clp ?? quotation.sale_price_clp,
+        }
+      });
 
       tempDiv.innerHTML = `
         <div style="background: white; padding: 20px;">
@@ -837,13 +859,13 @@ const App: React.FC = () => {
               </tr>
             </thead>
             <tbody>
-              ${details.items.map((item) => {
-        const unitPriceCLP = item.unitPriceNet;
-        const lineTotalCLP = item.totalPriceNet;
+              ${details.lines.map((item) => {
+        const unitPriceCLP = item.netUnitCLP;
+        const lineTotalCLP = item.netTotalCLP;
 
         return `
                 <tr style="border-bottom: 1px solid #eee;">
-                  <td style="padding: 10px; font-size: 12px; color: #334155;">${item.product.name}</td>
+                  <td style="padding: 10px; font-size: 12px; color: #334155;">${item.productName}</td>
                   <td style="padding: 10px; text-align: center; font-size: 12px; color: #334155;">${item.quantity}</td>
                   <td style="padding: 10px; text-align: right; font-size: 12px; color: #334155;">$${Math.round(unitPriceCLP).toLocaleString('es-CL', { maximumFractionDigits: 0 })}</td>
                   <td style="padding: 10px; text-align: right; font-size: 12px; font-weight: 600; color: #334155;">$${Math.round(lineTotalCLP).toLocaleString('es-CL', { maximumFractionDigits: 0 })}</td>
@@ -900,95 +922,6 @@ const App: React.FC = () => {
     }
   };
 
-  const clearDeal = () => {
-    if (dealItems.length === 0) return;
-    if (confirm('¿Estás seguro de que deseas limpiar la simulación actual?')) {
-      setDealItems([]);
-      setTargetSalePrice(0);
-    }
-  };
-
-  const calculatePriceDetails = (items: DealItem[], salePrice: number, rate: number) => {
-    const atCostItems = items.filter(i => checkIsAtCost({ name: i.product.name, category: i.product.category }));
-    const flexItems = items.filter(i => !checkIsAtCost({ name: i.product.name, category: i.product.category }));
-
-    const totalAtCost = atCostItems.reduce((acc, i) => acc + (i.product.costUSD * i.quantity * rate), 0);
-    const totalFlexCost = flexItems.reduce((acc, i) => acc + (i.product.costUSD * i.quantity * rate), 0);
-
-    const multiplier = totalFlexCost > 0 ? Math.max(0, (salePrice - totalAtCost) / totalFlexCost) : 1;
-
-    const mappedItems = items.map(i => {
-      const isAtCost = checkIsAtCost({ name: i.product.name, category: i.product.category });
-      const unitPrice = i.product.costUSD * rate * (isAtCost ? 1 : multiplier);
-      return {
-        ...i,
-        unitPriceNet: unitPrice,
-        totalPriceNet: unitPrice * i.quantity,
-        isAtCost
-      };
-    });
-
-    return {
-      items: mappedItems,
-      totalCostCLP: (totalAtCost + totalFlexCost),
-      multiplier,
-      totalAtCost,
-      totalFlexCost
-    };
-  };
-
-  const filteredProducts = useMemo(() => {
-    const searchWords = normalizeText(searchTerm).split(/\s+/).filter(w => w.length > 0);
-
-    return products.filter(p => {
-      const matchesCategory = selectedCategory === 'All'
-        || (selectedCategory === 'Generales' && (p.category === 'General' || p.category === 'Generales'))
-        || p.category === selectedCategory;
-      if (!matchesCategory) return false;
-
-      if (searchWords.length === 0) return true;
-
-      const searchableText = normalizeText(`${p.name} ${p.sku || ''} ${p.category}`);
-      return searchWords.every(word => searchableText.includes(word));
-    });
-  }, [products, searchTerm, selectedCategory]);
-
-  const totalCostUSD = useMemo(() => {
-    return dealItems.reduce((acc, item) => acc + (item.product.costUSD * item.quantity), 0);
-  }, [dealItems]);
-
-  const totalCostCLP = useMemo(() => {
-    return totalCostUSD * exchangeRate;
-  }, [totalCostUSD, exchangeRate]);
-
-  const priceDetails = useMemo(() => {
-    return calculatePriceDetails(dealItems, targetSalePrice, exchangeRate);
-  }, [dealItems, targetSalePrice, exchangeRate]);
-
-  // Auto-calculate the price needed for 50% margin
-  const suggested50PercentPrice = useMemo(() => {
-    // Target 50% margin ONLY on flexible items, then add fixed costs
-    const flexibleSaleAt50 = priceDetails.totalFlexCost / 0.5;
-    return flexibleSaleAt50 + priceDetails.totalAtCost;
-  }, [priceDetails.totalFlexCost, priceDetails.totalAtCost]);
-
-  const grossMarginValue = useMemo(() => {
-    return targetSalePrice - totalCostCLP;
-  }, [targetSalePrice, totalCostCLP]);
-
-  const grossMarginPercent = useMemo(() => {
-    if (targetSalePrice <= 0) return 0;
-    return (grossMarginValue / targetSalePrice) * 100;
-  }, [grossMarginValue, targetSalePrice]);
-
-  // Auto-update targetSalePrice when deal items change (only if current price is 0)
-  useEffect(() => {
-    if (dealItems.length > 0 && targetSalePrice === 0) {
-      setTargetSalePrice(Math.round(suggested50PercentPrice));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dealItems.length, suggested50PercentPrice]);
-
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -1005,7 +938,7 @@ const App: React.FC = () => {
         suggestedPriceUSD: p.msrpUSD
       }));
       setProducts(newProducts);
-      setDealItems([]);
+      setQuoteLines([]);
     } catch (error) {
       alert('Error al procesar el archivo: ' + (error as Error).message);
     }
@@ -1375,47 +1308,6 @@ const App: React.FC = () => {
     setImportSnapshots((prev) => prev.filter((snapshot) => snapshot.id !== snapshotId));
   };
 
-  const addItem = (product: Product) => {
-    const isAtCost = checkIsAtCost({ name: product.name, category: product.category });
-    const existing = dealItems.find(item => item.product.id === product.id);
-
-    if (existing) {
-      setDealItems(dealItems.map(item =>
-        item.product.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
-      ));
-    } else {
-      setDealItems([...dealItems, { product, quantity: 1 }]);
-    }
-
-    if (isAtCost) {
-      setTargetSalePrice(prev => prev + (product.costUSD * exchangeRate));
-    }
-  };
-
-  const removeItem = (productId: string) => {
-    const item = dealItems.find(i => i.product.id === productId);
-    if (item && checkIsAtCost({ name: item.product.name, category: item.product.category })) {
-      setTargetSalePrice(prev => Math.max(0, prev - (item.product.costUSD * item.quantity * exchangeRate)));
-    }
-    setDealItems(dealItems.filter(item => item.product.id !== productId));
-  };
-
-  const updateQuantity = (productId: string, quantity: number) => {
-    const item = dealItems.find(i => i.product.id === productId);
-    if (item && checkIsAtCost({ name: item.product.name, category: item.product.category })) {
-      const diff = quantity - item.quantity;
-      setTargetSalePrice(prev => Math.max(0, prev + (diff * item.product.costUSD * exchangeRate)));
-    }
-    if (quantity <= 0) {
-      setDealItems(dealItems.filter(existingItem => existingItem.product.id !== productId));
-      return;
-    }
-
-    setDealItems(dealItems.map(existingItem =>
-      existingItem.product.id === productId ? { ...existingItem, quantity } : existingItem
-    ));
-  };
-
   const formatCLP = (value: number) => {
     return new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP', maximumFractionDigits: 0 }).format(value);
   };
@@ -1598,27 +1490,6 @@ const App: React.FC = () => {
     return lines.join('\n');
   }, [koreaCopyRows, dayLabel]);
 
-  const parseInputNumber = (rawValue: string): number | null => {
-    const normalized = rawValue.trim().replace(',', '.');
-    if (!normalized) return 0;
-    const parsed = Number(normalized);
-    if (!Number.isFinite(parsed)) return null;
-    return parsed;
-  };
-
-  const handleNetSalePriceChange = (rawValue: string) => {
-    const parsed = parseInputNumber(rawValue);
-    if (parsed === null) return;
-    setTargetSalePrice(Math.max(0, Math.round(parsed)));
-  };
-
-  const handleSalePriceWithIvaChange = (rawValue: string) => {
-    const parsedGross = parseInputNumber(rawValue);
-    if (parsedGross === null) return;
-    const netPrice = parsedGross / 1.19;
-    setTargetSalePrice(Math.max(0, Math.round(netPrice)));
-  };
-
   const modules: Array<{
     key: ModuleKey;
     name: string;
@@ -1741,711 +1612,73 @@ const App: React.FC = () => {
       </section>
 
       {activeModule === 'cotizador' ? (
-        <>
-          <header className="header">
-        <div className="logo-group">
-          <img src={logoMegaGen} alt="MegaGen Logo" style={{ height: '40px', objectFit: 'contain' }} />
-          <div>
-            <h1 style={{ display: 'none' }}>MegaGen Chile</h1>
-            <p className="text-muted">Finance Deal Analyzer v2.6 ({getDataBackendLabel()})</p>
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-          <button className="btn btn-primary" onClick={() => fileInputRef.current?.click()}>
-            <Upload size={14} /> Importar
-          </button>
-
-          <button
-            className="btn btn-secondary"
-            style={{ background: 'var(--success)', color: 'white' }}
-            onClick={syncProductsToDatabase}
-            disabled={isSyncing}
-          >
-            <CloudUpload size={14} /> {isSyncing ? 'Sincronizando...' : 'Sincronizar DB'}
-          </button>
-
-          <input
-            type="file"
-            ref={fileInputRef}
-            style={{ display: 'none' }}
-            accept=".csv,.xlsx,.xls"
-            onChange={handleFileUpload}
-          />
-        </div>
-          </header>
-
-      {/* Tab Navigation */}
-      <div className="tabs-nav" style={{ display: 'flex', gap: '0.5rem', marginBottom: '2rem', borderBottom: '2px solid var(--border)', padding: '0 0.5rem' }}>
-        <button
-          className={`btn ${activeTab === 'simulator' ? 'btn-primary' : ''}`}
-          style={{
-            background: activeTab === 'simulator' ? 'var(--primary)' : 'transparent',
-            borderRadius: '8px 8px 0 0',
-            border: 'none',
-            borderBottom: activeTab === 'simulator' ? '3px solid var(--primary)' : '3px solid transparent',
-            padding: '0.75rem 1.5rem'
-          }}
-          onClick={() => setActiveTab('simulator')}
-        >
-          <Calculator size={16} style={{ marginRight: '0.5rem' }} />
-          Simulador
-        </button>
-        <button
-          className={`btn ${activeTab === 'history' ? 'btn-primary' : ''}`}
-          style={{
-            background: activeTab === 'history' ? 'var(--primary)' : 'transparent',
-            borderRadius: '8px 8px 0 0',
-            border: 'none',
-            borderBottom: activeTab === 'history' ? '3px solid var(--primary)' : '3px solid transparent',
-            padding: '0.75rem 1.5rem'
-          }}
-          onClick={() => setActiveTab('history')}
-        >
-          <History size={16} style={{ marginRight: '0.5rem' }} />
-          Historial de Cotizaciones
-        </button>
-      </div>
-
-      {activeTab === 'simulator' && (
-        <div className="grid-cols-2">
-          {/* Left Column: Product Selection */}
-          <div className="glass card">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-              <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <Database size={18} /> Catálogo {isLoading ? '(Cargando...)' : ''}
-              </h3>
-              <span className="badge">{products.length} Items</span>
-            </div>
-
-            <div style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem', background: '#f1f5f9', padding: '0.5rem 1rem', borderRadius: '8px', border: '1px solid var(--border)' }}>
-              <Search size={18} className="text-muted" />
-              <input
-                type="text"
-                placeholder="Buscar por nombre o categoría..."
-                className="input-field"
-                style={{ border: 'none', background: 'transparent' }}
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-              {searchTerm && (
-                <button
-                  onClick={() => setSearchTerm('')}
-                  style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
-                >
-                  <Trash2 size={14} />
-                </button>
-              )}
-            </div>
-
-            <div style={{ marginBottom: '1rem', display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center' }}>
-              {categories.map(cat => (
-                <button
-                  key={cat}
-                  onClick={() => setSelectedCategory(cat)}
-                  className={`badge ${selectedCategory === cat ? 'active-badge' : ''}`}
-                  style={{
-                    cursor: 'pointer',
-                    border: '1px solid var(--secondary)',
-                    background: selectedCategory === cat ? 'var(--secondary)' : 'transparent',
-                    color: selectedCategory === cat ? 'white' : 'var(--secondary)',
-                    padding: '0.3rem 0.75rem',
-                    fontSize: '0.7rem',
-                    fontWeight: '600',
-                    transition: 'all 0.2s'
-                  }}
-                >
-                  {cat}
-                </button>
-              ))}
-              <button
-                onClick={createNewList}
-                className="badge"
-                style={{
-                  cursor: 'pointer',
-                  border: '1px dashed var(--text-muted)',
-                  background: 'transparent',
-                  padding: '0.3rem 0.75rem',
-                  fontSize: '0.7rem',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.3rem',
-                  opacity: 0.7
-                }}
-                title="Crear nueva lista"
-              >
-                <FolderPlus size={12} /> Nueva Lista
-              </button>
-
-              {selectedCategory === 'Productos Únicos' && (
-                <button
-                  onClick={() => setShowCreateProductModal(true)}
-                  className="badge"
-                  style={{
-                    cursor: 'pointer',
-                    border: '1px solid var(--primary)',
-                    background: 'rgba(52, 211, 153, 0.1)',
-                    color: 'var(--primary)',
-                    padding: '0.3rem 0.75rem',
-                    fontSize: '0.7rem',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.3rem',
-                    fontWeight: 'bold'
-                  }}
-                  title="Crear un producto especial"
-                >
-                  <Plus size={12} /> Crear Item Especial
-                </button>
-              )}
-            </div>
-
-            {/* Create Product Modal */}
-            {showCreateProductModal && (
-              <div style={{
-                position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-                background: 'rgba(0,0,0,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000
-              }}>
-                <div style={{ background: '#1e1e1e', padding: '2rem', borderRadius: '12px', width: '90%', maxWidth: '400px', border: '1px solid var(--text-muted)' }}>
-                  <h3 style={{ marginBottom: '1.5rem' }}>Nuevo Producto Único</h3>
-
-                  <div style={{ marginBottom: '1rem' }}>
-                    <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>Nombre del Item</label>
-                    <input
-                      type="text"
-                      className="input-field"
-                      placeholder="Ej: Pasaje Aéreo, Curso Especial"
-                      value={newProductName}
-                      onChange={(e) => setNewProductName(e.target.value)}
-                      autoFocus
-                    />
-                  </div>
-
-                  <div style={{ marginBottom: '1.5rem' }}>
-                    <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>Costo (USD)</label>
-                    <input
-                      type="number"
-                      className="input-field"
-                      placeholder="0.00"
-                      value={newProductCost}
-                      onChange={(e) => setNewProductCost(e.target.value)}
-                    />
-                  </div>
-
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
-                    <button className="btn" onClick={() => setShowCreateProductModal(false)}>Cancelar</button>
-                    <button className="btn btn-primary" onClick={createUniqueProduct}>Crear Item</button>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Move Product Modal */}
-            {showMoveProductModal && productToMove && (
-              <div style={{
-                position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-                background: 'rgba(0,0,0,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000
-              }}>
-                <div style={{ background: '#1e1e1e', padding: '2rem', borderRadius: '12px', width: '90%', maxWidth: '420px', border: '1px solid var(--text-muted)' }}>
-                  <h3 style={{ marginBottom: '1rem' }}>Mover Producto</h3>
-                  <p style={{ marginBottom: '1rem', fontSize: '0.9rem', color: 'var(--text-muted)' }}>
-                    Selecciona la lista destino para <strong style={{ color: '#fff' }}>{productToMove.name}</strong>.
-                  </p>
-
-                  <div style={{ marginBottom: '1.5rem' }}>
-                    <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>Lista destino</label>
-                    <select
-                      className="input-field"
-                      value={targetMoveCategory}
-                      onChange={(e) => setTargetMoveCategory(e.target.value)}
-                    >
-                      {moveTargetCategories.map(category => (
-                        <option key={category} value={category}>{category}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
-                    <button
-                      className="btn"
-                      onClick={() => {
-                        setShowMoveProductModal(false);
-                        setProductToMove(null);
-                      }}
-                    >
-                      Cancelar
-                    </button>
-                    <button className="btn btn-primary" onClick={confirmMoveProduct}>
-                      Mover
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            <div style={{ maxHeight: '550px', overflowY: 'auto', paddingRight: '0.5rem' }}>
-              {filteredProducts.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '3rem 1rem', background: 'rgba(255,255,255,0.03)', borderRadius: '12px' }}>
-                  <Search size={40} style={{ opacity: 0.2, marginBottom: '1rem' }} />
-                  <p className="text-muted">No se encontraron productos.</p>
-                  <button
-                    className="btn"
-                    style={{ marginTop: '1rem', fontSize: '0.8rem', background: 'rgba(255,255,255,0.1)' }}
-                    onClick={() => { setSearchTerm(''); setSelectedCategory('All'); }}
-                  >
-                    Limpiar filtros
-                  </button>
-                </div>
-              ) : (
-                filteredProducts.map(product => (
-                  <div key={product.id} className="finance-card" style={{ marginBottom: '0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <span className="text-muted" style={{ fontSize: '0.7rem' }}>[{product.sku || 'S/SKU'}]</span>
-                        <div style={{ fontWeight: '600', fontSize: '0.9rem' }}>{product.name}</div>
-                      </div>
-                      <div className="text-muted" style={{ fontSize: '0.75rem' }}>
-                        USD: {formatUSD(product.costUSD)} | CLP: {formatCLP(product.costUSD * exchangeRate)}
-                      </div>
-                      <div className="badge" style={{ marginTop: '0.2rem', padding: '0.05rem 0.3rem', fontSize: '0.6rem', opacity: 0.8 }}>{product.category}</div>
-                    </div>
-
-                    <div style={{ display: 'flex', gap: '0.5rem' }}>
-                      <button
-                        className="btn"
-                        style={{ padding: '0.4rem', background: 'rgba(255,255,255,0.1)', color: 'var(--text-muted)' }}
-                        onClick={() => moveProductToList(product)}
-                        title="Mover a otra lista"
-                      >
-                        <ArrowRight size={14} />
-                      </button>
-
-                      {selectedCategory !== 'All' && selectedCategory !== 'General' && product.category === selectedCategory && (
-                        <button
-                          className="btn"
-                          style={{ padding: '0.4rem', background: 'rgba(239, 68, 68, 0.1)', color: 'var(--error)' }}
-                          onClick={() => removeProductFromList(product)}
-                          title="Quitar de esta lista"
-                        >
-                          <X size={14} />
-                        </button>
-                      )}
-
-                      {selectedCategory !== 'All' && (
-                        <button
-                          className="btn"
-                          style={{ padding: '0.4rem', background: 'rgba(239, 68, 68, 0.1)', color: 'var(--error)' }}
-                          onClick={() => deleteProduct(product)}
-                          title="Eliminar permanentemente"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      )}
-
-                      <button className="btn btn-primary" style={{ padding: '0.4rem' }} onClick={() => addItem(product)}>
-                        <Plus size={14} />
-                      </button>
-                    </div>
-                  </div>
-                )))}
-            </div>
-          </div>
-
-          {/* Right Column: Deal Summary & Margin */}
-          <div>
-            <div className="glass card" style={{ marginBottom: '1.5rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <Calculator size={18} /> Simulación de Negocio
-                </h3>
-                <div style={{ display: 'flex', gap: '0.5rem' }}>
-                  <button className="btn" style={{ background: 'rgba(239, 68, 68, 0.1)', color: 'var(--error)', fontSize: '0.75rem' }} onClick={clearDeal}>
-                    <Trash2 size={14} /> Limpiar
-                  </button>
-                  <button className="btn btn-primary" style={{ background: 'var(--secondary)', fontSize: '0.75rem' }} onClick={saveSimulation}>
-                    <Save size={14} /> Guardar Deal
-                  </button>
-                </div>
-              </div>
-
-              <div className="table-container" style={{ maxHeight: '280px' }}>
-                <table>
-                  <thead>
-                    <tr>
-                      <th style={{ width: '30%' }}>Producto</th>
-                      <th style={{ width: '10%', textAlign: 'center' }}>Cant.</th>
-                      <th style={{ width: '15%', textAlign: 'right' }}>Unit. Ref</th>
-                      <th style={{ width: '15%', textAlign: 'right' }}>Total Ref</th>
-                      <th style={{ width: '15%', textAlign: 'right' }}>Costo Real</th>
-                      <th style={{ width: '15%', textAlign: 'center' }}>Acciones</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {priceDetails.items.map(item => {
-                      const unitPriceRef = item.unitPriceNet;
-                      const totalPriceRef = item.totalPriceNet;
-                      const isAtCost = item.isAtCost;
-                      const realCost = item.product.costUSD * item.quantity * exchangeRate;
-
-                      return (
-                        <tr key={item.product.id}>
-                          <td style={{ fontSize: '0.75rem' }}>{item.product.name}</td>
-                          <td style={{ textAlign: 'center' }}>
-                            <input
-                              type="number"
-                              className="input-field"
-                              style={{ width: '50px', padding: '0.2rem', textAlign: 'center' }}
-                              value={item.quantity}
-                              onChange={(e) => updateQuantity(item.product.id, parseInt(e.target.value) || 0)}
-                            />
-                          </td>
-                          <td style={{ textAlign: 'right', fontSize: '0.85rem', color: isAtCost ? 'var(--success)' : 'var(--primary)', fontWeight: '600' }}>
-                            {formatCLP(unitPriceRef)}
-                          </td>
-                          <td style={{ textAlign: 'right', fontSize: '0.85rem', color: isAtCost ? 'var(--success)' : 'var(--primary)', fontWeight: '600' }}>
-                            {formatCLP(totalPriceRef)}
-                          </td>
-                          <td style={{ textAlign: 'right', fontSize: '0.85rem' }}>
-                            {formatCLP(realCost)}
-                          </td>
-                          <td style={{ textAlign: 'center' }}>
-                            <button onClick={() => removeItem(item.product.id)} style={{ background: 'transparent', border: 'none', color: 'var(--error)', cursor: 'pointer', padding: '0.2rem' }}>
-                              <Trash2 size={14} />
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                    {dealItems.length === 0 && (
-                      <tr>
-                        <td colSpan={6} style={{ textAlign: 'center', padding: '1.5rem' }} className="text-muted">
-                          Selecciona items del catálogo
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-
-              <div style={{ marginTop: '1.5rem', padding: '1.25rem', background: 'rgba(0,0,0,0.2)', borderRadius: '12px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.65rem', color: 'var(--text-muted)' }}>
-                    <DollarSign size={12} /> PRECIO DE VENTA DE LA OFERTA (CLP)
-                  </label>
-                  {dealItems.length > 0 && (
-                    <div style={{ display: 'flex', gap: '0.5rem' }}>
-                      <button
-                        className="btn"
-                        style={{ fontSize: '0.65rem', padding: '0.25rem 0.5rem', background: 'rgba(255, 255, 255, 0.05)', color: 'var(--text-muted)', border: '1px solid rgba(255,255,255,0.1)' }}
-                        onClick={() => setTargetSalePrice(Math.round(totalCostCLP))}
-                        title="Aplicar precio al costo (0% margen)"
-                      >
-                        Venta al Costo
-                      </button>
-                      <button
-                        className="btn"
-                        style={{ fontSize: '0.65rem', padding: '0.25rem 0.5rem', background: 'rgba(74, 222, 128, 0.1)', color: 'var(--success)' }}
-                        onClick={() => setTargetSalePrice(Math.round(suggested50PercentPrice))}
-                        title="Aplicar precio con 50% de margen"
-                      >
-                        50% → {formatCLP(Math.round(suggested50PercentPrice))}
-                      </button>
-                    </div>
-                  )}
-                </div>
-                <div style={{ position: 'relative' }}>
-                  <span style={{ position: 'absolute', left: '12px', top: '10px', fontWeight: 'bold', color: 'var(--success)' }}>$</span>
-                  <input
-                    type="number"
-                    className="input-field"
-                    style={{ paddingLeft: '28px', fontSize: '1.25rem', fontWeight: 'bold' }}
-                    value={targetSalePrice}
-                    onChange={(e) => handleNetSalePriceChange(e.target.value)}
-                  />
-                </div>
-                {targetSalePrice > 0 && (
-                  <div style={{ marginTop: '0.3rem', textAlign: 'right', fontSize: '0.8rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.5rem' }}>
-                    <span>Total con IVA:</span>
-                    <div style={{ position: 'relative', width: '120px' }}>
-                      <span style={{ position: 'absolute', left: '8px', top: '50%', transform: 'translateY(-50%)', fontWeight: 'bold', color: '#fff' }}>$</span>
-                      <input
-                        type="number"
-                        className="input-field"
-                        style={{
-                          width: '100%',
-                          paddingLeft: '20px',
-                          paddingRight: '5px',
-                          textAlign: 'right',
-                          fontWeight: '600',
-                          color: '#fff',
-                          background: 'rgba(255,255,255,0.1)',
-                          border: '1px solid rgba(255,255,255,0.2)'
-                        }}
-                        value={Math.round(targetSalePrice * 1.19)}
-                        onChange={(e) => handleSalePriceWithIvaChange(e.target.value)}
-                      />
-                    </div>
-                  </div>
-                )}
-                {dealItems.length > 0 && targetSalePrice > 0 && (
-                  <div style={{ marginTop: '0.5rem', fontSize: '0.7rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <span>Tu margen actual:</span>
-                    <span className={grossMarginPercent >= 50 ? 'positive' : grossMarginPercent >= 30 ? 'warning' : 'negative'} style={{ fontWeight: 'bold' }}>
-                      {Math.round(grossMarginPercent)}%
-                    </span>
-                  </div>
-                )}
-
-                <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.65rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                      <Percent size={12} /> CALCULAR PRECIO POR MARGEN OBJETIVO
-                    </div>
-                  </label>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                    <div style={{ position: 'relative', flex: 1 }}>
-                      <input
-                        type="number"
-                        placeholder="Ej: 40"
-                        className="input-field"
-                        style={{ paddingRight: '25px', width: '100%' }}
-                        onChange={(e) => {
-                          const margin = parseFloat(e.target.value);
-                          if (!isNaN(margin) && margin > 0 && margin < 100 && priceDetails.totalFlexCost > 0) {
-                            const newPrice = (priceDetails.totalFlexCost / (1 - (margin / 100))) + priceDetails.totalAtCost;
-                            setTargetSalePrice(Math.round(newPrice));
-                          }
-                        }}
-                      />
-                      <span style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontSize: '0.8rem' }}>%</span>
-                    </div>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', maxWidth: '160px', lineHeight: '1.2' }}>
-                      Ingresa un % y el precio se ajustará automáticamente.
-                    </div>
-                  </div>
-                </div>
-
-                <div className="grid" style={{ gridTemplateColumns: '1fr 1fr 1fr', gap: '0.75rem', marginTop: '1rem' }}>
-                  <div className="finance-card" style={{ padding: '0.75rem' }}>
-                    <div className="text-muted" style={{ fontSize: '0.6rem' }}>COSTO TOTAL</div>
-                    <div style={{ fontSize: '1rem', fontWeight: 'bold' }}>{formatCLP(totalCostCLP)}</div>
-                    <div className="text-muted" style={{ fontSize: '0.55rem' }}>USD: {formatUSD(totalCostUSD)}</div>
-                  </div>
-                  <div className="finance-card" style={{ padding: '0.75rem' }}>
-                    <div className="text-muted" style={{ fontSize: '0.6rem' }}>INGRESO BRUTO</div>
-                    <div style={{ fontSize: '1rem', fontWeight: 'bold' }}>{formatCLP(targetSalePrice)}</div>
-                  </div>
-                  <div className="finance-card" style={{ padding: '0.75rem', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}>
-                    <div className="text-muted" style={{ fontSize: '0.6rem', color: 'var(--text-muted)' }}>TOTAL CON IVA</div>
-                    <div style={{ fontSize: '1rem', fontWeight: 'bold', color: '#fff' }}>{formatCLP(targetSalePrice * 1.19)}</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="glass card">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
-                <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <Percent size={18} /> Rentabilidad
-                </h3>
-              </div>
-
-              <div className="grid" style={{ gridTemplateColumns: '1.2fr 0.8fr', gap: '1.25rem' }}>
-                <div>
-                  <div className="text-muted" style={{ fontSize: '0.75rem', marginBottom: '0.25rem' }}>MARGEN BRUTO (%)</div>
-                  <div style={{ fontSize: '2.2rem', fontWeight: '800' }} className={grossMarginPercent >= 50 ? 'positive' : grossMarginPercent >= 30 ? 'warning' : 'negative'}>
-                    {grossMarginPercent.toFixed(1)}%
-                  </div>
-                  <div style={{ width: '100%', height: '8px', background: 'rgba(255,255,255,0.1)', borderRadius: '4px', marginTop: '0.75rem', overflow: 'hidden' }}>
-                    <div style={{
-                      width: `${Math.min(100, Math.max(0, grossMarginPercent))}%`,
-                      height: '100%',
-                      background: grossMarginPercent >= 50 ? 'var(--success)' : grossMarginPercent >= 30 ? 'var(--warning)' : 'var(--error)',
-                      borderRadius: '4px',
-                      transition: 'width 0.4s ease-out',
-                    }}></div>
-                  </div>
-                  <div style={{ marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.65rem' }} className="text-muted">
-                    <CheckCircle2 size={12} className={grossMarginPercent >= 50 ? 'positive' : 'text-muted'} /> Objetivo Gerencial: 50.0%
-                  </div>
-                </div>
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                  <div className="finance-card" style={{ padding: '0.6rem', borderLeft: `3px solid ${grossMarginPercent >= 50 ? 'var(--success)' : 'var(--error)'}` }}>
-                    <div className="text-muted" style={{ fontSize: '0.6rem' }}>DELTA OBJETIVO</div>
-                    <div style={{ fontSize: '1rem', fontWeight: 'bold' }} className={grossMarginPercent >= 50 ? 'positive' : 'negative'}>
-                      {grossMarginPercent >= 50 ? '+' : ''}{Math.round(grossMarginPercent - 50)}%
-                    </div>
-                  </div>
-                  <div className="finance-card" style={{ padding: '0.6rem' }}>
-                    <div className="text-muted" style={{ fontSize: '0.6rem' }}>UTILIDAD NETA (CLP)</div>
-                    <div style={{ fontSize: '1rem', fontWeight: 'bold' }} className={grossMarginValue >= 0 ? 'positive' : 'negative'}>
-                      {formatCLP(grossMarginValue)}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div >
-      )}
-
-      {activeTab === 'history' && (
-          <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
-            <div className="glass card">
-              <h2 style={{ marginBottom: '2rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <History size={24} />
-                Cotizaciones Guardadas
-              </h2>
-
-              {isLoadingQuotations ? (
-                <div style={{ textAlign: 'center', padding: '3rem' }}>
-                  <RefreshCw size={32} className="spin" style={{ opacity: 0.5 }} />
-                  <p style={{ marginTop: '1rem', color: 'var(--text-muted)' }}>Cargando cotizaciones...</p>
-                </div>
-              ) : savedQuotations.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '3rem' }}>
-                  <Database size={48} style={{ opacity: 0.3, marginBottom: '1rem' }} />
-                  <p className="text-muted">No hay cotizaciones guardadas aún.</p>
-                  <button
-                    className="btn btn-primary"
-                    style={{ marginTop: '1rem' }}
-                    onClick={() => setActiveTab('simulator')}
-                  >
-                    Crear una cotización
-                  </button>
-                </div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                  {savedQuotations.map((quotation) => {
-                    const subtotal = quotation.sale_price_clp;
-                    const iva = calculateIVA(subtotal);
-                    const total = subtotal + iva;
-                    const date = new Date(quotation.created_at).toLocaleDateString('es-CL', {
-                      year: 'numeric',
-                      month: 'long',
-                      day: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit'
-                    });
-
-                    return (
-                      <div key={quotation.id} className="finance-card" style={{ padding: '1.5rem' }}>
-                        <div className="mobile-stack" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '2rem', flexWrap: 'wrap' }}>
-
-                          {/* Left Group: Financials AND Products */}
-                          <div className="mobile-full-width" style={{ flex: 1, minWidth: '300px' }}>
-                            <div className="finance-summary-grid" style={{ display: 'flex', gap: '2rem', alignItems: 'center', marginBottom: '1.5rem', paddingBottom: '1rem', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
-                              <div>
-                                <div className="text-muted" style={{ fontSize: '0.65rem', textTransform: 'uppercase' }}>Total con IVA</div>
-                                <div style={{ fontSize: '1.8rem', fontWeight: '800', color: 'var(--success)' }}>{formatCLP(total)}</div>
-                              </div>
-                              <div>
-                                <div className="text-muted" style={{ fontSize: '0.65rem', textTransform: 'uppercase' }}>Margen Bruto</div>
-                                <div
-                                  style={{ fontSize: '1.8rem', fontWeight: '800' }}
-                                  className={quotation.margin_percent >= 50 ? 'positive' : quotation.margin_percent >= 30 ? 'warning' : 'negative'}
-                                >
-                                  {Math.round(quotation.margin_percent)}%
-                                </div>
-                              </div>
-                              <div style={{ marginLeft: 'auto', textAlign: 'right', display: 'flex', gap: '1.5rem' }} className="mobile-stack mobile-full-width mobile-col-span-full">
-                                <div>
-                                  <div className="text-muted" style={{ fontSize: '0.65rem', textTransform: 'uppercase' }}>Neto</div>
-                                  <div style={{ fontWeight: '600', fontSize: '1.1rem' }}>{formatCLP(subtotal)}</div>
-                                </div>
-                                <div>
-                                  <div className="text-muted" style={{ fontSize: '0.65rem', textTransform: 'uppercase' }}>IVA (19%)</div>
-                                  <div style={{ fontWeight: '600', fontSize: '1.1rem', color: 'var(--warning)' }}>{formatCLP(iva)}</div>
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Prominent Product List */}
-                            <div>
-                              <div className="text-muted" style={{ fontSize: '0.75rem', textTransform: 'uppercase', marginBottom: '0.75rem', letterSpacing: '1px' }}>Productos Incluidos ({quotation.items.length})</div>
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                                {quotation.items.map((item, idx) => (
-                                  <div
-                                    key={idx}
-                                    style={{
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      gap: '1rem',
-                                      background: 'rgba(255,255,255,0.03)',
-                                      padding: '0.75rem 1rem',
-                                      borderRadius: '8px',
-                                      border: '1px solid rgba(255,255,255,0.05)'
-                                    }}
-                                  >
-                                    <div className="badge" style={{ fontSize: '1.1rem', padding: '0.3rem 0.8rem', background: 'var(--primary)', color: 'white' }}>
-                                      {item.qty}
-                                    </div>
-                                    <div style={{ fontSize: '1.1rem', fontWeight: '500', flex: 1 }}>{item.name}</div>
-                                    <div className="text-muted" style={{ fontSize: '0.9rem' }}>${Math.round(item.cost_usd)} USD</div>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-
-                            <details style={{ marginTop: '1rem' }}>
-                              <summary style={{ cursor: 'pointer', fontSize: '0.75rem', color: 'var(--text-muted)', display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
-                                <History size={12} /> Ver fecha y hora
-                              </summary>
-                              <div style={{ marginTop: '0.5rem', padding: '0.5rem', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                                Creada el: <strong style={{ color: '#fff' }}>{date}</strong>
-                              </div>
-                            </details>
-                          </div>
-
-                          {/* Right Group: Actions */}
-                          <div className="mobile-full-width" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                            <button
-                              className="btn btn-secondary mobile-full-width"
-                              style={{ background: 'var(--primary)', whiteSpace: 'nowrap', fontSize: '0.85rem', padding: '0.6rem 1rem' }}
-                              onClick={() => duplicateQuotation(quotation)}
-                              title="Cargar esta cotización en el simulador"
-                            >
-                              <Copy size={16} style={{ marginRight: '0.5rem' }} /> Duplicar
-                            </button>
-                            <button
-                              className="btn btn-secondary mobile-full-width"
-                              style={{ background: 'var(--success)', whiteSpace: 'nowrap', fontSize: '0.85rem', padding: '0.6rem 1rem' }}
-                              onClick={() => generateInternalExport(quotation)}
-                              title="Descargar imagen interna (con costos y margenes)"
-                            >
-                              <ImageIcon size={16} style={{ marginRight: '0.5rem' }} /> Exportar (Interno)
-                            </button>
-                            <button
-                              className="btn btn-secondary mobile-full-width"
-                              style={{ background: '#3b82f6', whiteSpace: 'nowrap', fontSize: '0.85rem', padding: '0.6rem 1rem', color: 'white' }}
-                              onClick={() => generateClientExport(quotation)}
-                              title="Descargar imagen para cliente (sin costos)"
-                            >
-                              <ImageIcon size={16} style={{ marginRight: '0.5rem' }} /> Exportar (Cliente)
-                            </button>
-                            <button
-                              className="btn btn-secondary mobile-full-width"
-                              style={{ background: 'var(--error)', whiteSpace: 'nowrap', fontSize: '0.85rem', padding: '0.6rem 1rem', color: 'white', marginTop: 'auto' }}
-                              onClick={() => deleteQuotation(quotation.id)}
-                              title="Eliminar esta cotización"
-                            >
-                              <Trash2 size={16} style={{ marginRight: '0.5rem' }} /> Eliminar
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-
-
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </div >
-        )
-      }
-        </>
+        <CotizadorModule
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          logoMegaGen={logoMegaGen}
+          backendLabel={getDataBackendLabel()}
+          fileInputRef={fileInputRef}
+          handleFileUpload={handleFileUpload}
+          syncProductsToDatabase={syncProductsToDatabase}
+          isSyncing={isSyncing}
+          products={products}
+          isLoading={isLoading}
+          searchTerm={searchTerm}
+          setSearchTerm={setSearchTerm}
+          selectedCategory={selectedCategory}
+          setSelectedCategory={setSelectedCategory}
+          categories={categories}
+          createNewList={createNewList}
+          showCreateProductModal={showCreateProductModal}
+          setShowCreateProductModal={setShowCreateProductModal}
+          newProductName={newProductName}
+          setNewProductName={setNewProductName}
+          newProductCost={newProductCost}
+          setNewProductCost={setNewProductCost}
+          createUniqueProduct={createUniqueProduct}
+          showMoveProductModal={showMoveProductModal}
+          productToMove={productToMove}
+          targetMoveCategory={targetMoveCategory}
+          setTargetMoveCategory={setTargetMoveCategory}
+          moveTargetCategories={moveTargetCategories}
+          setShowMoveProductModal={setShowMoveProductModal}
+          setProductToMove={setProductToMove}
+          confirmMoveProduct={confirmMoveProduct}
+          filteredProducts={filteredProducts}
+          moveProductToList={moveProductToList}
+          removeProductFromList={removeProductFromList}
+          deleteProduct={deleteProduct}
+          addItem={addItem}
+          clearDeal={clearDeal}
+          saveSimulation={saveSimulation}
+          quotePricingConfig={quotePricingConfig}
+          setQuotePricingConfig={setQuotePricingConfig}
+          handleGlobalMarginChange={handleGlobalMarginChange}
+          handleNetSalePriceChange={handleNetSalePriceChange}
+          handleSalePriceWithIvaChange={handleSalePriceWithIvaChange}
+          applyPricingPreset={applyPricingPreset}
+          quoteLines={quoteLines}
+          quoteResult={quoteResult}
+          targetSalePrice={targetSalePrice}
+          updateQuantity={updateQuantity}
+          updateQuoteLineMode={updateQuoteLineMode}
+          updateQuoteLineValue={updateQuoteLineValue}
+          toggleQuoteLineLock={toggleQuoteLineLock}
+          removeItem={removeItem}
+          grossMarginPercent={grossMarginPercent}
+          grossMarginValue={grossMarginValue}
+          totalCostUSD={totalCostUSD}
+          exchangeRate={exchangeRate}
+          formatCLP={formatCLP}
+          formatUSD={formatUSD}
+          savedQuotations={savedQuotations}
+          isLoadingQuotations={isLoadingQuotations}
+          duplicateQuotation={duplicateQuotation}
+          generateInternalExport={generateInternalExport}
+          generateClientExport={generateClientExport}
+          deleteQuotation={deleteQuotation}
+          calculateIVA={calculateIVA}
+        />
       ) : activeModule === 'imports' ? (
         <section className="glass card" style={{ marginTop: '1rem', textAlign: 'left' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap', marginBottom: '1.25rem' }}>

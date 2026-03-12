@@ -4,10 +4,18 @@ import { pocketbase } from './pocketbase';
 import { supabase } from './supabase';
 
 export interface SimulationItemPayload {
+  product_id?: string;
   name: string;
   qty: number;
   cost_usd: number;
   category?: string;
+  pricing_mode?: string;
+  pricing_value?: number | null;
+  locked?: boolean;
+  net_unit_clp?: number;
+  net_total_clp?: number;
+  profit_total_clp?: number;
+  margin_percent?: number;
 }
 
 export interface SaveSimulationPayload {
@@ -17,6 +25,10 @@ export interface SaveSimulationPayload {
   total_cost_clp: number;
   margin_percent: number;
   net_profit_clp: number;
+  pricing_mode?: string;
+  target_margin_percent?: number | null;
+  target_net_total_clp?: number | null;
+  warnings?: string[];
   items: SimulationItemPayload[];
 }
 
@@ -29,6 +41,10 @@ export interface SavedSimulationRecord {
   total_cost_clp: number;
   margin_percent: number;
   net_profit_clp: number;
+  pricing_mode?: string;
+  target_margin_percent?: number | null;
+  target_net_total_clp?: number | null;
+  warnings?: string[];
   items: SimulationItemPayload[];
 }
 
@@ -60,10 +76,18 @@ const normalizeItems = (value: unknown): SimulationItemPayload[] => {
   return value.map((item) => {
     const row = item as Record<string, unknown>;
     return {
+      product_id: row.product_id ? String(row.product_id) : undefined,
       name: String(row.name || ''),
       qty: toNumber(row.qty),
       cost_usd: toNumber(row.cost_usd),
       category: row.category ? String(row.category) : undefined,
+      pricing_mode: row.pricing_mode ? String(row.pricing_mode) : undefined,
+      pricing_value: row.pricing_value == null ? null : toNumber(row.pricing_value),
+      locked: Boolean(row.locked),
+      net_unit_clp: row.net_unit_clp == null ? undefined : toNumber(row.net_unit_clp),
+      net_total_clp: row.net_total_clp == null ? undefined : toNumber(row.net_total_clp),
+      profit_total_clp: row.profit_total_clp == null ? undefined : toNumber(row.profit_total_clp),
+      margin_percent: row.margin_percent == null ? undefined : toNumber(row.margin_percent),
     };
   });
 };
@@ -159,6 +183,12 @@ export const fetchSimulationRecords = async (): Promise<SavedSimulationRecord[]>
       total_cost_clp: toNumber((row as Record<string, unknown>).total_cost_clp),
       margin_percent: toNumber((row as Record<string, unknown>).margin_percent),
       net_profit_clp: toNumber((row as Record<string, unknown>).net_profit_clp),
+      pricing_mode: (row as Record<string, unknown>).pricing_mode ? String((row as Record<string, unknown>).pricing_mode) : undefined,
+      target_margin_percent: (row as Record<string, unknown>).target_margin_percent == null ? null : toNumber((row as Record<string, unknown>).target_margin_percent),
+      target_net_total_clp: (row as Record<string, unknown>).target_net_total_clp == null ? null : toNumber((row as Record<string, unknown>).target_net_total_clp),
+      warnings: Array.isArray((row as Record<string, unknown>).warnings)
+        ? ((row as Record<string, unknown>).warnings as unknown[]).map((entry) => String(entry))
+        : [],
       items: normalizeItems((row as Record<string, unknown>).items),
     }));
   }
@@ -179,6 +209,10 @@ export const fetchSimulationRecords = async (): Promise<SavedSimulationRecord[]>
     total_cost_clp: toNumber(row.total_cost_clp),
     margin_percent: toNumber(row.margin_percent),
     net_profit_clp: toNumber(row.net_profit_clp),
+    pricing_mode: row.pricing_mode ? String(row.pricing_mode) : undefined,
+    target_margin_percent: row.target_margin_percent == null ? null : toNumber(row.target_margin_percent),
+    target_net_total_clp: row.target_net_total_clp == null ? null : toNumber(row.target_net_total_clp),
+    warnings: Array.isArray(row.warnings) ? row.warnings.map((entry) => String(entry)) : [],
     items: normalizeItems(row.items),
   }));
 };
