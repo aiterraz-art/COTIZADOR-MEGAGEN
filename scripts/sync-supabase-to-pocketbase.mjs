@@ -101,6 +101,67 @@ const collectionDefinitions = [
       { name: 'last_updated', type: 'date' },
     ],
   },
+  {
+    name: 'monthly_closures',
+    fields: [
+      { name: 'source_id', type: 'text' },
+      { name: 'period_key', type: 'text', required: true },
+      { name: 'balance_file_name', type: 'text' },
+      { name: 'pnl_file_name', type: 'text' },
+      { name: 'inventory_file_name', type: 'text' },
+      { name: 'summary', type: 'json' },
+      { name: 'created_at', type: 'date' },
+      { name: 'updated_at', type: 'date' },
+    ],
+  },
+  {
+    name: 'monthly_balance_lines',
+    fields: [
+      { name: 'source_id', type: 'text' },
+      { name: 'period_key', type: 'text', required: true },
+      { name: 'line_order', type: 'number' },
+      { name: 'account_code', type: 'text' },
+      { name: 'account_name', type: 'text', required: true },
+      { name: 'section', type: 'text' },
+      { name: 'subsection', type: 'text' },
+      { name: 'amount_clp', type: 'number' },
+      { name: 'source_period_key', type: 'text' },
+      { name: 'is_subtotal', type: 'bool' },
+    ],
+  },
+  {
+    name: 'monthly_pnl_lines',
+    fields: [
+      { name: 'source_id', type: 'text' },
+      { name: 'period_key', type: 'text', required: true },
+      { name: 'line_order', type: 'number' },
+      { name: 'account_code', type: 'text' },
+      { name: 'account_name', type: 'text', required: true },
+      { name: 'section', type: 'text' },
+      { name: 'subsection', type: 'text' },
+      { name: 'amount_clp', type: 'number' },
+      { name: 'source_period_key', type: 'text' },
+      { name: 'is_subtotal', type: 'bool' },
+    ],
+  },
+  {
+    name: 'monthly_inventory_movements',
+    fields: [
+      { name: 'source_id', type: 'text' },
+      { name: 'period_key', type: 'text', required: true },
+      { name: 'sku', type: 'text', required: true },
+      { name: 'product_name', type: 'text', required: true },
+      { name: 'family', type: 'text' },
+      { name: 'opening_qty', type: 'number' },
+      { name: 'entries_qty', type: 'number' },
+      { name: 'exits_qty', type: 'number' },
+      { name: 'adjustments_qty', type: 'number' },
+      { name: 'closing_qty', type: 'number' },
+      { name: 'total_amount_clp', type: 'number' },
+      { name: 'source_period_key', type: 'text' },
+      { name: 'is_unclassified', type: 'bool' },
+    ],
+  },
 ];
 
 const toNumber = (value) => {
@@ -165,12 +226,26 @@ const run = async () => {
   await ensureCollections();
 
   console.log('Reading data from Supabase...');
-  const [products, simulations, supplierMaster, rotation90d, weeklyStock] = await Promise.all([
+  const [
+    products,
+    simulations,
+    supplierMaster,
+    rotation90d,
+    weeklyStock,
+    monthlyClosures,
+    monthlyBalanceLines,
+    monthlyPnlLines,
+    monthlyInventoryMovements,
+  ] = await Promise.all([
     fetchSupabaseRows('products'),
     fetchSupabaseRows('simulations'),
     fetchSupabaseRows('inventory_supplier_master'),
     fetchSupabaseRows('inventory_rotation_90d'),
     fetchSupabaseRows('inventory_weekly_stock'),
+    fetchSupabaseRows('monthly_closures'),
+    fetchSupabaseRows('monthly_balance_lines'),
+    fetchSupabaseRows('monthly_pnl_lines'),
+    fetchSupabaseRows('monthly_inventory_movements'),
   ]);
 
   console.log('Copying data into PocketBase...');
@@ -229,6 +304,71 @@ const run = async () => {
       sku: row.sku || '',
       stock_level: toNumber(row.stock_level),
       last_updated: row.last_updated || null,
+    })),
+  );
+
+  await replaceCollectionData(
+    'monthly_closures',
+    monthlyClosures.map((row) => ({
+      source_id: String(row.id || ''),
+      period_key: row.period_key || '',
+      balance_file_name: row.balance_file_name || '',
+      pnl_file_name: row.pnl_file_name || '',
+      inventory_file_name: row.inventory_file_name || '',
+      summary: row.summary && typeof row.summary === 'object' ? row.summary : {},
+      created_at: row.created_at || null,
+      updated_at: row.updated_at || row.created_at || null,
+    })),
+  );
+
+  await replaceCollectionData(
+    'monthly_balance_lines',
+    monthlyBalanceLines.map((row) => ({
+      source_id: String(row.id || ''),
+      period_key: row.period_key || '',
+      line_order: toNumber(row.line_order),
+      account_code: row.account_code || '',
+      account_name: row.account_name || '',
+      section: row.section || '',
+      subsection: row.subsection || '',
+      amount_clp: toNumber(row.amount_clp),
+      source_period_key: row.source_period_key || '',
+      is_subtotal: Boolean(row.is_subtotal),
+    })),
+  );
+
+  await replaceCollectionData(
+    'monthly_pnl_lines',
+    monthlyPnlLines.map((row) => ({
+      source_id: String(row.id || ''),
+      period_key: row.period_key || '',
+      line_order: toNumber(row.line_order),
+      account_code: row.account_code || '',
+      account_name: row.account_name || '',
+      section: row.section || '',
+      subsection: row.subsection || '',
+      amount_clp: toNumber(row.amount_clp),
+      source_period_key: row.source_period_key || '',
+      is_subtotal: Boolean(row.is_subtotal),
+    })),
+  );
+
+  await replaceCollectionData(
+    'monthly_inventory_movements',
+    monthlyInventoryMovements.map((row) => ({
+      source_id: String(row.id || ''),
+      period_key: row.period_key || '',
+      sku: row.sku || '',
+      product_name: row.product_name || '',
+      family: row.family || 'SIN_CLASIFICAR',
+      opening_qty: toNumber(row.opening_qty),
+      entries_qty: toNumber(row.entries_qty),
+      exits_qty: toNumber(row.exits_qty),
+      adjustments_qty: toNumber(row.adjustments_qty),
+      closing_qty: toNumber(row.closing_qty),
+      total_amount_clp: row.total_amount_clp == null ? null : toNumber(row.total_amount_clp),
+      source_period_key: row.source_period_key || '',
+      is_unclassified: Boolean(row.is_unclassified),
     })),
   );
 

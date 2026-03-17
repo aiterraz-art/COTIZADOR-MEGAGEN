@@ -88,7 +88,6 @@ const InventoryModule: React.FC = () => {
   const [uploadMeta, setUploadMeta] = useState<InventoryUploadMetadata>(() => readStoredMetadata());
   const [isLoading, setIsLoading] = useState(false);
   const [isRecalculating, setIsRecalculating] = useState(false);
-  const [recalcTick, setRecalcTick] = useState(0);
   const [errorMessage, setErrorMessage] = useState('');
 
   useEffect(() => {
@@ -201,13 +200,12 @@ const InventoryModule: React.FC = () => {
 
   const handleRecalculate = () => {
     setIsRecalculating(true);
-    setRecalcTick((prev) => prev + 1);
     setTimeout(() => setIsRecalculating(false), 250);
   };
 
   const calculations = useMemo(() => {
     return buildInventoryCalculations(suppliers, rotations, stocks, settings);
-  }, [suppliers, rotations, stocks, settings, recalcTick]);
+  }, [suppliers, rotations, stocks, settings]);
 
   const suppliersList = useMemo(() => {
     const providerSet = new Set(calculations.map((item) => item.supplierName || 'SIN_PROVEEDOR'));

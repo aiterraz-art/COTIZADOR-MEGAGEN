@@ -36,6 +36,8 @@ export interface ImportItemRaw {
     unitCost: number;
 }
 
+type GenericRow = Record<string, unknown>;
+
 const normalize = (text: string): string => {
     return text.toString().toLowerCase()
         .normalize("NFD")
@@ -43,7 +45,7 @@ const normalize = (text: string): string => {
         .trim();
 };
 
-const findValue = (row: any, keywords: string[]): any => {
+const findValue = (row: GenericRow, keywords: string[]): unknown => {
     const keys = Object.keys(row);
     const normalizedKeywords = keywords.map(normalize);
 
@@ -66,7 +68,7 @@ export const parseFile = (file: File): Promise<RawProduct[]> => {
                 Papa.parse(text, {
                     header: true,
                     skipEmptyLines: true,
-                    complete: (results: Papa.ParseResult<any>) => {
+                    complete: (results: Papa.ParseResult<GenericRow>) => {
                         resolve(mapRowsToProducts(results.data));
                     },
                     error: (err: Error) => reject(err),
@@ -80,7 +82,7 @@ export const parseFile = (file: File): Promise<RawProduct[]> => {
                 const sheetName = workbook.SheetNames[0];
                 const worksheet = workbook.Sheets[sheetName];
 
-                const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
+                const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as unknown[][];
                 if (rows.length === 0) { resolve([]); return; }
 
                 let headerRowIndex = 0;
@@ -92,7 +94,7 @@ export const parseFile = (file: File): Promise<RawProduct[]> => {
                     }
                 }
 
-                const jsonData = XLSX.utils.sheet_to_json(worksheet, { range: headerRowIndex }) as any[];
+                const jsonData = XLSX.utils.sheet_to_json(worksheet, { range: headerRowIndex }) as GenericRow[];
                 resolve(mapRowsToProducts(jsonData));
             };
             reader.readAsArrayBuffer(file);
@@ -102,7 +104,7 @@ export const parseFile = (file: File): Promise<RawProduct[]> => {
     });
 };
 
-const mapRowsToProducts = (rows: any[]): RawProduct[] => {
+const mapRowsToProducts = (rows: GenericRow[]): RawProduct[] => {
     const uniqueProducts: Map<string, RawProduct> = new Map();
 
     rows.forEach((row, index) => {
@@ -139,7 +141,7 @@ const normalizerKey = (text: string): string => {
     return text.toString().toLowerCase().trim();
 };
 
-const parseNumber = (val: any): number => {
+const parseNumber = (val: unknown): number => {
     if (val === null || val === undefined) return 0;
 
     const raw = val.toString().trim();

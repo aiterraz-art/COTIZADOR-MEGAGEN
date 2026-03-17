@@ -11,6 +11,7 @@ import { parseImportItemsFromPdf } from './utils/pdfImportParser';
 import InventoryModule from './components/InventoryModule';
 import CRMModule from './components/CRMModule';
 import CotizadorModule from './components/CotizadorModule';
+import MonthlyAnalysisModule from './components/MonthlyAnalysisModule';
 import {
   createProductRecord,
   deleteProductRecord,
@@ -83,7 +84,7 @@ const readStoredJSON = <T,>(key: string): T | null => {
 
 
 
-type ModuleKey = 'cotizador' | 'analysis' | 'imports' | 'inventory' | 'crm' | 'clientes' | 'facturacion';
+type ModuleKey = 'cotizador' | 'monthlyAnalysis' | 'analysis' | 'imports' | 'inventory' | 'crm' | 'clientes' | 'facturacion';
 
 interface ImportItemCalculated extends ImportItemRaw {
   baseTotalForeign: number;
@@ -1505,6 +1506,13 @@ const App: React.FC = () => {
         isReady: true
       },
       {
+        key: 'monthlyAnalysis',
+        name: 'Análisis Mensual',
+        description: 'Cierre mensual con balance, ER e inventario histórico.',
+        icon: <LineChart size={18} />,
+        isReady: true
+      },
+      {
         key: 'analysis',
         name: 'Análisis Diario',
         description: 'Consolidado operativo y reporte para HQ Korea.',
@@ -2041,6 +2049,8 @@ const App: React.FC = () => {
         <InventoryModule />
       ) : activeModule === 'crm' ? (
         <CRMModule />
+      ) : activeModule === 'monthlyAnalysis' ? (
+        <MonthlyAnalysisModule products={products} />
       ) : activeModule === 'analysis' ? (
         <section className="glass card" style={{ marginTop: '1rem', textAlign: 'left' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap', marginBottom: '1.5rem' }}>
