@@ -731,7 +731,9 @@ const App: React.FC = () => {
           targetNetTotalCLP: quotation.target_net_total_clp ?? quotation.sale_price_clp,
         }
       });
-      const cogs = Math.round(details.totalCostCLP);
+      const cogsPercent = details.totalNetCLP > 0
+        ? (details.totalCostCLP / details.totalNetCLP) * 100
+        : 0;
 
       tempDiv.innerHTML = `
         <div style="background: rgba(255,255,255,0.95); color: #1a1a2e; border-radius: 20px; padding: 30px;">
@@ -789,7 +791,7 @@ const App: React.FC = () => {
             <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(0,0,0,0.08);">
               <p style="margin: 0; font-size: 12px; color: #666;">COGS</p>
               <p style="margin: 5px 0 0 0; font-size: 18px; font-weight: 700; color: #334155;">
-                $${cogs.toLocaleString('es-CL', { maximumFractionDigits: 0 })}
+                ${cogsPercent.toFixed(1)}%
               </p>
             </div>
           </div>
