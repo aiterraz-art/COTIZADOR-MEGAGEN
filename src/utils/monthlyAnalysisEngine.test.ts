@@ -55,15 +55,26 @@ const inventoryMovements: MonthlyInventoryMovement[] = [
     isUnclassified: false,
   },
   {
+    sku: 'COX-001',
+    productName: 'Coxxo Surgical Motor',
+    family: 'MOTOR',
+    openingQty: 1,
+    entriesQty: 1,
+    exitsQty: 0,
+    adjustmentsQty: 0,
+    closingQty: 2,
+    isUnclassified: false,
+  },
+  {
     sku: 'KIT-404',
     productName: 'Kit sin mapa',
-    family: 'SIN_CLASIFICAR',
+    family: 'KITS',
     openingQty: 2,
     entriesQty: 0,
     exitsQty: 0,
     adjustmentsQty: -1,
     closingQty: 1,
-    isUnclassified: true,
+    isUnclassified: false,
   },
 ];
 
@@ -86,8 +97,10 @@ describe('monthlyAnalysisEngine', () => {
 
     expect(summary.inventory.byFamily.IMPLANTES.closingQty).toBe(12);
     expect(summary.inventory.byFamily.ADITAMENTOS.closingQty).toBe(4);
-    expect(summary.inventory.totals.closingQty).toBe(17);
-    expect(summary.inventory.unmappedSkuCount).toBe(1);
+    expect(summary.inventory.byFamily.MOTOR.closingQty).toBe(2);
+    expect(summary.inventory.byFamily.KITS.closingQty).toBe(1);
+    expect(summary.inventory.totals.closingQty).toBe(19);
+    expect(summary.inventory.unmappedSkuCount).toBe(0);
   });
 
   it('arma comparación contra el mes anterior y resuelve el período previo', () => {
@@ -112,7 +125,7 @@ describe('monthlyAnalysisEngine', () => {
     expect(getPreviousPeriodKey('2026-01')).toBe('2025-12');
     expect(comparison.previousPeriodKey).toBe('2026-01');
     expect(comparison.pnl.find((item) => item.key === 'revenue')?.deltaValue).toBe(500_000);
-    expect(comparison.inventory.find((item) => item.key === 'inventory_total_closing')?.deltaValue).toBe(3);
+    expect(comparison.inventory.find((item) => item.key === 'inventory_total_closing')?.deltaValue).toBe(5);
   });
 
   it('valida estructuras mínimas de balance y ER', () => {

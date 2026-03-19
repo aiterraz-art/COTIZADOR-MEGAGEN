@@ -92,6 +92,12 @@ const formatPeriodLabel = (periodKey: string): string => {
   return formatter.format(new Date(Number(year), monthNumber - 1, 1));
 };
 
+const normalizeGroupKey = (value: string): string => value
+  .toLowerCase()
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .trim();
+
 const combineMessages = (
   ...entries: Array<MonthlyParseResult<unknown> | null>
 ): { warnings: string[]; errors: string[] } => {
@@ -272,6 +278,50 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
       return familyMatches && queryMatches;
     });
   }, [displayInventoryMovements, familyFilter, inventorySearch]);
+
+  const implantInventoryMovements = useMemo(
+    () => displayInventoryMovements.filter((movement) => movement.family === 'IMPLANTES'),
+    [displayInventoryMovements],
+  );
+
+  const implantNameBreakdown = useMemo(() => {
+    const grouped = new Map<string, {
+      productName: string;
+      skus: Set<string>;
+      openingQty: number;
+      entriesQty: number;
+      exitsQty: number;
+      adjustmentsQty: number;
+      closingQty: number;
+    }>();
+
+    for (const movement of implantInventoryMovements) {
+      const key = normalizeGroupKey(movement.productName || movement.sku);
+      const current = grouped.get(key);
+
+      if (current) {
+        current.skus.add(movement.sku);
+        current.openingQty += movement.openingQty;
+        current.entriesQty += movement.entriesQty;
+        current.exitsQty += movement.exitsQty;
+        current.adjustmentsQty += movement.adjustmentsQty;
+        current.closingQty += movement.closingQty;
+        continue;
+      }
+
+      grouped.set(key, {
+        productName: movement.productName || movement.sku,
+        skus: new Set([movement.sku]),
+        openingQty: movement.openingQty,
+        entriesQty: movement.entriesQty,
+        exitsQty: movement.exitsQty,
+        adjustmentsQty: movement.adjustmentsQty,
+        closingQty: movement.closingQty,
+      });
+    }
+
+    return Array.from(grouped.values()).sort((left, right) => left.productName.localeCompare(right.productName, 'es'));
+  }, [implantInventoryMovements]);
 
   const existingPeriod = history.find((item) => item.periodKey === periodKey) ?? null;
 
@@ -556,7 +606,7 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
                   <div>
                     <h3 style={{ fontSize: '1rem', marginBottom: '0.75rem' }}>Inventario por Familia</h3>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '0.75rem' }}>
-                      {(['IMPLANTES', 'ADITAMENTOS', 'KITS', 'SIN_CLASIFICAR'] as MonthlyInventoryFamily[]).map((family) => (
+                      {(['IMPLANTES', 'KITS', 'MOTOR', 'ADITAMENTOS', 'SIN_CLASIFICAR'] as MonthlyInventoryFamily[]).map((family) => (
                         <MetricCard
                           key={family}
                           title={family}
@@ -566,6 +616,42 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
                         />
                       ))}
                     </div>
+                  </div>
+
+                  <div className="finance-card" style={{ padding: '1rem' }}>
+                    <h3 style={{ fontSize: '1rem', marginBottom: '0.75rem' }}>Implantes por Nombre</h3>
+                    {implantNameBreakdown.length ? (
+                      <div className="table-container">
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>Implante</th>
+                              <th>SKUs</th>
+                              <th style={{ textAlign: 'right' }}>Inicial</th>
+                              <th style={{ textAlign: 'right' }}>Entradas</th>
+                              <th style={{ textAlign: 'right' }}>Salidas</th>
+                              <th style={{ textAlign: 'right' }}>Final</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {implantNameBreakdown.map((implant) => (
+                              <tr key={`summary-implant-${implant.productName}`}>
+                                <td style={{ fontWeight: 700 }}>{implant.productName}</td>
+                                <td style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>{Array.from(implant.skus).join(', ')}</td>
+                                <td style={{ textAlign: 'right' }}>{formatQty(implant.openingQty)}</td>
+                                <td style={{ textAlign: 'right', color: 'var(--success)', fontWeight: 700 }}>{formatQty(implant.entriesQty)}</td>
+                                <td style={{ textAlign: 'right', color: 'var(--error)', fontWeight: 700 }}>{formatQty(implant.exitsQty)}</td>
+                                <td style={{ textAlign: 'right', fontWeight: 800 }}>{formatQty(implant.closingQty)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <div style={{ padding: '0.85rem', border: '1px dashed var(--border)', borderRadius: '12px', background: 'var(--surface)' }}>
+                        No hay implantes clasificados en el periodo seleccionado.
+                      </div>
+                    )}
                   </div>
 
                   {comparison ? (
@@ -676,15 +762,16 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
                     >
                       <option value="ALL">Todas las familias</option>
                       <option value="IMPLANTES">Implantes</option>
-                      <option value="ADITAMENTOS">Aditamentos</option>
                       <option value="KITS">Kits</option>
+                      <option value="MOTOR">Motor</option>
+                      <option value="ADITAMENTOS">Aditamentos</option>
                       <option value="SIN_CLASIFICAR">Sin clasificar</option>
                     </select>
                   </div>
 
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '0.75rem' }}>
                     {displaySummary ? (
-                      (['IMPLANTES', 'ADITAMENTOS', 'KITS', 'SIN_CLASIFICAR'] as MonthlyInventoryFamily[]).map((family) => (
+                      (['IMPLANTES', 'KITS', 'MOTOR', 'ADITAMENTOS', 'SIN_CLASIFICAR'] as MonthlyInventoryFamily[]).map((family) => (
                         <MetricCard
                           key={family}
                           title={`${family} - Stock Final`}
@@ -694,6 +781,44 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
                         />
                       ))
                     ) : null}
+                  </div>
+
+                  <div className="finance-card" style={{ padding: '1rem' }}>
+                    <h3 style={{ fontSize: '1rem', marginBottom: '0.75rem' }}>Detalle de Implantes por Nombre</h3>
+                    {implantNameBreakdown.length ? (
+                      <div className="table-container">
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>Implante</th>
+                              <th>SKUs</th>
+                              <th style={{ textAlign: 'right' }}>Stock Inicial</th>
+                              <th style={{ textAlign: 'right' }}>Entradas</th>
+                              <th style={{ textAlign: 'right' }}>Salidas</th>
+                              <th style={{ textAlign: 'right' }}>Ajustes</th>
+                              <th style={{ textAlign: 'right' }}>Stock Final</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {implantNameBreakdown.map((implant) => (
+                              <tr key={`inventory-implant-name-${implant.productName}`}>
+                                <td style={{ fontWeight: 700 }}>{implant.productName}</td>
+                                <td style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>{Array.from(implant.skus).join(', ')}</td>
+                                <td style={{ textAlign: 'right' }}>{formatQty(implant.openingQty)}</td>
+                                <td style={{ textAlign: 'right', color: 'var(--success)', fontWeight: 700 }}>{formatQty(implant.entriesQty)}</td>
+                                <td style={{ textAlign: 'right', color: 'var(--error)', fontWeight: 700 }}>{formatQty(implant.exitsQty)}</td>
+                                <td style={{ textAlign: 'right' }}>{formatQty(implant.adjustmentsQty)}</td>
+                                <td style={{ textAlign: 'right', fontWeight: 800 }}>{formatQty(implant.closingQty)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <div style={{ padding: '0.85rem', border: '1px dashed var(--border)', borderRadius: '12px', background: 'var(--surface)' }}>
+                        No hay implantes clasificados para desglosar.
+                      </div>
+                    )}
                   </div>
 
                   <div className="table-container">

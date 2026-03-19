@@ -15,7 +15,7 @@ const normalize = (text: string): string => text
   .replace(/[\u0300-\u036f]/g, '')
   .trim();
 
-const familyOrder: MonthlyInventoryFamily[] = ['IMPLANTES', 'ADITAMENTOS', 'KITS', 'SIN_CLASIFICAR'];
+const familyOrder: MonthlyInventoryFamily[] = ['IMPLANTES', 'KITS', 'MOTOR', 'ADITAMENTOS', 'SIN_CLASIFICAR'];
 
 const asPositiveMagnitude = (value: number): number => (value < 0 ? Math.abs(value) : value);
 
@@ -235,8 +235,9 @@ export const buildMonthlyComparison = (
     compareMetric('inventory_total_closing', 'Stock Final Total', 'quantity', currentSummary.inventory.totals.closingQty, previousSummary?.inventory.totals.closingQty ?? null),
     compareMetric('inventory_total_net_change', 'Variación Neta Total', 'quantity', currentSummary.inventory.totals.netChangeQty, previousSummary?.inventory.totals.netChangeQty ?? null),
     compareMetric('implants_closing', 'Implantes - Stock Final', 'quantity', currentSummary.inventory.byFamily.IMPLANTES.closingQty, previousSummary?.inventory.byFamily.IMPLANTES.closingQty ?? null),
-    compareMetric('abutments_closing', 'Aditamentos - Stock Final', 'quantity', currentSummary.inventory.byFamily.ADITAMENTOS.closingQty, previousSummary?.inventory.byFamily.ADITAMENTOS.closingQty ?? null),
     compareMetric('kits_closing', 'Kits - Stock Final', 'quantity', currentSummary.inventory.byFamily.KITS.closingQty, previousSummary?.inventory.byFamily.KITS.closingQty ?? null),
+    compareMetric('motor_closing', 'Motor - Stock Final', 'quantity', currentSummary.inventory.byFamily.MOTOR.closingQty, previousSummary?.inventory.byFamily.MOTOR.closingQty ?? null),
+    compareMetric('abutments_closing', 'Aditamentos - Stock Final', 'quantity', currentSummary.inventory.byFamily.ADITAMENTOS.closingQty, previousSummary?.inventory.byFamily.ADITAMENTOS.closingQty ?? null),
     compareMetric('unclassified_skus', 'SKUs sin Clasificar', 'quantity', currentSummary.inventory.unmappedSkuCount, previousSummary?.inventory.unmappedSkuCount ?? null),
   ],
 });

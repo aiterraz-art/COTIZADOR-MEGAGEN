@@ -1,4 +1,4 @@
-export type MonthlyInventoryFamily = 'IMPLANTES' | 'ADITAMENTOS' | 'KITS' | 'SIN_CLASIFICAR';
+export type MonthlyInventoryFamily = 'IMPLANTES' | 'ADITAMENTOS' | 'KITS' | 'MOTOR' | 'SIN_CLASIFICAR';
 
 export type MonthlyBalanceSection =
   | 'ACTIVO_CORRIENTE'

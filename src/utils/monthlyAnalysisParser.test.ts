@@ -127,15 +127,25 @@ describe('monthlyAnalysisParser', () => {
         'Stock Final': 2,
         Periodo: '2026-02',
       },
+      {
+        SKU: 'COX-001',
+        Nombre: 'Coxxo Surgical Motor',
+        'Stock Inicial': 1,
+        Entradas: 1,
+        Salidas: 0,
+        Ajustes: 0,
+        'Stock Final': 2,
+        Periodo: '2026-02',
+      },
     ], '2026-02', products);
 
     expect(result.errors).toEqual([]);
-    expect(result.validRows).toBe(3);
+    expect(result.validRows).toBe(4);
     expect(result.rows.find((row) => row.sku === 'IMP-001')?.family).toBe('IMPLANTES');
     expect(result.rows.find((row) => row.sku === 'AD-001')?.family).toBe('ADITAMENTOS');
     expect(result.rows.find((row) => row.sku === 'AD-001')?.entriesQty).toBe(4);
     expect(result.rows.find((row) => row.sku === 'AD-001')?.exitsQty).toBe(2);
-    expect(result.rows.find((row) => row.sku === 'KIT-404')?.family).toBe('SIN_CLASIFICAR');
-    expect(result.warnings.some((warning) => warning.includes('KIT-404'))).toBe(true);
+    expect(result.rows.find((row) => row.sku === 'KIT-404')?.family).toBe('KITS');
+    expect(result.rows.find((row) => row.sku === 'COX-001')?.family).toBe('MOTOR');
   });
 });

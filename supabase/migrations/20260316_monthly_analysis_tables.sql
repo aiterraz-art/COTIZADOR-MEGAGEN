@@ -53,7 +53,7 @@ create table if not exists public.monthly_inventory_movements (
   source_period_key text null,
   is_unclassified boolean not null default false,
   created_at timestamptz not null default now(),
-  constraint monthly_inventory_movements_family_check check (family in ('IMPLANTES', 'ADITAMENTOS', 'KITS', 'SIN_CLASIFICAR'))
+  constraint monthly_inventory_movements_family_check check (family in ('IMPLANTES', 'ADITAMENTOS', 'KITS', 'MOTOR', 'SIN_CLASIFICAR'))
 );
 
 create index if not exists idx_monthly_closures_period_key on public.monthly_closures (period_key);

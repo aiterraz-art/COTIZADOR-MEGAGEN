@@ -1,5 +1,10 @@
 import * as XLSX from 'xlsx';
 import Papa from 'papaparse';
+import {
+    createEmptyImplantCountMap,
+    findImplantDefinition,
+    type ImplantModelKey,
+} from '../data/implantDefinitions';
 
 export interface RawProduct {
     sku?: string;
@@ -25,7 +30,7 @@ export interface DailySalesSummary {
     movementCount: number;
     dateFrom?: string;
     dateTo?: string;
-    implantsByModel: Record<'AR' | 'AO' | 'ST' | 'BD' | 'MN' | 'ARiE', number>;
+    implantsByModel: Record<ImplantModelKey, number>;
     totalImplants: number;
 }
 
@@ -351,23 +356,7 @@ export const parseDailySalesFile = (file: File): Promise<DailySalesSummary> => {
                     return;
                 }
 
-                const implantMatchers: Array<{ key: 'AR' | 'AO' | 'ST' | 'BD' | 'MN' | 'ARiE'; label: string }> = [
-                    { key: 'AR', label: 'xpeed anyridge internal fixture [ar]' },
-                    { key: 'AO', label: 'anyone internal fixture [ao]' },
-                    { key: 'ST', label: 'st internal fixture [st]' },
-                    { key: 'BD', label: 'bluediamond implant [bd]' },
-                    { key: 'MN', label: 'mini internal fixture [mn]' },
-                    { key: 'ARiE', label: 'ari excon implant [arie]' },
-                ];
-
-                const implantsByModel: Record<'AR' | 'AO' | 'ST' | 'BD' | 'MN' | 'ARiE', number> = {
-                    AR: 0,
-                    AO: 0,
-                    ST: 0,
-                    BD: 0,
-                    MN: 0,
-                    ARiE: 0,
-                };
+                const implantsByModel = createEmptyImplantCountMap();
 
                 let totalSalesCLPExcludingDispatch = 0;
                 let totalCostCLPExcludingDispatch = 0;
@@ -398,7 +387,7 @@ export const parseDailySalesFile = (file: File): Promise<DailySalesSummary> => {
                     totalCostCLPExcludingDispatch += currentCost * quantity;
                     movementCount += 1;
 
-                    const implant = implantMatchers.find((model) => normalizedDescription.includes(model.label));
+                    const implant = findImplantDefinition(normalizedDescription);
                     if (implant) {
                         implantsByModel[implant.key] += quantity;
                     }

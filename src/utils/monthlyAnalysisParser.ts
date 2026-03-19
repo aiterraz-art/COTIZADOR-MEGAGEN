@@ -1,6 +1,7 @@
 import * as XLSX from 'xlsx';
 import Papa from 'papaparse';
 import type { Product } from '../data/mockProducts';
+import { findImplantDefinition } from '../data/implantDefinitions';
 import type {
   MonthlyBalanceLine,
   MonthlyBalanceSection,
@@ -329,22 +330,38 @@ const inferPnlSection = (sourceSection: string, accountName: string): MonthlyPnl
   return 'OTROS';
 };
 
-const familyFromCategory = (category: string): MonthlyInventoryFamily => {
-  const normalized = normalize(category);
-  if (normalized.includes('implante')) return 'IMPLANTES';
-  if (normalized.includes('aditamento') || normalized.includes('ti-base') || normalized.includes('abutment')) return 'ADITAMENTOS';
-  if (normalized.includes('kit')) return 'KITS';
-  return 'SIN_CLASIFICAR';
+const inferInventoryFamily = (productName: string, category: string): MonthlyInventoryFamily => {
+  const implantDefinition = findImplantDefinition(productName);
+  const normalizedName = normalize(productName);
+  const normalizedCategory = normalize(category);
+
+  if (
+    normalizedCategory.includes('implante')
+    || implantDefinition
+  ) {
+    return 'IMPLANTES';
+  }
+
+  if (normalizedName.includes('kit')) {
+    return 'KITS';
+  }
+
+  if (normalizedName.includes('coxxo')) {
+    return 'MOTOR';
+  }
+
+  return 'ADITAMENTOS';
 };
 
-const buildCatalogIndex = (products: Product[]): Map<string, { family: MonthlyInventoryFamily; name: string }> => {
-  const index = new Map<string, { family: MonthlyInventoryFamily; name: string }>();
+const buildCatalogIndex = (products: Product[]): Map<string, { family: MonthlyInventoryFamily; name: string; category: string }> => {
+  const index = new Map<string, { family: MonthlyInventoryFamily; name: string; category: string }>();
   for (const product of products) {
     const sku = String(product.sku || '').trim().toUpperCase();
     if (!sku) continue;
     index.set(sku, {
-      family: familyFromCategory(product.category),
+      family: inferInventoryFamily(product.name, product.category),
       name: product.name,
+      category: product.category,
     });
   }
   return index;
@@ -353,9 +370,10 @@ const buildCatalogIndex = (products: Product[]): Map<string, { family: MonthlyIn
 const sortInventoryByFamily = (family: MonthlyInventoryFamily): number => {
   return {
     IMPLANTES: 0,
-    ADITAMENTOS: 1,
-    KITS: 2,
-    SIN_CLASIFICAR: 3,
+    KITS: 1,
+    MOTOR: 2,
+    ADITAMENTOS: 3,
+    SIN_CLASIFICAR: 4,
   }[family];
 };
 
@@ -533,8 +551,11 @@ export const parseInventoryRows = (
     }
 
     const catalogMatch = catalogIndex.get(sku);
-    const family = catalogMatch?.family ?? 'SIN_CLASIFICAR';
-    const productName = productNameRaw || catalogMatch?.name || sku;
+    const rawProductName = productNameRaw || catalogMatch?.name || sku;
+    const implantDefinition = findImplantDefinition(rawProductName);
+    const productName = implantDefinition?.name ?? rawProductName;
+    const category = catalogMatch?.category || '';
+    const family = inferInventoryFamily(productName, category);
 
     if (!rawSku) {
       warnings.push(`Se encontró una fila sin SKU explícito; se usó el identificador ${sku}.`);

@@ -47,8 +47,9 @@ const emptySummary = (): MonthlyAnalysisSummary => ({
   inventory: {
     byFamily: {
       IMPLANTES: { family: 'IMPLANTES', openingQty: 0, entriesQty: 0, exitsQty: 0, adjustmentsQty: 0, closingQty: 0, netChangeQty: 0, skuCount: 0 },
-      ADITAMENTOS: { family: 'ADITAMENTOS', openingQty: 0, entriesQty: 0, exitsQty: 0, adjustmentsQty: 0, closingQty: 0, netChangeQty: 0, skuCount: 0 },
       KITS: { family: 'KITS', openingQty: 0, entriesQty: 0, exitsQty: 0, adjustmentsQty: 0, closingQty: 0, netChangeQty: 0, skuCount: 0 },
+      MOTOR: { family: 'MOTOR', openingQty: 0, entriesQty: 0, exitsQty: 0, adjustmentsQty: 0, closingQty: 0, netChangeQty: 0, skuCount: 0 },
+      ADITAMENTOS: { family: 'ADITAMENTOS', openingQty: 0, entriesQty: 0, exitsQty: 0, adjustmentsQty: 0, closingQty: 0, netChangeQty: 0, skuCount: 0 },
       SIN_CLASIFICAR: { family: 'SIN_CLASIFICAR', openingQty: 0, entriesQty: 0, exitsQty: 0, adjustmentsQty: 0, closingQty: 0, netChangeQty: 0, skuCount: 0 },
     },
     totals: { family: 'SIN_CLASIFICAR', openingQty: 0, entriesQty: 0, exitsQty: 0, adjustmentsQty: 0, closingQty: 0, netChangeQty: 0, skuCount: 0 },
@@ -114,6 +115,16 @@ const parseSummary = (value: unknown): MonthlyAnalysisSummary => {
           netChangeQty: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.KITS as GenericRow | undefined)?.netChangeQty),
           skuCount: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.KITS as GenericRow | undefined)?.skuCount),
         },
+        MOTOR: {
+          family: 'MOTOR',
+          openingQty: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.MOTOR as GenericRow | undefined)?.openingQty),
+          entriesQty: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.MOTOR as GenericRow | undefined)?.entriesQty),
+          exitsQty: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.MOTOR as GenericRow | undefined)?.exitsQty),
+          adjustmentsQty: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.MOTOR as GenericRow | undefined)?.adjustmentsQty),
+          closingQty: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.MOTOR as GenericRow | undefined)?.closingQty),
+          netChangeQty: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.MOTOR as GenericRow | undefined)?.netChangeQty),
+          skuCount: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.MOTOR as GenericRow | undefined)?.skuCount),
+        },
         SIN_CLASIFICAR: {
           family: 'SIN_CLASIFICAR',
           openingQty: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.SIN_CLASIFICAR as GenericRow | undefined)?.openingQty),
@@ -151,7 +162,7 @@ const parsePnlSection = (value: unknown): MonthlyPnlSection => {
 };
 
 const parseInventoryFamily = (value: unknown): MonthlyInventoryFamily => {
-  const validValues: MonthlyInventoryFamily[] = ['IMPLANTES', 'ADITAMENTOS', 'KITS', 'SIN_CLASIFICAR'];
+  const validValues: MonthlyInventoryFamily[] = ['IMPLANTES', 'ADITAMENTOS', 'KITS', 'MOTOR', 'SIN_CLASIFICAR'];
   return validValues.includes(String(value) as MonthlyInventoryFamily) ? (String(value) as MonthlyInventoryFamily) : 'SIN_CLASIFICAR';
 };
 
