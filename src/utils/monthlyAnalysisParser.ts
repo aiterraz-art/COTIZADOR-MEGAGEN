@@ -20,6 +20,11 @@ const normalize = (text: string): string => text
   .replace(/[\u0300-\u036f]/g, '')
   .trim();
 
+const normalizeLoose = (text: string): string => normalize(text)
+  .replace(/[^a-z0-9\s]/g, ' ')
+  .replace(/\s+/g, ' ')
+  .trim();
+
 const numberRegex = /^-?\d+(?:[.,]\d+)?$/;
 
 const parseNumber = (value: unknown): number => {
@@ -148,14 +153,28 @@ const valueToPeriodKey = (value: unknown): string | null => {
 
 const resolveColumnValue = (row: TabularRow, aliases: string[]): unknown => {
   const normalizedAliases = aliases.map(normalize);
+  let bestMatch: { value: unknown; score: number } | null = null;
+
   for (const [key, value] of Object.entries(row)) {
     const normalizedKey = normalize(key);
-    if (normalizedAliases.some((alias) => normalizedKey === alias || normalizedKey.includes(alias))) {
-      return value;
+
+    for (const alias of normalizedAliases) {
+      let score = 0;
+
+      if (normalizedKey === alias) {
+        score = 1000 + alias.length;
+      } else if (normalizedKey.includes(alias)) {
+        score = alias.length;
+      }
+
+      if (!score) continue;
+      if (!bestMatch || score > bestMatch.score) {
+        bestMatch = { value, score };
+      }
     }
   }
 
-  return undefined;
+  return bestMatch?.value;
 };
 
 const resolveTextFallbacks = (row: TabularRow): string[] => (
@@ -163,6 +182,61 @@ const resolveTextFallbacks = (row: TabularRow): string[] => (
     .map((value) => String(value ?? '').trim())
     .filter((value) => value.length > 0 && !isNumericLike(value))
 );
+
+const collectHeaderHints = (rows: TabularRow[], maxRows = 3): string[] => {
+  const headers = new Set<string>();
+
+  for (const row of rows.slice(0, maxRows)) {
+    for (const key of Object.keys(row)) {
+      const normalizedKey = normalizeLoose(key);
+      if (normalizedKey) headers.add(normalizedKey);
+    }
+  }
+
+  return Array.from(headers);
+};
+
+const headersMatchAliases = (headers: string[], aliases: string[]): boolean => {
+  const normalizedAliases = aliases.map(normalizeLoose);
+  return headers.some((header) => normalizedAliases.some((alias) => header === alias || header.includes(alias)));
+};
+
+const detectInventoryFileShape = (rows: TabularRow[]): {
+  headers: string[];
+  looksLikeSalesReport: boolean;
+  looksLikeInventoryReport: boolean;
+} => {
+  const headers = collectHeaderHints(rows);
+
+  const looksLikeSalesReport = [
+    ['nombre doc', 'tipo documento', 'documento'],
+    ['numero del documento', 'n documento', 'factura'],
+    ['nombre del vendedor', 'vendedor', 'sales rep'],
+    ['codigo del cliente', 'cliente'],
+    ['cod producto', 'sku', 'codigo producto'],
+    ['precio unitario', 'precio'],
+    ['total detalle', 'monto neto', 'total'],
+    ['costo vigente', 'costo'],
+  ].filter((aliases) => headersMatchAliases(headers, aliases)).length >= 4;
+
+  const inventorySignalMatches = [
+    ['sku', 'codigo', 'cod producto'],
+    ['stock inicial', 'saldo inicial', 'opening'],
+    ['entradas', 'ingresos', 'entry'],
+    ['salidas', 'egresos', 'exit'],
+    ['ajustes', 'adjustment', 'regularizaciones'],
+    ['stock final', 'saldo final', 'closing'],
+    ['tipo movimiento', 'movement type'],
+  ].filter((aliases) => headersMatchAliases(headers, aliases)).length;
+
+  const looksLikeInventoryReport = inventorySignalMatches >= 2;
+
+  return {
+    headers,
+    looksLikeSalesReport,
+    looksLikeInventoryReport,
+  };
+};
 
 const resolveAmountValue = (
   row: TabularRow,
@@ -342,29 +416,78 @@ const inferInventoryFamily = (productName: string, category: string): MonthlyInv
     return 'IMPLANTES';
   }
 
-  if (normalizedName.includes('kit')) {
+  if (normalizedCategory.includes('kit') || normalizedName.includes('kit')) {
     return 'KITS';
   }
 
-  if (normalizedName.includes('coxxo')) {
+  if (
+    normalizedCategory.includes('motor')
+    || normalizedName.includes('coxo')
+    || normalizedName.includes('coxxo')
+    || normalizedName.includes('motor')
+  ) {
     return 'MOTOR';
   }
 
   return 'ADITAMENTOS';
 };
 
-const buildCatalogIndex = (products: Product[]): Map<string, { family: MonthlyInventoryFamily; name: string; category: string }> => {
-  const index = new Map<string, { family: MonthlyInventoryFamily; name: string; category: string }>();
+interface CatalogEntry {
+  family: MonthlyInventoryFamily;
+  name: string;
+  category: string;
+  normalizedName: string;
+}
+
+interface CatalogLookup {
+  exactNameIndex: Map<string, CatalogEntry>;
+  entries: CatalogEntry[];
+}
+
+const buildCatalogLookup = (products: Product[]): CatalogLookup => {
+  const exactNameIndex = new Map<string, CatalogEntry>();
+  const entries: CatalogEntry[] = [];
+
   for (const product of products) {
-    const sku = String(product.sku || '').trim().toUpperCase();
-    if (!sku) continue;
-    index.set(sku, {
+    const normalizedName = normalizeLoose(product.name);
+    if (!normalizedName) continue;
+
+    const entry: CatalogEntry = {
       family: inferInventoryFamily(product.name, product.category),
       name: product.name,
       category: product.category,
-    });
+      normalizedName,
+    };
+
+    if (!exactNameIndex.has(normalizedName)) {
+      exactNameIndex.set(normalizedName, entry);
+    }
+
+    entries.push(entry);
   }
-  return index;
+
+  entries.sort((left, right) => right.normalizedName.length - left.normalizedName.length);
+
+  return {
+    exactNameIndex,
+    entries,
+  };
+};
+
+const resolveCatalogMatch = (
+  productName: string,
+  catalogLookup: CatalogLookup,
+): CatalogEntry | null => {
+  const normalizedProductName = normalizeLoose(productName);
+  if (!normalizedProductName) return null;
+
+  const exactMatch = catalogLookup.exactNameIndex.get(normalizedProductName);
+  if (exactMatch) return exactMatch;
+
+  return catalogLookup.entries.find((entry) => (
+    normalizedProductName.includes(entry.normalizedName)
+    || entry.normalizedName.includes(normalizedProductName)
+  )) ?? null;
 };
 
 const sortInventoryByFamily = (family: MonthlyInventoryFamily): number => {
@@ -493,6 +616,80 @@ const resolveMovementKind = (movementType: string): 'entry' | 'exit' | 'adjustme
   return 'unknown';
 };
 
+const sortInventoryRows = (rows: MonthlyInventoryMovement[]): MonthlyInventoryMovement[] => rows.sort((left, right) => {
+  const familyDiff = sortInventoryByFamily(left.family) - sortInventoryByFamily(right.family);
+  if (familyDiff !== 0) return familyDiff;
+  return left.sku.localeCompare(right.sku, 'es');
+});
+
+const parseSalesRowsAsInventory = (
+  rows: TabularRow[],
+  selectedPeriodKey: string,
+  catalogLookup: CatalogLookup,
+  warnings: string[],
+): MonthlyInventoryMovement[] => {
+  const aggregated = new Map<string, MonthlyInventoryMovement>();
+
+  warnings.push('Se detectó el mismo formato comercial usado en Análisis Diario; se usarán las cantidades vendidas como salidas. Este reporte no incluye stock inicial ni stock final.');
+
+  for (let index = 0; index < rows.length; index += 1) {
+    const row = rows[index];
+    const rawSku = String(resolveColumnValue(row, ['sku', 'cod. producto', 'cod producto', 'codigo producto', 'codigo articulo', 'item code']) ?? '').trim();
+    const description = String(resolveColumnValue(row, ['desc. producto', 'desc producto', 'descripcion producto', 'producto', 'item description', 'product description', 'nombre producto']) ?? '').trim();
+    const quantity = resolveAmountValue(row, ['cantidad', 'qty', 'quantity', 'unidades'], false);
+    const totalAmount = resolveAmountValue(row, ['total detalle', 'monto neto', 'monto', 'amount', 'valor', 'total'], false);
+
+    if (!rawSku && !description && !quantity.found && !totalAmount.found) continue;
+
+    const normalizedSku = normalize(rawSku);
+    const normalizedDescription = normalize(description);
+    const isDispatch = normalizedSku === 'despacho'
+      || normalizedDescription.includes('servicio despacho')
+      || normalizedDescription.includes('despacho');
+
+    if (isDispatch || !quantity.found || quantity.value === 0) continue;
+
+    const sku = rawSku ? rawSku.toUpperCase() : `SIN-SKU-${index + 1}`;
+    const catalogMatch = resolveCatalogMatch(description, catalogLookup);
+    const rawProductName = description || catalogMatch?.name || sku;
+    const implantDefinition = findImplantDefinition(rawProductName);
+    const productName = implantDefinition?.name ?? rawProductName;
+    const category = catalogMatch?.category || '';
+    const family = inferInventoryFamily(productName, category);
+
+    if (!rawSku) {
+      warnings.push(`Se encontró una fila sin SKU explícito; se usó el identificador ${sku}.`);
+    }
+
+    const current = aggregated.get(sku);
+    if (current) {
+      aggregated.set(sku, {
+        ...current,
+        exitsQty: current.exitsQty + Math.abs(quantity.value),
+        totalAmountCLP: (current.totalAmountCLP ?? 0) + (totalAmount.found ? totalAmount.value : 0),
+        isUnclassified: current.isUnclassified || family === 'SIN_CLASIFICAR',
+      });
+      continue;
+    }
+
+    aggregated.set(sku, {
+      sku,
+      productName,
+      family,
+      openingQty: 0,
+      entriesQty: 0,
+      exitsQty: Math.abs(quantity.value),
+      adjustmentsQty: 0,
+      closingQty: 0,
+      totalAmountCLP: totalAmount.found ? totalAmount.value : undefined,
+      sourcePeriodKey: valueToPeriodKey(resolveColumnValue(row, ['periodo', 'period', 'mes', 'fecha', 'date'])) ?? selectedPeriodKey,
+      isUnclassified: family === 'SIN_CLASIFICAR',
+    });
+  }
+
+  return sortInventoryRows(Array.from(aggregated.values()));
+};
+
 export const parseInventoryRows = (
   rows: TabularRow[],
   selectedPeriodKey: string,
@@ -502,18 +699,45 @@ export const parseInventoryRows = (
   const warnings: string[] = [];
   const errors: string[] = [];
   const detectedPeriodKeys = collectDetectedPeriodKeys(rows);
-  const catalogIndex = buildCatalogIndex(products);
+  const catalogLookup = buildCatalogLookup(products);
   const aggregated = new Map<string, MonthlyInventoryMovement>();
+  const inventoryFileShape = detectInventoryFileShape(rows);
 
   if (!rows.length) {
     errors.push('El archivo de movimientos de inventario está vacío.');
   }
 
   if (!products.length) {
-    warnings.push('El catálogo de productos está vacío; la clasificación por SKU puede quedar incompleta.');
+    warnings.push('El catálogo de productos está vacío; la clasificación por nombre puede quedar incompleta.');
   }
 
   evaluateDetectedPeriods(selectedPeriodKey, detectedPeriodKeys, errors, warnings);
+
+  if (inventoryFileShape.looksLikeSalesReport && !inventoryFileShape.looksLikeInventoryReport) {
+    const parsedRows = parseSalesRowsAsInventory(rows, selectedPeriodKey, catalogLookup, warnings);
+    const unmappedSkus = parsedRows.filter((row) => row.isUnclassified).map((row) => row.sku);
+
+    if (unmappedSkus.length) {
+      warnings.push(`SKUs sin clasificación en catálogo: ${unmappedSkus.join(', ')}.`);
+    }
+
+    if (!parsedRows.length) {
+      errors.push('No se detectaron ventas válidas para convertirlas en salidas mensuales. Revisa que el archivo tenga SKU/Cod. Producto, descripción y cantidad.');
+      if (inventoryFileShape.headers.length) {
+        warnings.push(`Columnas detectadas: ${inventoryFileShape.headers.slice(0, 6).join(', ')}${inventoryFileShape.headers.length > 6 ? ', ...' : ''}.`);
+      }
+    }
+
+    return {
+      fileName,
+      rows: parsedRows,
+      warnings,
+      errors,
+      totalRows: rows.length,
+      validRows: parsedRows.length,
+      detectedPeriodKeys,
+    };
+  }
 
   for (let index = 0; index < rows.length; index += 1) {
     const row = rows[index];
@@ -550,7 +774,7 @@ export const parseInventoryRows = (
       closingQty = openingQty + entriesQty - exitsQty + adjustmentsQty;
     }
 
-    const catalogMatch = catalogIndex.get(sku);
+    const catalogMatch = resolveCatalogMatch(productNameRaw, catalogLookup);
     const rawProductName = productNameRaw || catalogMatch?.name || sku;
     const implantDefinition = findImplantDefinition(rawProductName);
     const productName = implantDefinition?.name ?? rawProductName;
@@ -591,11 +815,7 @@ export const parseInventoryRows = (
     });
   }
 
-  const parsedRows = Array.from(aggregated.values()).sort((left, right) => {
-    const familyDiff = sortInventoryByFamily(left.family) - sortInventoryByFamily(right.family);
-    if (familyDiff !== 0) return familyDiff;
-    return left.sku.localeCompare(right.sku, 'es');
-  });
+  const parsedRows = sortInventoryRows(Array.from(aggregated.values()));
 
   const unmappedSkus = parsedRows.filter((row) => row.isUnclassified).map((row) => row.sku);
   if (unmappedSkus.length) {
@@ -603,7 +823,15 @@ export const parseInventoryRows = (
   }
 
   if (!parsedRows.length) {
-    errors.push('No se detectaron movimientos válidos de inventario.');
+    if (inventoryFileShape.looksLikeSalesReport && !inventoryFileShape.looksLikeInventoryReport) {
+      errors.push('El archivo parece ser un reporte comercial o de ventas, no un movimiento de inventario. Para este módulo sube un archivo con columnas como SKU, Stock Inicial, Entradas, Salidas, Ajustes o Stock Final.');
+    } else {
+      errors.push('No se detectaron movimientos válidos de inventario. Verifica que el archivo tenga columnas como SKU, Stock Inicial, Entradas, Salidas, Ajustes o Stock Final.');
+    }
+
+    if (inventoryFileShape.headers.length) {
+      warnings.push(`Columnas detectadas: ${inventoryFileShape.headers.slice(0, 6).join(', ')}${inventoryFileShape.headers.length > 6 ? ', ...' : ''}.`);
+    }
   }
 
   return {

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
   Boxes,
+  Copy,
   Database,
   FileSpreadsheet,
   RefreshCw,
@@ -38,9 +39,15 @@ import {
   parseMonthlyInventoryFile,
   parseMonthlyPnlFile,
 } from '../utils/monthlyAnalysisParser';
+import {
+  createEmptyImplantCountMap,
+  findImplantDefinition,
+  IMPLANT_DEFINITIONS,
+} from '../data/implantDefinitions';
 
 type MonthlyTab = 'summary' | 'balance' | 'pnl' | 'inventory';
 type UploadKind = 'balance' | 'pnl' | 'inventory';
+const MONTHLY_ANALYSIS_STORAGE_KEY = 'megagen.monthlyAnalysis.viewState';
 
 interface MonthlyAnalysisModuleProps {
   products: Product[];
@@ -50,6 +57,20 @@ interface MonthlyDraftState {
   balance: MonthlyParseResult<MonthlyBalanceLine> | null;
   pnl: MonthlyParseResult<MonthlyPnlLine> | null;
   inventory: MonthlyParseResult<MonthlyInventoryMovement> | null;
+}
+
+interface QuickCopyMetric {
+  key: string;
+  label: string;
+  value: number;
+}
+
+interface PersistedMonthlyAnalysisState {
+  version: 1;
+  periodKey: string;
+  activeTab: MonthlyTab;
+  draft: MonthlyDraftState;
+  selectedClosurePeriodKey: string | null;
 }
 
 const initialDraftState = (): MonthlyDraftState => ({
@@ -92,12 +113,6 @@ const formatPeriodLabel = (periodKey: string): string => {
   return formatter.format(new Date(Number(year), monthNumber - 1, 1));
 };
 
-const normalizeGroupKey = (value: string): string => value
-  .toLowerCase()
-  .normalize('NFD')
-  .replace(/[\u0300-\u036f]/g, '')
-  .trim();
-
 const combineMessages = (
   ...entries: Array<MonthlyParseResult<unknown> | null>
 ): { warnings: string[]; errors: string[] } => {
@@ -105,6 +120,55 @@ const combineMessages = (
   const errors = entries.flatMap((entry) => entry?.errors ?? []);
   return { warnings, errors };
 };
+
+const normalizeMetricLabel = (value: string): string => value
+  .toLowerCase()
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .trim();
+
+const hasDraftContent = (draft: MonthlyDraftState): boolean => Boolean(
+  draft.balance
+  || draft.pnl
+  || draft.inventory,
+);
+
+const readStoredMonthlyAnalysisState = (): PersistedMonthlyAnalysisState | null => {
+  try {
+    const raw = localStorage.getItem(MONTHLY_ANALYSIS_STORAGE_KEY);
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw) as Partial<PersistedMonthlyAnalysisState>;
+    if (parsed.version !== 1) return null;
+
+    return {
+      version: 1,
+      periodKey: typeof parsed.periodKey === 'string' && parsed.periodKey ? parsed.periodKey : currentMonth(),
+      activeTab: parsed.activeTab === 'balance' || parsed.activeTab === 'pnl' || parsed.activeTab === 'inventory' ? parsed.activeTab : 'summary',
+      draft: parsed.draft ?? initialDraftState(),
+      selectedClosurePeriodKey: typeof parsed.selectedClosurePeriodKey === 'string' && parsed.selectedClosurePeriodKey
+        ? parsed.selectedClosurePeriodKey
+        : null,
+    };
+  } catch {
+    return null;
+  }
+};
+
+const INVENTORY_FAMILIES: MonthlyInventoryFamily[] = ['IMPLANTES', 'KITS', 'MOTOR', 'ADITAMENTOS', 'SIN_CLASIFICAR'];
+
+const createEmptyInventoryFamilySummary = (
+  family: MonthlyInventoryFamily,
+): MonthlyAnalysisSummary['inventory']['byFamily'][MonthlyInventoryFamily] => ({
+  family,
+  openingQty: 0,
+  entriesQty: 0,
+  exitsQty: 0,
+  adjustmentsQty: 0,
+  closingQty: 0,
+  netChangeQty: 0,
+  skuCount: 0,
+});
 
 const MetricCard: React.FC<{ title: string; value: string; hint?: string; tone?: 'default' | 'success' | 'warning' }> = ({
   title,
@@ -158,20 +222,26 @@ const ComparisonTable: React.FC<{ title: string; items: MonthlyComparisonItem[] 
 );
 
 const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products }) => {
+  const persistedState = useMemo(() => readStoredMonthlyAnalysisState(), []);
+  const restoredDraft = persistedState?.draft ?? initialDraftState();
+  const restoredDraftExists = hasDraftContent(restoredDraft);
+  const initialPreferredClosurePeriodKey = persistedState?.selectedClosurePeriodKey ?? persistedState?.periodKey ?? null;
   const balanceInputRef = useRef<HTMLInputElement>(null);
   const pnlInputRef = useRef<HTMLInputElement>(null);
   const inventoryInputRef = useRef<HTMLInputElement>(null);
 
-  const [periodKey, setPeriodKey] = useState(currentMonth);
-  const [activeTab, setActiveTab] = useState<MonthlyTab>('summary');
-  const [draft, setDraft] = useState<MonthlyDraftState>(() => initialDraftState());
+  const [periodKey, setPeriodKey] = useState<string>(() => persistedState?.periodKey ?? currentMonth());
+  const [activeTab, setActiveTab] = useState<MonthlyTab>(() => persistedState?.activeTab ?? 'summary');
+  const [draft, setDraft] = useState<MonthlyDraftState>(() => restoredDraft);
   const [history, setHistory] = useState<MonthlyCloseListItem[]>([]);
   const [selectedClosure, setSelectedClosure] = useState<MonthlyCloseRecord | null>(null);
+  const [selectedClosurePeriodKey, setSelectedClosurePeriodKey] = useState<string | null>(() => persistedState?.selectedClosurePeriodKey ?? null);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [infoMessage, setInfoMessage] = useState('');
+  const [copiedMetricKey, setCopiedMetricKey] = useState('');
   const [inventorySearch, setInventorySearch] = useState('');
   const [familyFilter, setFamilyFilter] = useState<'ALL' | MonthlyInventoryFamily>('ALL');
 
@@ -179,6 +249,7 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
     setIsLoadingDetail(true);
     setErrorMessage('');
     setInfoMessage('');
+    setSelectedClosurePeriodKey(nextPeriodKey);
     try {
       const closure = await fetchMonthlyClosureByPeriod(nextPeriodKey);
       setSelectedClosure(closure);
@@ -195,18 +266,27 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
     }
   }, []);
 
-  const refreshHistory = useCallback(async (preferredPeriodKey?: string): Promise<void> => {
+  const refreshHistory = useCallback(async (options?: {
+    preferredPeriodKey?: string | null;
+    skipSelection?: boolean;
+  }): Promise<void> => {
     setIsLoadingHistory(true);
     setErrorMessage('');
     try {
       const rows = await fetchMonthlyClosures();
       setHistory(rows);
 
-      const targetPeriodKey = preferredPeriodKey ?? rows[0]?.periodKey;
+      const targetPeriodKey = options?.skipSelection
+        ? null
+        : options?.preferredPeriodKey ?? rows[0]?.periodKey ?? null;
+
       if (targetPeriodKey) {
         await loadClosure(targetPeriodKey);
       } else {
         setSelectedClosure(null);
+        if (!options?.skipSelection) {
+          setSelectedClosurePeriodKey(null);
+        }
       }
     } catch (error) {
       setErrorMessage(`Error cargando historial mensual: ${(error as Error).message}`);
@@ -216,8 +296,28 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
   }, [loadClosure]);
 
   useEffect(() => {
-    void refreshHistory();
-  }, [refreshHistory]);
+    void refreshHistory({
+      preferredPeriodKey: restoredDraftExists
+        ? null
+        : initialPreferredClosurePeriodKey,
+      skipSelection: restoredDraftExists,
+    });
+  }, [initialPreferredClosurePeriodKey, refreshHistory, restoredDraftExists]);
+
+  useEffect(() => {
+    try {
+      const payload: PersistedMonthlyAnalysisState = {
+        version: 1,
+        periodKey,
+        activeTab,
+        draft,
+        selectedClosurePeriodKey,
+      };
+      localStorage.setItem(MONTHLY_ANALYSIS_STORAGE_KEY, JSON.stringify(payload));
+    } catch {
+      // Ignore storage errors so the module remains usable even if localStorage is unavailable.
+    }
+  }, [activeTab, draft, periodKey, selectedClosurePeriodKey]);
 
   const draftSummary = useMemo<MonthlyAnalysisSummary | null>(() => {
     if (!draft.balance || !draft.pnl || !draft.inventory) return null;
@@ -268,6 +368,59 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
     () => draft.inventory?.rows ?? selectedClosure?.inventoryMovements ?? [],
     [draft.inventory, selectedClosure?.inventoryMovements],
   );
+  const previewPeriodKey = displayPeriodKey ?? (draft.inventory ? periodKey : null);
+
+  const inventorySummaryPreview = useMemo<MonthlyAnalysisSummary['inventory'] | null>(() => {
+    if (displaySummary) return displaySummary.inventory;
+    if (!displayInventoryMovements.length) return null;
+
+    const byFamily = Object.fromEntries(
+      INVENTORY_FAMILIES.map((family) => [family, createEmptyInventoryFamilySummary(family)]),
+    ) as MonthlyAnalysisSummary['inventory']['byFamily'];
+    const familySkuSets = Object.fromEntries(
+      INVENTORY_FAMILIES.map((family) => [family, new Set<string>()]),
+    ) as Record<MonthlyInventoryFamily, Set<string>>;
+    const totalSkuSet = new Set<string>();
+    const totals = createEmptyInventoryFamilySummary('SIN_CLASIFICAR');
+    let unmappedSkuCount = 0;
+
+    for (const movement of displayInventoryMovements) {
+      const familySummary = byFamily[movement.family];
+
+      familySummary.openingQty += movement.openingQty;
+      familySummary.entriesQty += movement.entriesQty;
+      familySummary.exitsQty += movement.exitsQty;
+      familySummary.adjustmentsQty += movement.adjustmentsQty;
+      familySummary.closingQty += movement.closingQty;
+      familySummary.netChangeQty += movement.closingQty - movement.openingQty;
+
+      totals.openingQty += movement.openingQty;
+      totals.entriesQty += movement.entriesQty;
+      totals.exitsQty += movement.exitsQty;
+      totals.adjustmentsQty += movement.adjustmentsQty;
+      totals.closingQty += movement.closingQty;
+      totals.netChangeQty += movement.closingQty - movement.openingQty;
+
+      familySkuSets[movement.family].add(movement.sku);
+      totalSkuSet.add(movement.sku);
+
+      if (movement.isUnclassified) {
+        unmappedSkuCount += 1;
+      }
+    }
+
+    for (const family of INVENTORY_FAMILIES) {
+      byFamily[family].skuCount = familySkuSets[family].size;
+    }
+
+    totals.skuCount = totalSkuSet.size;
+
+    return {
+      byFamily,
+      totals,
+      unmappedSkuCount,
+    };
+  }, [displayInventoryMovements, displaySummary]);
 
   const filteredInventoryMovements = useMemo(() => {
     const query = inventorySearch.toLowerCase().trim();
@@ -284,51 +437,200 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
     [displayInventoryMovements],
   );
 
-  const implantNameBreakdown = useMemo(() => {
-    const grouped = new Map<string, {
-      productName: string;
-      skus: Set<string>;
-      openingQty: number;
-      entriesQty: number;
-      exitsQty: number;
-      adjustmentsQty: number;
-      closingQty: number;
-    }>();
+  const implantSalesByModel = useMemo(() => {
+    const counts = createEmptyImplantCountMap();
 
     for (const movement of implantInventoryMovements) {
-      const key = normalizeGroupKey(movement.productName || movement.sku);
-      const current = grouped.get(key);
+      const implant = findImplantDefinition(movement.productName);
+      if (!implant) continue;
+      counts[implant.key] += movement.exitsQty;
+    }
 
-      if (current) {
-        current.skus.add(movement.sku);
-        current.openingQty += movement.openingQty;
-        current.entriesQty += movement.entriesQty;
-        current.exitsQty += movement.exitsQty;
-        current.adjustmentsQty += movement.adjustmentsQty;
-        current.closingQty += movement.closingQty;
+    return IMPLANT_DEFINITIONS.map((implant) => ({
+      key: implant.key,
+      name: implant.name,
+      quantity: counts[implant.key],
+    }));
+  }, [implantInventoryMovements]);
+
+  const totalImplantsSold = useMemo(
+    () => implantSalesByModel.reduce((acc, implant) => acc + implant.quantity, 0),
+    [implantSalesByModel],
+  );
+
+  const implantQuickCopyMetrics = useMemo<QuickCopyMetric[]>(() => (
+    [
+      ...implantSalesByModel.map((implant) => ({
+        key: `implant-${implant.key}`,
+        label: implant.name,
+        value: implant.quantity,
+      })),
+      {
+        key: 'implant-total',
+        label: 'Total Implantes',
+        value: totalImplantsSold,
+      },
+    ]
+  ), [implantSalesByModel, totalImplantsSold]);
+
+  const buildFamilyQuickCopyMetrics = useCallback((
+    family: Exclude<MonthlyInventoryFamily, 'IMPLANTES' | 'SIN_CLASIFICAR'>,
+    totalLabel: string,
+  ): QuickCopyMetric[] => {
+    const aggregated = new Map<string, QuickCopyMetric>();
+
+    for (const movement of displayInventoryMovements) {
+      if (movement.family !== family) continue;
+
+      const normalizedName = normalizeMetricLabel(movement.productName);
+      const existing = aggregated.get(normalizedName);
+      if (existing) {
+        existing.value += movement.exitsQty;
         continue;
       }
 
-      grouped.set(key, {
-        productName: movement.productName || movement.sku,
-        skus: new Set([movement.sku]),
-        openingQty: movement.openingQty,
-        entriesQty: movement.entriesQty,
-        exitsQty: movement.exitsQty,
-        adjustmentsQty: movement.adjustmentsQty,
-        closingQty: movement.closingQty,
+      aggregated.set(normalizedName, {
+        key: `${family.toLowerCase()}-${normalizedName}`,
+        label: movement.productName,
+        value: movement.exitsQty,
       });
     }
 
-    return Array.from(grouped.values()).sort((left, right) => left.productName.localeCompare(right.productName, 'es'));
-  }, [implantInventoryMovements]);
+    const metrics = Array.from(aggregated.values()).sort((left, right) => (
+      right.value - left.value || left.label.localeCompare(right.label, 'es')
+    ));
+    const total = metrics.reduce((acc, metric) => acc + metric.value, 0);
+
+    if (!metrics.length) return [];
+
+    return [
+      ...metrics,
+      {
+        key: `${family.toLowerCase()}-total`,
+        label: totalLabel,
+        value: total,
+      },
+    ];
+  }, [displayInventoryMovements]);
+
+  const kitQuickCopyMetrics = useMemo(
+    () => buildFamilyQuickCopyMetrics('KITS', 'Total Kits'),
+    [buildFamilyQuickCopyMetrics],
+  );
+  const motorQuickCopyMetrics = useMemo(
+    () => buildFamilyQuickCopyMetrics('MOTOR', 'Total Motores'),
+    [buildFamilyQuickCopyMetrics],
+  );
+  const abutmentQuickCopyMetrics = useMemo(
+    () => buildFamilyQuickCopyMetrics('ADITAMENTOS', 'Total Aditamentos'),
+    [buildFamilyQuickCopyMetrics],
+  );
 
   const existingPeriod = history.find((item) => item.periodKey === periodKey) ?? null;
+
+  const copyMetricValue = async (key: string, value: number): Promise<void> => {
+    try {
+      await navigator.clipboard.writeText(value.toFixed(0));
+      setCopiedMetricKey(key);
+      setTimeout(() => setCopiedMetricKey(''), 1200);
+    } catch {
+      setErrorMessage('No fue posible copiar el valor al portapapeles.');
+    }
+  };
+
+  const renderQuickCopyPanel = (
+    title: string,
+    metrics: QuickCopyMetric[],
+    emptyMessage: string,
+  ): React.ReactNode => (
+    <div className="finance-card" style={{ padding: '1rem' }}>
+      <h3 style={{ fontSize: '1rem', marginBottom: '0.75rem' }}>{title}</h3>
+      {metrics.length ? (
+        <div style={{ display: 'grid', gap: '0.75rem' }}>
+          <div style={{ display: 'grid', gap: '0.55rem' }}>
+            {metrics.map((metric) => (
+              <div key={metric.key} style={{
+                display: 'grid',
+                gridTemplateColumns: '1.4fr auto auto',
+                alignItems: 'center',
+                gap: '0.5rem',
+                padding: '0.45rem 0.55rem',
+                border: '1px solid var(--border)',
+                borderRadius: '8px',
+                background: '#fff',
+              }}>
+                <div style={{ fontSize: '0.82rem' }}>{metric.label}</div>
+                <button
+                  className="btn"
+                  style={{ fontSize: '0.85rem', padding: '0.25rem 0.45rem', background: 'var(--surface)', border: '1px solid var(--border)' }}
+                  onClick={() => void copyMetricValue(metric.key, metric.value)}
+                  title="Copiar valor"
+                >
+                  <Copy size={13} />
+                </button>
+                <button
+                  className="btn"
+                  style={{
+                    fontSize: '0.9rem',
+                    padding: '0.25rem 0.55rem',
+                    background: copiedMetricKey === metric.key ? 'rgba(16,185,129,0.12)' : 'rgba(0,167,233,0.1)',
+                    color: copiedMetricKey === metric.key ? 'var(--success)' : 'var(--primary)',
+                    border: '1px solid var(--border)',
+                    minWidth: '88px',
+                    justifyContent: 'center',
+                  }}
+                  onClick={() => void copyMetricValue(metric.key, metric.value)}
+                  title="Click para copiar"
+                >
+                  {copiedMetricKey === metric.key ? 'Copiado' : metric.value.toFixed(0)}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div style={{ padding: '0.85rem', border: '1px dashed var(--border)', borderRadius: '12px', background: 'var(--surface)' }}>
+          {emptyMessage}
+        </div>
+      )}
+    </div>
+  );
+
+  const renderSalesBreakdownPanels = (messages?: {
+    implants?: string;
+    kits?: string;
+    motors?: string;
+    abutments?: string;
+  }): React.ReactNode => (
+    <div style={{ display: 'grid', gap: '1rem' }}>
+      {renderQuickCopyPanel(
+        'Ventas de Implantes por Tipo',
+        totalImplantsSold > 0 ? implantQuickCopyMetrics : [],
+        messages?.implants ?? 'No hay ventas de implantes clasificadas.',
+      )}
+      {renderQuickCopyPanel(
+        'Ventas de Kits',
+        kitQuickCopyMetrics,
+        messages?.kits ?? 'No hay ventas de kits clasificadas.',
+      )}
+      {renderQuickCopyPanel(
+        'Ventas de Motores',
+        motorQuickCopyMetrics,
+        messages?.motors ?? 'No hay ventas de motores clasificadas.',
+      )}
+      {renderQuickCopyPanel(
+        'Ventas de Aditamentos',
+        abutmentQuickCopyMetrics,
+        messages?.abutments ?? 'No hay ventas de aditamentos clasificadas.',
+      )}
+    </div>
+  );
 
   const handleFileUpload = async (kind: UploadKind, file: File): Promise<void> => {
     setErrorMessage('');
     setInfoMessage('');
     setSelectedClosure(null);
+    setSelectedClosurePeriodKey(null);
 
     try {
       if (kind === 'balance') {
@@ -345,6 +647,7 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
 
       const result = await parseMonthlyInventoryFile(file, periodKey, products);
       setDraft((prev) => ({ ...prev, inventory: result }));
+      setActiveTab('summary');
     } catch (error) {
       setErrorMessage(`Error procesando archivo ${kind}: ${(error as Error).message}`);
     }
@@ -369,7 +672,7 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
         inventoryMovements: draft.inventory.rows,
       });
 
-      await refreshHistory(periodKey);
+      await refreshHistory({ preferredPeriodKey: periodKey });
       setInfoMessage(existingPeriod
         ? `El cierre ${periodKey} fue reemplazado correctamente.`
         : `El cierre ${periodKey} fue guardado correctamente.`);
@@ -382,6 +685,7 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
 
   const resetDraft = (): void => {
     setDraft(initialDraftState());
+    setSelectedClosurePeriodKey(selectedClosure?.periodKey ?? null);
     setErrorMessage('');
     setInfoMessage('');
   };
@@ -428,13 +732,19 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
 
         {result?.warnings.length ? (
           <div style={{ marginBottom: '0.65rem', fontSize: '0.75rem', color: 'var(--warning)' }}>
-            Advertencias: {result.warnings.length}
+            <div style={{ fontWeight: 700, marginBottom: '0.2rem' }}>Advertencias: {result.warnings.length}</div>
+            {result.warnings.slice(0, 2).map((warning) => (
+              <div key={warning} style={{ lineHeight: 1.35 }}>{warning}</div>
+            ))}
           </div>
         ) : null}
 
         {result?.errors.length ? (
           <div style={{ marginBottom: '0.65rem', fontSize: '0.75rem', color: 'var(--error)' }}>
-            Errores: {result.errors.length}
+            <div style={{ fontWeight: 700, marginBottom: '0.2rem' }}>Errores: {result.errors.length}</div>
+            {result.errors.slice(0, 2).map((error) => (
+              <div key={error} style={{ lineHeight: 1.35 }}>{error}</div>
+            ))}
           </div>
         ) : null}
 
@@ -480,7 +790,7 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
               onChange={(event) => setPeriodKey(event.target.value)}
             />
           </label>
-          <button className="btn" onClick={() => void refreshHistory(displayPeriodKey ?? periodKey)}>
+          <button className="btn" onClick={() => void refreshHistory({ preferredPeriodKey: displayPeriodKey ?? periodKey })}>
             <RefreshCw size={14} className={isLoadingHistory || isLoadingDetail ? 'animate-spin' : ''} />
             {isLoadingHistory || isLoadingDetail ? 'Cargando...' : 'Actualizar'}
           </button>
@@ -542,7 +852,7 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '0.85rem' }}>
             {renderUploadCard('balance', 'Balance', 'Archivo mensual del balance general.', draft.balance, balanceInputRef)}
             {renderUploadCard('pnl', 'Estado de Resultados', 'Archivo mensual del ER completo.', draft.pnl, pnlInputRef)}
-            {renderUploadCard('inventory', 'Movimientos de Inventario', 'Movimientos de implantes, aditamentos y kits por SKU.', draft.inventory, inventoryInputRef)}
+            {renderUploadCard('inventory', 'Ventas por Producto', 'Usa el mismo formato comercial del análisis diario para consolidar ventas por SKU y familia.', draft.inventory, inventoryInputRef)}
           </div>
 
           <div className="finance-card" style={{ padding: '1rem' }}>
@@ -551,7 +861,7 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
                 ['summary', 'Resumen'],
                 ['balance', 'Balance'],
                 ['pnl', 'Estado de Resultados'],
-                ['inventory', 'Inventario'],
+                ['inventory', 'Ventas'],
               ].map(([tabKey, label]) => (
                 <button
                   key={tabKey}
@@ -573,6 +883,13 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
               <div className="text-muted" style={{ marginBottom: '0.9rem', fontSize: '0.78rem' }}>
                 Mostrando {draftSummary ? 'borrador del período' : 'cierre guardado de'} <strong>{formatPeriodLabel(displayPeriodKey)}</strong>
                 {comparison?.previousPeriodKey ? ` | Comparado contra ${formatPeriodLabel(comparison.previousPeriodKey)}` : ' | Sin periodo anterior comparable'}
+              </div>
+            ) : null}
+
+            {!displaySummary && inventorySummaryPreview && previewPeriodKey ? (
+              <div className="text-muted" style={{ marginBottom: '0.9rem', fontSize: '0.78rem' }}>
+                Mostrando vista preliminar de ventas de <strong>{formatPeriodLabel(previewPeriodKey)}</strong>.
+                {' '}Carga Balance y Estado de Resultados para completar el cierre financiero.
               </div>
             ) : null}
 
@@ -604,63 +921,79 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
                   </div>
 
                   <div>
-                    <h3 style={{ fontSize: '1rem', marginBottom: '0.75rem' }}>Inventario por Familia</h3>
+                    <h3 style={{ fontSize: '1rem', marginBottom: '0.75rem' }}>Ventas por Familia</h3>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '0.75rem' }}>
-                      {(['IMPLANTES', 'KITS', 'MOTOR', 'ADITAMENTOS', 'SIN_CLASIFICAR'] as MonthlyInventoryFamily[]).map((family) => (
+                      {INVENTORY_FAMILIES.map((family) => (
                         <MetricCard
                           key={family}
                           title={family}
-                          value={formatQty(displaySummary.inventory.byFamily[family].closingQty)}
-                          hint={`Neto: ${formatQty(displaySummary.inventory.byFamily[family].netChangeQty)} | SKUs: ${displaySummary.inventory.byFamily[family].skuCount}`}
+                          value={formatQty(inventorySummaryPreview?.byFamily[family].exitsQty ?? 0)}
+                          hint={`SKUs: ${inventorySummaryPreview?.byFamily[family].skuCount ?? 0}`}
                           tone={family === 'SIN_CLASIFICAR' ? 'warning' : 'default'}
                         />
                       ))}
                     </div>
                   </div>
 
-                  <div className="finance-card" style={{ padding: '1rem' }}>
-                    <h3 style={{ fontSize: '1rem', marginBottom: '0.75rem' }}>Implantes por Nombre</h3>
-                    {implantNameBreakdown.length ? (
-                      <div className="table-container">
-                        <table>
-                          <thead>
-                            <tr>
-                              <th>Implante</th>
-                              <th>SKUs</th>
-                              <th style={{ textAlign: 'right' }}>Inicial</th>
-                              <th style={{ textAlign: 'right' }}>Entradas</th>
-                              <th style={{ textAlign: 'right' }}>Salidas</th>
-                              <th style={{ textAlign: 'right' }}>Final</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {implantNameBreakdown.map((implant) => (
-                              <tr key={`summary-implant-${implant.productName}`}>
-                                <td style={{ fontWeight: 700 }}>{implant.productName}</td>
-                                <td style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>{Array.from(implant.skus).join(', ')}</td>
-                                <td style={{ textAlign: 'right' }}>{formatQty(implant.openingQty)}</td>
-                                <td style={{ textAlign: 'right', color: 'var(--success)', fontWeight: 700 }}>{formatQty(implant.entriesQty)}</td>
-                                <td style={{ textAlign: 'right', color: 'var(--error)', fontWeight: 700 }}>{formatQty(implant.exitsQty)}</td>
-                                <td style={{ textAlign: 'right', fontWeight: 800 }}>{formatQty(implant.closingQty)}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    ) : (
-                      <div style={{ padding: '0.85rem', border: '1px dashed var(--border)', borderRadius: '12px', background: 'var(--surface)' }}>
-                        No hay implantes clasificados en el periodo seleccionado.
-                      </div>
-                    )}
-                  </div>
+                  {renderSalesBreakdownPanels({
+                    implants: 'No hay ventas de implantes clasificadas en el periodo seleccionado.',
+                    kits: 'No hay ventas de kits clasificadas en el periodo seleccionado.',
+                    motors: 'No hay ventas de motores clasificadas en el periodo seleccionado.',
+                    abutments: 'No hay ventas de aditamentos clasificadas en el periodo seleccionado.',
+                  })}
 
                   {comparison ? (
                     <div style={{ display: 'grid', gap: '1rem' }}>
                       <ComparisonTable title="Comparación Balance" items={comparison.balance} />
                       <ComparisonTable title="Comparación ER" items={comparison.pnl} />
-                      <ComparisonTable title="Comparación Inventario" items={comparison.inventory} />
+                      <ComparisonTable title="Comparación de Ventas" items={comparison.inventory} />
                     </div>
                   ) : null}
+                </div>
+              ) : inventorySummaryPreview ? (
+                <div style={{ display: 'grid', gap: '1rem' }}>
+                  <div style={{
+                    padding: '0.9rem',
+                    borderRadius: '12px',
+                    border: '1px solid rgba(0,167,233,0.22)',
+                    background: 'rgba(0,167,233,0.05)',
+                  }}>
+                    Ya puedes revisar ventas por familia e implantes con el archivo comercial del análisis diario.
+                    {' '}Faltan Balance y Estado de Resultados para completar el dashboard financiero del mes.
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '0.75rem' }}>
+                    <MetricCard title="Ventas Totales" value={formatQty(inventorySummaryPreview.totals.exitsQty)} />
+                    <MetricCard title="Implantes Totales" value={formatQty(totalImplantsSold)} />
+                    <MetricCard title="SKUs con Venta" value={formatQty(inventorySummaryPreview.totals.skuCount)} />
+                    <MetricCard
+                      title="SKUs sin Clasificar"
+                      value={formatQty(inventorySummaryPreview.unmappedSkuCount)}
+                      tone={inventorySummaryPreview.unmappedSkuCount ? 'warning' : 'default'}
+                    />
+                  </div>
+
+                  <div>
+                    <h3 style={{ fontSize: '1rem', marginBottom: '0.75rem' }}>Ventas por Familia</h3>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '0.75rem' }}>
+                      {INVENTORY_FAMILIES.map((family) => (
+                        <MetricCard
+                          key={family}
+                          title={family}
+                          value={formatQty(inventorySummaryPreview.byFamily[family].exitsQty)}
+                          hint={`SKUs: ${inventorySummaryPreview.byFamily[family].skuCount}`}
+                          tone={family === 'SIN_CLASIFICAR' ? 'warning' : 'default'}
+                        />
+                      ))}
+                    </div>
+                  </div>
+
+                  {renderSalesBreakdownPanels({
+                    implants: 'No hay ventas de implantes clasificadas en el archivo cargado.',
+                    kits: 'No hay ventas de kits clasificadas en el archivo cargado.',
+                    motors: 'No hay ventas de motores clasificadas en el archivo cargado.',
+                    abutments: 'No hay ventas de aditamentos clasificadas en el archivo cargado.',
+                  })}
                 </div>
               ) : (
                 <div style={{ padding: '1rem', border: '1px dashed var(--border)', borderRadius: '12px', background: 'var(--surface)' }}>
@@ -770,56 +1103,25 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
                   </div>
 
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '0.75rem' }}>
-                    {displaySummary ? (
-                      (['IMPLANTES', 'KITS', 'MOTOR', 'ADITAMENTOS', 'SIN_CLASIFICAR'] as MonthlyInventoryFamily[]).map((family) => (
+                    {inventorySummaryPreview ? (
+                      INVENTORY_FAMILIES.map((family) => (
                         <MetricCard
                           key={family}
-                          title={`${family} - Stock Final`}
-                          value={formatQty(displaySummary.inventory.byFamily[family].closingQty)}
-                          hint={`Entradas: ${formatQty(displaySummary.inventory.byFamily[family].entriesQty)} | Salidas: ${formatQty(displaySummary.inventory.byFamily[family].exitsQty)}`}
+                          title={`${family} - Ventas`}
+                          value={formatQty(inventorySummaryPreview.byFamily[family].exitsQty)}
+                          hint={`SKUs: ${inventorySummaryPreview.byFamily[family].skuCount}`}
                           tone={family === 'SIN_CLASIFICAR' ? 'warning' : 'default'}
                         />
                       ))
                     ) : null}
                   </div>
 
-                  <div className="finance-card" style={{ padding: '1rem' }}>
-                    <h3 style={{ fontSize: '1rem', marginBottom: '0.75rem' }}>Detalle de Implantes por Nombre</h3>
-                    {implantNameBreakdown.length ? (
-                      <div className="table-container">
-                        <table>
-                          <thead>
-                            <tr>
-                              <th>Implante</th>
-                              <th>SKUs</th>
-                              <th style={{ textAlign: 'right' }}>Stock Inicial</th>
-                              <th style={{ textAlign: 'right' }}>Entradas</th>
-                              <th style={{ textAlign: 'right' }}>Salidas</th>
-                              <th style={{ textAlign: 'right' }}>Ajustes</th>
-                              <th style={{ textAlign: 'right' }}>Stock Final</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {implantNameBreakdown.map((implant) => (
-                              <tr key={`inventory-implant-name-${implant.productName}`}>
-                                <td style={{ fontWeight: 700 }}>{implant.productName}</td>
-                                <td style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>{Array.from(implant.skus).join(', ')}</td>
-                                <td style={{ textAlign: 'right' }}>{formatQty(implant.openingQty)}</td>
-                                <td style={{ textAlign: 'right', color: 'var(--success)', fontWeight: 700 }}>{formatQty(implant.entriesQty)}</td>
-                                <td style={{ textAlign: 'right', color: 'var(--error)', fontWeight: 700 }}>{formatQty(implant.exitsQty)}</td>
-                                <td style={{ textAlign: 'right' }}>{formatQty(implant.adjustmentsQty)}</td>
-                                <td style={{ textAlign: 'right', fontWeight: 800 }}>{formatQty(implant.closingQty)}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    ) : (
-                      <div style={{ padding: '0.85rem', border: '1px dashed var(--border)', borderRadius: '12px', background: 'var(--surface)' }}>
-                        No hay implantes clasificados para desglosar.
-                      </div>
-                    )}
-                  </div>
+                  {renderSalesBreakdownPanels({
+                    implants: 'No hay ventas de implantes clasificadas para desglosar.',
+                    kits: 'No hay ventas de kits clasificadas para desglosar.',
+                    motors: 'No hay ventas de motores clasificadas para desglosar.',
+                    abutments: 'No hay ventas de aditamentos clasificadas para desglosar.',
+                  })}
 
                   <div className="table-container">
                     <table>
@@ -828,11 +1130,7 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
                           <th>SKU</th>
                           <th>Producto</th>
                           <th>Familia</th>
-                          <th style={{ textAlign: 'right' }}>Stock Inicial</th>
-                          <th style={{ textAlign: 'right' }}>Entradas</th>
-                          <th style={{ textAlign: 'right' }}>Salidas</th>
-                          <th style={{ textAlign: 'right' }}>Ajustes</th>
-                          <th style={{ textAlign: 'right' }}>Stock Final</th>
+                          <th style={{ textAlign: 'right' }}>Ventas</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -843,11 +1141,7 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
                             <td style={{ color: movement.family === 'SIN_CLASIFICAR' ? 'var(--warning)' : 'inherit', fontWeight: movement.family === 'SIN_CLASIFICAR' ? 700 : 500 }}>
                               {movement.family}
                             </td>
-                            <td style={{ textAlign: 'right' }}>{formatQty(movement.openingQty)}</td>
-                            <td style={{ textAlign: 'right', color: 'var(--success)', fontWeight: 700 }}>{formatQty(movement.entriesQty)}</td>
                             <td style={{ textAlign: 'right', color: 'var(--error)', fontWeight: 700 }}>{formatQty(movement.exitsQty)}</td>
-                            <td style={{ textAlign: 'right' }}>{formatQty(movement.adjustmentsQty)}</td>
-                            <td style={{ textAlign: 'right', fontWeight: 800 }}>{formatQty(movement.closingQty)}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -856,7 +1150,7 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
                 </div>
               ) : (
                 <div style={{ padding: '1rem', border: '1px dashed var(--border)', borderRadius: '12px', background: 'var(--surface)' }}>
-                  No hay movimientos de inventario disponibles.
+                  No hay ventas por producto disponibles.
                 </div>
               )
             ) : null}
@@ -868,7 +1162,7 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
             <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '1rem' }}>
               <Boxes size={18} /> Historial de Cierres
             </h3>
-            <button className="btn" style={{ padding: '0.45rem 0.7rem' }} onClick={() => void refreshHistory(displayPeriodKey ?? periodKey)}>
+            <button className="btn" style={{ padding: '0.45rem 0.7rem' }} onClick={() => void refreshHistory({ preferredPeriodKey: displayPeriodKey ?? periodKey })}>
               <RefreshCw size={14} className={isLoadingHistory ? 'animate-spin' : ''} />
             </button>
           </div>
@@ -899,7 +1193,7 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
                       Ventas: <strong>{formatCLP(item.summary.pnl.revenueCLP)}</strong>
                     </div>
                     <div style={{ fontSize: '0.76rem' }}>
-                      Stock final: <strong>{formatQty(item.summary.inventory.totals.closingQty)}</strong>
+                      Unidades vendidas: <strong>{formatQty(item.summary.inventory.totals.exitsQty)}</strong>
                     </div>
                     {item.summary.inventory.unmappedSkuCount ? (
                       <div style={{ fontSize: '0.74rem', color: 'var(--warning)', marginTop: '0.2rem' }}>

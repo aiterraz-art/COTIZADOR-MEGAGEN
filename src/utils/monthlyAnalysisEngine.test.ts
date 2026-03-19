@@ -95,37 +95,63 @@ describe('monthlyAnalysisEngine', () => {
     expect(summary.pnl.ebitdaCLP).toBe(800_000);
     expect(summary.pnl.netIncomeCLP).toBe(700_000);
 
+    expect(summary.inventory.byFamily.IMPLANTES.exitsQty).toBe(3);
+    expect(summary.inventory.byFamily.ADITAMENTOS.exitsQty).toBe(2);
     expect(summary.inventory.byFamily.IMPLANTES.closingQty).toBe(12);
     expect(summary.inventory.byFamily.ADITAMENTOS.closingQty).toBe(4);
     expect(summary.inventory.byFamily.MOTOR.closingQty).toBe(2);
     expect(summary.inventory.byFamily.KITS.closingQty).toBe(1);
     expect(summary.inventory.totals.closingQty).toBe(19);
+    expect(summary.inventory.totals.exitsQty).toBe(5);
     expect(summary.inventory.unmappedSkuCount).toBe(0);
   });
 
   it('arma comparación contra el mes anterior y resuelve el período previo', () => {
     const currentSummary = buildMonthlyAnalysisSummary(balanceLines, pnlLines, inventoryMovements);
-    const previousSummary = {
-      ...currentSummary,
-      pnl: {
-        ...currentSummary.pnl,
-        revenueCLP: 1_500_000,
-      },
-      inventory: {
-        ...currentSummary.inventory,
-        totals: {
-          ...currentSummary.inventory.totals,
-          closingQty: 14,
-        },
-      },
-    };
+    const previousSummary = buildMonthlyAnalysisSummary(balanceLines, pnlLines, [
+      { ...inventoryMovements[0], exitsQty: 2, closingQty: 13 },
+      { ...inventoryMovements[1], exitsQty: 1, closingQty: 5 },
+      inventoryMovements[2],
+      inventoryMovements[3],
+    ]);
+    previousSummary.pnl.revenueCLP = 1_500_000;
 
     const comparison = buildMonthlyComparison('2026-02', currentSummary, '2026-01', previousSummary);
 
     expect(getPreviousPeriodKey('2026-01')).toBe('2025-12');
     expect(comparison.previousPeriodKey).toBe('2026-01');
     expect(comparison.pnl.find((item) => item.key === 'revenue')?.deltaValue).toBe(500_000);
-    expect(comparison.inventory.find((item) => item.key === 'inventory_total_closing')?.deltaValue).toBe(5);
+    expect(comparison.inventory.find((item) => item.key === 'sales_total')?.deltaValue).toBe(2);
+  });
+
+  it('etiqueta la comparación de inventario como ventas', () => {
+    const salesInventoryMovements: MonthlyInventoryMovement[] = [
+      {
+        sku: 'IMP-001',
+        productName: 'Implante X',
+        family: 'IMPLANTES',
+        openingQty: 0,
+        entriesQty: 0,
+        exitsQty: 8,
+        adjustmentsQty: 0,
+        closingQty: 0,
+        isUnclassified: false,
+      },
+    ];
+
+    const currentSummary = buildMonthlyAnalysisSummary(balanceLines, pnlLines, salesInventoryMovements);
+    const previousSummary = buildMonthlyAnalysisSummary(balanceLines, pnlLines, [
+      { ...salesInventoryMovements[0], exitsQty: 5 },
+    ]);
+
+    const comparison = buildMonthlyComparison('2026-02', currentSummary, '2026-01', previousSummary);
+    const totalItem = comparison.inventory.find((item) => item.key === 'sales_total');
+    const implantItem = comparison.inventory.find((item) => item.key === 'sales_implants');
+
+    expect(totalItem?.label).toBe('Ventas Totales');
+    expect(totalItem?.currentValue).toBe(8);
+    expect(totalItem?.deltaValue).toBe(3);
+    expect(implantItem?.label).toBe('Implantes - Ventas');
   });
 
   it('valida estructuras mínimas de balance y ER', () => {

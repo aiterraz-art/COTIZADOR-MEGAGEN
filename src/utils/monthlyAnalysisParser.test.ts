@@ -17,6 +17,12 @@ const products: Product[] = [
     category: 'Aditamentos',
     costUSD: 8,
   },
+  {
+    id: 'kit-name-001',
+    name: 'Llave Dinamometrica',
+    category: 'Kits',
+    costUSD: 14,
+  },
 ];
 
 describe('monthlyAnalysisParser', () => {
@@ -91,7 +97,7 @@ describe('monthlyAnalysisParser', () => {
     expect(result.rows.at(-1)?.section).toBe('RESULTADOS');
   });
 
-  it('clasifica inventario por SKU, agrega movimientos y conserva no mapeados', () => {
+  it('clasifica inventario por nombre, agrega movimientos y conserva no mapeados', () => {
     const result = parseInventoryRows([
       {
         SKU: 'IMP-001',
@@ -119,7 +125,7 @@ describe('monthlyAnalysisParser', () => {
       },
       {
         SKU: 'KIT-404',
-        Nombre: 'Kit sin mapa',
+        Nombre: 'Llave Dinamométrica',
         'Stock Inicial': 3,
         Entradas: 0,
         Salidas: 1,
@@ -129,7 +135,7 @@ describe('monthlyAnalysisParser', () => {
       },
       {
         SKU: 'COX-001',
-        Nombre: 'Coxxo Surgical Motor',
+        Nombre: 'Coxo Surgical Motor',
         'Stock Inicial': 1,
         Entradas: 1,
         Salidas: 0,
@@ -147,5 +153,52 @@ describe('monthlyAnalysisParser', () => {
     expect(result.rows.find((row) => row.sku === 'AD-001')?.exitsQty).toBe(2);
     expect(result.rows.find((row) => row.sku === 'KIT-404')?.family).toBe('KITS');
     expect(result.rows.find((row) => row.sku === 'COX-001')?.family).toBe('MOTOR');
+  });
+
+  it('usa el nombre del producto para clasificar ventas aunque el SKU no exista en catalogo', () => {
+    const result = parseInventoryRows([
+      {
+        'Nombre Doc': '33 Factura Electronica',
+        Fecha: '2026-02-04',
+        'Cod. Producto': 'ZZ-999',
+        'Desc. Producto': 'Llave Dinamométrica',
+        Cantidad: 2,
+        'Precio Unitario': 25000,
+        'Total Detalle': 50000,
+        'Costo Vigente': 12000,
+      },
+    ], '2026-02', products);
+
+    expect(result.errors).toEqual([]);
+    expect(result.validRows).toBe(1);
+    expect(result.rows[0]?.sku).toBe('ZZ-999');
+    expect(result.rows[0]?.productName).toBe('Llave Dinamométrica');
+    expect(result.rows[0]?.family).toBe('KITS');
+  });
+
+  it('adapta el reporte comercial diario como salidas mensuales por SKU', () => {
+    const result = parseInventoryRows([
+      {
+        'Nombre Doc': '33 Factura Electronica',
+        'Nmero del Documento': 1175,
+        'Nombre del Vendedor': 'YESSIKA ARRIECHE',
+        'Código del Cliente': '78.409.120-1',
+        'Nombre del Cliente': 'CLINICA ODONTOLOGICA PRODENTAL LTDA',
+        Fecha: '2026-02-04',
+        'Cod. Producto': 'HA4050',
+        'Desc. Producto': 'Healing Abutment [AO]',
+        Cantidad: 5,
+        'Precio Unitario': 9880,
+        'Total Detalle': 49400,
+        'Costo Vigente': 4810,
+      },
+    ], '2026-02', products);
+
+    expect(result.errors).toEqual([]);
+    expect(result.validRows).toBe(1);
+    expect(result.rows[0]?.sku).toBe('HA4050');
+    expect(result.rows[0]?.exitsQty).toBe(5);
+    expect(result.rows[0]?.closingQty).toBe(0);
+    expect(result.warnings.some((warning) => warning.includes('cantidades vendidas como salidas'))).toBe(true);
   });
 });

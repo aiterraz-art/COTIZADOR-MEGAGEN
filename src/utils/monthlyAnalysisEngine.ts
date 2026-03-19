@@ -206,41 +206,42 @@ export const buildMonthlyComparison = (
   currentSummary: MonthlyAnalysisSummary,
   previousPeriodKey: string | null,
   previousSummary: MonthlyAnalysisSummary | null,
-): MonthlyComparison => ({
-  currentPeriodKey,
-  previousPeriodKey,
-  balance: [
-    compareMetric('cash', 'Caja', 'currency', currentSummary.balance.cashCLP, previousSummary?.balance.cashCLP ?? null),
-    compareMetric('accounts_receivable', 'Cuentas por Cobrar', 'currency', currentSummary.balance.accountsReceivableCLP, previousSummary?.balance.accountsReceivableCLP ?? null),
-    compareMetric('inventory_value', 'Inventario', 'currency', currentSummary.balance.inventoryCLP, previousSummary?.balance.inventoryCLP ?? null),
-    compareMetric('accounts_payable', 'Cuentas por Pagar', 'currency', currentSummary.balance.accountsPayableCLP, previousSummary?.balance.accountsPayableCLP ?? null),
-    compareMetric('current_assets', 'Activos Corrientes', 'currency', currentSummary.balance.currentAssetsCLP, previousSummary?.balance.currentAssetsCLP ?? null),
-    compareMetric('current_liabilities', 'Pasivos Corrientes', 'currency', currentSummary.balance.currentLiabilitiesCLP, previousSummary?.balance.currentLiabilitiesCLP ?? null),
-    compareMetric('working_capital', 'Capital de Trabajo', 'currency', currentSummary.balance.workingCapitalCLP, previousSummary?.balance.workingCapitalCLP ?? null),
-    compareMetric('total_assets', 'Total Activos', 'currency', currentSummary.balance.totalAssetsCLP, previousSummary?.balance.totalAssetsCLP ?? null),
-    compareMetric('total_liabilities', 'Total Pasivos', 'currency', currentSummary.balance.totalLiabilitiesCLP, previousSummary?.balance.totalLiabilitiesCLP ?? null),
-    compareMetric('equity', 'Patrimonio', 'currency', currentSummary.balance.equityCLP, previousSummary?.balance.equityCLP ?? null),
-  ],
-  pnl: [
-    compareMetric('revenue', 'Ventas', 'currency', currentSummary.pnl.revenueCLP, previousSummary?.pnl.revenueCLP ?? null),
-    compareMetric('cost_of_sales', 'Costo de Ventas', 'currency', currentSummary.pnl.costOfSalesCLP, previousSummary?.pnl.costOfSalesCLP ?? null),
-    compareMetric('gross_profit', 'Utilidad Bruta', 'currency', currentSummary.pnl.grossProfitCLP, previousSummary?.pnl.grossProfitCLP ?? null),
-    compareMetric('gross_margin_percent', 'Margen Bruto %', 'percent', currentSummary.pnl.grossMarginPercent, previousSummary?.pnl.grossMarginPercent ?? null),
-    compareMetric('operating_expenses', 'Gastos Operacionales', 'currency', currentSummary.pnl.operatingExpensesCLP, previousSummary?.pnl.operatingExpensesCLP ?? null),
-    compareMetric('operating_income', 'Utilidad Operativa', 'currency', currentSummary.pnl.operatingIncomeCLP, previousSummary?.pnl.operatingIncomeCLP ?? null),
-    compareMetric('ebitda', 'EBITDA', 'currency', currentSummary.pnl.ebitdaCLP, previousSummary?.pnl.ebitdaCLP ?? null),
-    compareMetric('net_income', 'Utilidad Neta', 'currency', currentSummary.pnl.netIncomeCLP, previousSummary?.pnl.netIncomeCLP ?? null),
-  ],
-  inventory: [
-    compareMetric('inventory_total_closing', 'Stock Final Total', 'quantity', currentSummary.inventory.totals.closingQty, previousSummary?.inventory.totals.closingQty ?? null),
-    compareMetric('inventory_total_net_change', 'Variación Neta Total', 'quantity', currentSummary.inventory.totals.netChangeQty, previousSummary?.inventory.totals.netChangeQty ?? null),
-    compareMetric('implants_closing', 'Implantes - Stock Final', 'quantity', currentSummary.inventory.byFamily.IMPLANTES.closingQty, previousSummary?.inventory.byFamily.IMPLANTES.closingQty ?? null),
-    compareMetric('kits_closing', 'Kits - Stock Final', 'quantity', currentSummary.inventory.byFamily.KITS.closingQty, previousSummary?.inventory.byFamily.KITS.closingQty ?? null),
-    compareMetric('motor_closing', 'Motor - Stock Final', 'quantity', currentSummary.inventory.byFamily.MOTOR.closingQty, previousSummary?.inventory.byFamily.MOTOR.closingQty ?? null),
-    compareMetric('abutments_closing', 'Aditamentos - Stock Final', 'quantity', currentSummary.inventory.byFamily.ADITAMENTOS.closingQty, previousSummary?.inventory.byFamily.ADITAMENTOS.closingQty ?? null),
-    compareMetric('unclassified_skus', 'SKUs sin Clasificar', 'quantity', currentSummary.inventory.unmappedSkuCount, previousSummary?.inventory.unmappedSkuCount ?? null),
-  ],
-});
+): MonthlyComparison => {
+  return {
+    currentPeriodKey,
+    previousPeriodKey,
+    balance: [
+      compareMetric('cash', 'Caja', 'currency', currentSummary.balance.cashCLP, previousSummary?.balance.cashCLP ?? null),
+      compareMetric('accounts_receivable', 'Cuentas por Cobrar', 'currency', currentSummary.balance.accountsReceivableCLP, previousSummary?.balance.accountsReceivableCLP ?? null),
+      compareMetric('inventory_value', 'Inventario', 'currency', currentSummary.balance.inventoryCLP, previousSummary?.balance.inventoryCLP ?? null),
+      compareMetric('accounts_payable', 'Cuentas por Pagar', 'currency', currentSummary.balance.accountsPayableCLP, previousSummary?.balance.accountsPayableCLP ?? null),
+      compareMetric('current_assets', 'Activos Corrientes', 'currency', currentSummary.balance.currentAssetsCLP, previousSummary?.balance.currentAssetsCLP ?? null),
+      compareMetric('current_liabilities', 'Pasivos Corrientes', 'currency', currentSummary.balance.currentLiabilitiesCLP, previousSummary?.balance.currentLiabilitiesCLP ?? null),
+      compareMetric('working_capital', 'Capital de Trabajo', 'currency', currentSummary.balance.workingCapitalCLP, previousSummary?.balance.workingCapitalCLP ?? null),
+      compareMetric('total_assets', 'Total Activos', 'currency', currentSummary.balance.totalAssetsCLP, previousSummary?.balance.totalAssetsCLP ?? null),
+      compareMetric('total_liabilities', 'Total Pasivos', 'currency', currentSummary.balance.totalLiabilitiesCLP, previousSummary?.balance.totalLiabilitiesCLP ?? null),
+      compareMetric('equity', 'Patrimonio', 'currency', currentSummary.balance.equityCLP, previousSummary?.balance.equityCLP ?? null),
+    ],
+    pnl: [
+      compareMetric('revenue', 'Ventas', 'currency', currentSummary.pnl.revenueCLP, previousSummary?.pnl.revenueCLP ?? null),
+      compareMetric('cost_of_sales', 'Costo de Ventas', 'currency', currentSummary.pnl.costOfSalesCLP, previousSummary?.pnl.costOfSalesCLP ?? null),
+      compareMetric('gross_profit', 'Utilidad Bruta', 'currency', currentSummary.pnl.grossProfitCLP, previousSummary?.pnl.grossProfitCLP ?? null),
+      compareMetric('gross_margin_percent', 'Margen Bruto %', 'percent', currentSummary.pnl.grossMarginPercent, previousSummary?.pnl.grossMarginPercent ?? null),
+      compareMetric('operating_expenses', 'Gastos Operacionales', 'currency', currentSummary.pnl.operatingExpensesCLP, previousSummary?.pnl.operatingExpensesCLP ?? null),
+      compareMetric('operating_income', 'Utilidad Operativa', 'currency', currentSummary.pnl.operatingIncomeCLP, previousSummary?.pnl.operatingIncomeCLP ?? null),
+      compareMetric('ebitda', 'EBITDA', 'currency', currentSummary.pnl.ebitdaCLP, previousSummary?.pnl.ebitdaCLP ?? null),
+      compareMetric('net_income', 'Utilidad Neta', 'currency', currentSummary.pnl.netIncomeCLP, previousSummary?.pnl.netIncomeCLP ?? null),
+    ],
+    inventory: [
+      compareMetric('sales_total', 'Ventas Totales', 'quantity', currentSummary.inventory.totals.exitsQty, previousSummary?.inventory.totals.exitsQty ?? null),
+      compareMetric('sales_implants', 'Implantes - Ventas', 'quantity', currentSummary.inventory.byFamily.IMPLANTES.exitsQty, previousSummary?.inventory.byFamily.IMPLANTES.exitsQty ?? null),
+      compareMetric('sales_kits', 'Kits - Ventas', 'quantity', currentSummary.inventory.byFamily.KITS.exitsQty, previousSummary?.inventory.byFamily.KITS.exitsQty ?? null),
+      compareMetric('sales_motor', 'Motor - Ventas', 'quantity', currentSummary.inventory.byFamily.MOTOR.exitsQty, previousSummary?.inventory.byFamily.MOTOR.exitsQty ?? null),
+      compareMetric('sales_abutments', 'Aditamentos - Ventas', 'quantity', currentSummary.inventory.byFamily.ADITAMENTOS.exitsQty, previousSummary?.inventory.byFamily.ADITAMENTOS.exitsQty ?? null),
+      compareMetric('unclassified_skus', 'SKUs sin Clasificar', 'quantity', currentSummary.inventory.unmappedSkuCount, previousSummary?.inventory.unmappedSkuCount ?? null),
+    ],
+  };
+};
 
 export const hasMinimumBalanceStructure = (balanceLines: MonthlyBalanceLine[]): boolean => {
   const hasAssets = balanceLines.some((line) => line.section === 'ACTIVO_CORRIENTE' || line.section === 'ACTIVO_NO_CORRIENTE');
