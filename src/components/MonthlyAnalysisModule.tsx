@@ -9,6 +9,7 @@ import {
   Save,
   Search,
   Upload,
+  X,
 } from 'lucide-react';
 import type { Product } from '../data/mockProducts';
 import {
@@ -282,6 +283,8 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
   const [copiedMetricKey, setCopiedMetricKey] = useState('');
   const [inventorySearch, setInventorySearch] = useState('');
   const [familyFilter, setFamilyFilter] = useState<'ALL' | MonthlyInventoryFamily>('ALL');
+  const [isHistoryWindowOpen, setIsHistoryWindowOpen] = useState(false);
+  const [historyPreviewPeriodKey, setHistoryPreviewPeriodKey] = useState<string | null>(null);
 
   const loadClosure = useCallback(async (nextPeriodKey: string): Promise<void> => {
     setIsLoadingDetail(true);
@@ -356,6 +359,19 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
       // Ignore storage errors so the module remains usable even if localStorage is unavailable.
     }
   }, [activeTab, draft, periodKey, selectedClosurePeriodKey]);
+
+  useEffect(() => {
+    if (!isHistoryWindowOpen) return undefined;
+
+    const handleEscape = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') {
+        setIsHistoryWindowOpen(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [isHistoryWindowOpen]);
 
   const draftSummary = useMemo<MonthlyAnalysisSummary | null>(() => {
     if (!draft.balance || !draft.pnl || !draft.inventory) return null;
@@ -685,6 +701,22 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
   );
 
   const existingPeriod = history.find((item) => item.periodKey === periodKey) ?? null;
+  const historyPreviewItem = useMemo(() => {
+    if (!history.length) return null;
+    if (!historyPreviewPeriodKey) return history[0] ?? null;
+    return history.find((item) => item.periodKey === historyPreviewPeriodKey) ?? history[0] ?? null;
+  }, [history, historyPreviewPeriodKey]);
+
+  const openHistoryWindow = (): void => {
+    setHistoryPreviewPeriodKey(selectedClosure?.periodKey ?? selectedClosurePeriodKey ?? history[0]?.periodKey ?? null);
+    setIsHistoryWindowOpen(true);
+  };
+
+  const handleOpenPreviewClosure = async (): Promise<void> => {
+    if (!historyPreviewItem) return;
+    await loadClosure(historyPreviewItem.periodKey);
+    setIsHistoryWindowOpen(false);
+  };
 
   const handleAdminSalaryInputChange = (value: string): void => {
     const trimmedValue = value.trim();
@@ -1064,6 +1096,9 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
           <button className="btn" onClick={() => void refreshHistory({ preferredPeriodKey: displayPeriodKey ?? periodKey })}>
             <RefreshCw size={14} className={isLoadingHistory || isLoadingDetail ? 'animate-spin' : ''} />
             {isLoadingHistory || isLoadingDetail ? 'Cargando...' : 'Actualizar'}
+          </button>
+          <button className="btn" onClick={openHistoryWindow}>
+            <Boxes size={14} /> Cierres guardados
           </button>
           <button className="btn btn-primary" disabled={!canSaveDraft || isSaving} onClick={() => void handleSave()}>
             <Save size={14} /> {isSaving ? 'Guardando...' : existingPeriod ? 'Reemplazar cierre' : 'Guardar cierre'}
@@ -1862,9 +1897,14 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
             <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '1rem' }}>
               <Boxes size={18} /> Historial de Cierres
             </h3>
-            <button className="btn" style={{ padding: '0.45rem 0.7rem' }} onClick={() => void refreshHistory({ preferredPeriodKey: displayPeriodKey ?? periodKey })}>
-              <RefreshCw size={14} className={isLoadingHistory ? 'animate-spin' : ''} />
-            </button>
+            <div style={{ display: 'flex', gap: '0.45rem' }}>
+              <button className="btn" style={{ padding: '0.45rem 0.7rem' }} onClick={openHistoryWindow}>
+                Ver
+              </button>
+              <button className="btn" style={{ padding: '0.45rem 0.7rem' }} onClick={() => void refreshHistory({ preferredPeriodKey: displayPeriodKey ?? periodKey })}>
+                <RefreshCw size={14} className={isLoadingHistory ? 'animate-spin' : ''} />
+              </button>
+            </div>
           </div>
 
           {history.length ? (
@@ -1917,6 +1957,168 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
           )}
         </aside>
       </div>
+
+      {isHistoryWindowOpen ? (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(15, 23, 42, 0.42)',
+            display: 'grid',
+            placeItems: 'center',
+            padding: '1rem',
+            zIndex: 90,
+          }}
+          onClick={() => setIsHistoryWindowOpen(false)}
+        >
+          <div
+            className="glass card"
+            style={{
+              width: 'min(1080px, 100%)',
+              maxHeight: '88vh',
+              overflow: 'hidden',
+              display: 'grid',
+              gridTemplateRows: 'auto 1fr',
+              gap: '1rem',
+              textAlign: 'left',
+            }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+              <div>
+                <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.2rem' }}>
+                  <Boxes size={20} /> Cierres guardados
+                </h3>
+                <div className="text-muted" style={{ fontSize: '0.8rem' }}>
+                  Abre un cierre anterior para recuperar su dashboard completo.
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                <button className="btn" onClick={() => void refreshHistory({ preferredPeriodKey: historyPreviewItem?.periodKey ?? displayPeriodKey ?? periodKey })}>
+                  <RefreshCw size={14} className={isLoadingHistory ? 'animate-spin' : ''} /> Actualizar
+                </button>
+                <button className="btn" onClick={() => setIsHistoryWindowOpen(false)}>
+                  <X size={14} /> Cerrar
+                </button>
+              </div>
+            </div>
+
+            {history.length ? (
+              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.15fr) minmax(320px, 0.85fr)', gap: '1rem', minHeight: 0 }}>
+                <div style={{ minHeight: 0, overflowY: 'auto', display: 'grid', gap: '0.65rem', paddingRight: '0.2rem' }}>
+                  {history.map((item) => {
+                    const isPreview = item.periodKey === historyPreviewItem?.periodKey;
+                    const isLoaded = item.periodKey === selectedClosure?.periodKey && !draftSummary;
+
+                    return (
+                      <button
+                        key={`history-window-${item.id}`}
+                        type="button"
+                        onClick={() => setHistoryPreviewPeriodKey(item.periodKey)}
+                        style={{
+                          border: `1px solid ${isPreview ? 'var(--primary)' : 'var(--border)'}`,
+                          borderRadius: '12px',
+                          background: isPreview ? 'rgba(0,167,233,0.08)' : '#fff',
+                          padding: '0.9rem',
+                          textAlign: 'left',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.8rem', alignItems: 'center', marginBottom: '0.25rem' }}>
+                          <div style={{ fontWeight: 800 }}>{formatPeriodLabel(item.periodKey)}</div>
+                          {isLoaded ? (
+                            <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--accent)' }}>Cargado</span>
+                          ) : null}
+                        </div>
+                        <div className="text-muted" style={{ fontSize: '0.75rem', marginBottom: '0.45rem' }}>
+                          Actualizado: {item.updatedAt ? new Date(item.updatedAt).toLocaleString('es-CL') : 'N/D'}
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(135px, 1fr))', gap: '0.45rem', fontSize: '0.76rem' }}>
+                          <div>Ventas: <strong>{formatCLP(item.summary.pnl.revenueCLP)}</strong></div>
+                          <div>Neto: <strong>{formatCLP(item.summary.pnl.netIncomeCLP)}</strong></div>
+                          <div>Unidades: <strong>{formatQty(item.summary.inventory.totals.exitsQty)}</strong></div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="finance-card" style={{ padding: '1rem', minHeight: 0, overflowY: 'auto' }}>
+                  {historyPreviewItem ? (
+                    <>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', alignItems: 'flex-start', marginBottom: '0.9rem', flexWrap: 'wrap' }}>
+                        <div>
+                          <div className="text-muted" style={{ fontSize: '0.76rem', marginBottom: '0.25rem' }}>Vista previa</div>
+                          <div style={{ fontWeight: 900, fontSize: '1.1rem' }}>{formatPeriodLabel(historyPreviewItem.periodKey)}</div>
+                          <div className="text-muted" style={{ fontSize: '0.76rem', marginTop: '0.25rem' }}>
+                            Creado: {historyPreviewItem.createdAt ? new Date(historyPreviewItem.createdAt).toLocaleString('es-CL') : 'N/D'}
+                          </div>
+                          <div className="text-muted" style={{ fontSize: '0.76rem' }}>
+                            Actualizado: {historyPreviewItem.updatedAt ? new Date(historyPreviewItem.updatedAt).toLocaleString('es-CL') : 'N/D'}
+                          </div>
+                        </div>
+                        <button
+                          className="btn btn-primary"
+                          disabled={isLoadingDetail}
+                          onClick={() => void handleOpenPreviewClosure()}
+                        >
+                          <Search size={14} /> {isLoadingDetail ? 'Abriendo...' : 'Abrir cierre'}
+                        </button>
+                      </div>
+
+                      {hasDraftContent(draft) ? (
+                        <div style={{
+                          marginBottom: '0.9rem',
+                          background: 'rgba(245,158,11,0.08)',
+                          border: '1px solid rgba(245,158,11,0.32)',
+                          borderRadius: '12px',
+                          padding: '0.75rem',
+                          color: '#92400e',
+                          fontSize: '0.8rem',
+                        }}>
+                          Abrir un cierre guardado reemplaza el borrador actual que tienes en pantalla.
+                        </div>
+                      ) : null}
+
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(165px, 1fr))', gap: '0.65rem', marginBottom: '0.9rem' }}>
+                        <MetricCard title="Ventas" value={formatCLP(historyPreviewItem.summary.pnl.revenueCLP)} />
+                        <MetricCard title="Resultado Neto" value={formatCLP(historyPreviewItem.summary.pnl.netIncomeCLP)} tone={historyPreviewItem.summary.pnl.netIncomeCLP < 0 ? 'warning' : 'success'} />
+                        <MetricCard title="Activos" value={formatCLP(historyPreviewItem.summary.balance.totalAssetsCLP)} />
+                        <MetricCard title="Unidades Vendidas" value={formatQty(historyPreviewItem.summary.inventory.totals.exitsQty)} />
+                      </div>
+
+                      <div style={{ display: 'grid', gap: '0.55rem', fontSize: '0.8rem' }}>
+                        <div><strong>Balance:</strong> {historyPreviewItem.balanceFileName || 'N/D'}</div>
+                        <div><strong>Estado de Resultados:</strong> {historyPreviewItem.pnlFileName || 'N/D'}</div>
+                        <div><strong>Ventas por Producto:</strong> {historyPreviewItem.inventoryFileName || 'N/D'}</div>
+                        {historyPreviewItem.summary.inventory.unmappedSkuCount ? (
+                          <div style={{ color: 'var(--warning)', fontWeight: 700 }}>
+                            {historyPreviewItem.summary.inventory.unmappedSkuCount} SKU(s) sin clasificar
+                          </div>
+                        ) : null}
+                      </div>
+                    </>
+                  ) : (
+                    <div style={{ padding: '1rem', border: '1px dashed var(--border)', borderRadius: '12px', background: 'var(--surface)' }}>
+                      No hay cierre seleccionado.
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div style={{ padding: '1rem', border: '1px dashed var(--border)', borderRadius: '12px', background: 'var(--surface)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.4rem' }}>
+                  <FileSpreadsheet size={16} />
+                  <strong>Sin cierres guardados</strong>
+                </div>
+                <div className="text-muted" style={{ fontSize: '0.78rem' }}>
+                  Guarda el primer análisis mensual para abrirlo después desde esta ventana.
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 };
