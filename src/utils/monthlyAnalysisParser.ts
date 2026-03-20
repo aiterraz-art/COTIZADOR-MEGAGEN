@@ -13,6 +13,7 @@ import type {
 } from '../types/monthlyAnalysis';
 
 type TabularRow = Record<string, unknown>;
+type SheetMatrixRow = unknown[];
 
 const normalize = (text: string): string => text
   .toLowerCase()
@@ -293,6 +294,19 @@ const readSheetRows = async (file: File): Promise<TabularRow[]> => {
   throw new Error('Formato no soportado. Usa .xlsx, .xls o .csv');
 };
 
+const readSheetMatrix = async (file: File): Promise<SheetMatrixRow[]> => {
+  const extension = file.name.split('.').pop()?.toLowerCase();
+  if (extension !== 'xlsx' && extension !== 'xls') {
+    throw new Error('Formato no soportado. Usa .xlsx o .xls');
+  }
+
+  const content = new Uint8Array(await file.arrayBuffer());
+  const workbook = XLSX.read(content, { type: 'array', cellDates: true });
+  const firstSheet = workbook.SheetNames[0];
+  const worksheet = workbook.Sheets[firstSheet];
+  return XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' }) as SheetMatrixRow[];
+};
+
 const collectDetectedPeriodKeys = (rows: TabularRow[]): string[] => {
   const periodKeys = new Set<string>();
   const periodAliases = ['periodo', 'period', 'mes', 'fecha', 'date', 'fecha documento', 'fecha contabilizacion'];
@@ -327,6 +341,43 @@ const evaluateDetectedPeriods = (
   }
 
   warnings.push(`Se detectaron periodos mixtos en el archivo: ${detectedPeriodKeys.join(', ')}.`);
+};
+
+const extractPeriodKeysFromText = (value: string): string[] => {
+  const keys = new Set<string>();
+  const dateMatches = value.matchAll(/(\d{2})\/(\d{2})\/(20\d{2})/g);
+
+  for (const match of dateMatches) {
+    const [, day, month, year] = match;
+    if (!day || !month || !year) continue;
+    keys.add(`${year}-${month}`);
+  }
+
+  const isoMatches = value.matchAll(/(20\d{2})[-/](\d{1,2})/g);
+  for (const match of isoMatches) {
+    const [, year, month] = match;
+    if (!year || !month) continue;
+    keys.add(`${year}-${month.padStart(2, '0')}`);
+  }
+
+  return Array.from(keys);
+};
+
+const collectDetectedPeriodKeysFromMatrix = (rows: SheetMatrixRow[]): string[] => {
+  const detected = new Set<string>();
+
+  for (const row of rows.slice(0, 12)) {
+    for (const cell of row) {
+      if (typeof cell !== 'string') continue;
+      const normalizedCell = normalize(cell);
+      if (!normalizedCell.includes('period')) continue;
+      for (const periodKey of extractPeriodKeysFromText(cell)) {
+        detected.add(periodKey);
+      }
+    }
+  }
+
+  return Array.from(detected).sort();
 };
 
 const isSubtotalName = (value: string): boolean => {
@@ -379,9 +430,6 @@ const inferBalanceSection = (sourceSection: string, accountName: string): Monthl
 const inferPnlSection = (sourceSection: string, accountName: string): MonthlyPnlSection => {
   const raw = normalize(`${sourceSection} ${accountName}`);
 
-  if (raw.includes('venta') || raw.includes('ingreso operacional') || raw.includes('revenue') || raw.includes('ingresos')) {
-    return 'INGRESOS';
-  }
   if (raw.includes('costo de venta') || raw.includes('costo ventas') || raw.includes('cost of sales')) {
     return 'COSTO_VENTAS';
   }
@@ -406,51 +454,21 @@ const inferPnlSection = (sourceSection: string, accountName: string): MonthlyPnl
   if (raw.includes('financiero') || raw.includes('impuesto') || raw.includes('otros ingresos') || raw.includes('otros egresos')) {
     return 'OTROS_INGRESOS_EGRESOS';
   }
+  if (raw.includes('venta') || raw.includes('ingreso operacional') || raw.includes('revenue') || raw.includes('ingresos')) {
+    return 'INGRESOS';
+  }
 
   return 'OTROS';
 };
-
-const normalizedKeywords = (keywords: string[]): string[] => keywords.map((keyword) => normalize(keyword));
-
-const ADITAMENT_CATEGORY_KEYWORDS = normalizedKeywords([
-  'aditamento',
-  'aditamentos',
-  'abutment',
-  'ti-base',
-  'ti base',
-  'tibase',
-]);
-
-const ADITAMENT_NAME_KEYWORDS = normalizedKeywords([
-  'abutment',
-  'healing',
-  'transfer',
-  'analog',
-  'scanbody',
-  'scan body',
-  'screw',
-  'cylinder',
-  'ti-base',
-  'ti base',
-  'tibase',
-  'coping',
-  'multi-unit',
-  'multi unit',
-  'mua',
-  'cover screw',
-  'locator',
-  'temporary cylinder',
-  'impression',
-]);
-
-const hasAnyKeyword = (value: string, keywords: string[]): boolean => (
-  keywords.some((keyword) => value.includes(keyword))
-);
 
 const inferInventoryFamily = (productName: string, category: string): MonthlyInventoryFamily => {
   const implantDefinition = findImplantDefinition(productName);
   const normalizedName = normalize(productName);
   const normalizedCategory = normalize(category);
+
+  if (normalizedCategory.includes('despacho') || normalizedName.includes('despacho')) {
+    return 'DESPACHO';
+  }
 
   if (
     normalizedCategory.includes('implante')
@@ -472,14 +490,139 @@ const inferInventoryFamily = (productName: string, category: string): MonthlyInv
     return 'MOTOR';
   }
 
-  if (
-    hasAnyKeyword(normalizedCategory, ADITAMENT_CATEGORY_KEYWORDS)
-    || hasAnyKeyword(normalizedName, ADITAMENT_NAME_KEYWORDS)
-  ) {
-    return 'ADITAMENTOS';
+  return 'ADITAMENTOS';
+};
+
+const isPnlAccountCode = (value: string): boolean => /^\d+(?:\.\d+)+$/.test(value.trim());
+
+const findPnlHeaderRowIndex = (rows: SheetMatrixRow[]): number => rows.findIndex((row) => {
+  const normalizedCells = row.map((cell) => normalize(String(cell ?? '')));
+  const hasCuenta = normalizedCells.some((cell) => cell === 'cuenta');
+  const hasDescription = normalizedCells.some((cell) => cell.startsWith('descrip'));
+  const hasTargetYear = normalizedCells.some((cell) => cell.includes('2026'));
+  return hasCuenta && hasDescription && hasTargetYear;
+});
+
+const resolvePnlColumnIndexes = (headerRow: SheetMatrixRow): {
+  codeIndex: number;
+  nameIndex: number;
+  amountIndex: number;
+} => {
+  const normalizedCells = headerRow.map((cell) => normalize(String(cell ?? '')));
+  const codeIndex = normalizedCells.findIndex((cell) => cell === 'cuenta');
+  const nameIndex = normalizedCells.findIndex((cell) => cell.startsWith('descrip'));
+  const amountIndex = normalizedCells.findIndex((cell) => cell.includes('2026'));
+
+  return {
+    codeIndex,
+    nameIndex,
+    amountIndex: amountIndex >= 0 ? amountIndex : 3,
+  };
+};
+
+export const parsePnlWorksheetRows = (
+  rows: SheetMatrixRow[],
+  selectedPeriodKey: string,
+  fileName = '',
+): MonthlyParseResult<MonthlyPnlLine> => {
+  const warnings: string[] = [];
+  const errors: string[] = [];
+  const detectedPeriodKeys = collectDetectedPeriodKeysFromMatrix(rows);
+  const parsedRows: MonthlyPnlLine[] = [];
+
+  if (!rows.length) {
+    errors.push('El archivo de estado de resultados está vacío.');
   }
 
-  return 'SIN_CLASIFICAR';
+  const headerRowIndex = findPnlHeaderRowIndex(rows);
+  if (headerRowIndex === -1) {
+    errors.push('No se encontró la cabecera esperada del estado de resultados personalizado.');
+    return {
+      fileName,
+      rows: parsedRows,
+      warnings,
+      errors,
+      totalRows: rows.length,
+      validRows: parsedRows.length,
+      detectedPeriodKeys,
+    };
+  }
+
+  evaluateDetectedPeriods(selectedPeriodKey, detectedPeriodKeys, errors, warnings);
+
+  const { codeIndex, nameIndex, amountIndex } = resolvePnlColumnIndexes(rows[headerRowIndex] ?? []);
+  if (codeIndex === -1 || nameIndex === -1 || amountIndex === -1) {
+    errors.push('No se pudieron resolver las columnas Cuenta, Descripción y Año 2026 del ER.');
+    return {
+      fileName,
+      rows: parsedRows,
+      warnings,
+      errors,
+      totalRows: rows.length,
+      validRows: parsedRows.length,
+      detectedPeriodKeys,
+    };
+  }
+
+  let currentSectionLabel = '';
+
+  for (let index = headerRowIndex + 1; index < rows.length; index += 1) {
+    const row = rows[index] ?? [];
+    const codeCell = String(row[codeIndex] ?? '').trim();
+    const nameCell = String(row[nameIndex] ?? '').trim();
+    const amountCell = row[amountIndex];
+    const hasAmount = amountCell !== '' && amountCell !== null && amountCell !== undefined;
+
+    if (!codeCell && !nameCell && !hasAmount) continue;
+
+    if (codeCell && !nameCell && !hasAmount && !isPnlAccountCode(codeCell)) {
+      currentSectionLabel = codeCell;
+      continue;
+    }
+
+    if (isPnlAccountCode(codeCell)) {
+      if (!nameCell) continue;
+
+      parsedRows.push({
+        lineOrder: index + 1,
+        accountCode: codeCell,
+        accountName: nameCell,
+        section: inferPnlSection(currentSectionLabel, nameCell),
+        subsection: currentSectionLabel,
+        amountCLP: parseNumber(amountCell),
+        sourcePeriodKey: detectedPeriodKeys[0] ?? selectedPeriodKey,
+        isSubtotal: false,
+      });
+      continue;
+    }
+
+    if (!codeCell && nameCell && hasAmount) {
+      parsedRows.push({
+        lineOrder: index + 1,
+        accountCode: '',
+        accountName: nameCell,
+        section: inferPnlSection(currentSectionLabel || nameCell, nameCell),
+        subsection: currentSectionLabel,
+        amountCLP: parseNumber(amountCell),
+        sourcePeriodKey: detectedPeriodKeys[0] ?? selectedPeriodKey,
+        isSubtotal: true,
+      });
+    }
+  }
+
+  if (!parsedRows.length) {
+    errors.push('No se detectaron líneas válidas en el estado de resultados personalizado.');
+  }
+
+  return {
+    fileName,
+    rows: parsedRows,
+    warnings,
+    errors,
+    totalRows: rows.length,
+    validRows: parsedRows.length,
+    detectedPeriodKeys,
+  };
 };
 
 interface CatalogEntry {
@@ -546,7 +689,8 @@ const sortInventoryByFamily = (family: MonthlyInventoryFamily): number => {
     KITS: 1,
     MOTOR: 2,
     ADITAMENTOS: 3,
-    SIN_CLASIFICAR: 4,
+    DESPACHO: 4,
+    SIN_CLASIFICAR: 5,
   }[family];
 };
 
@@ -702,7 +846,6 @@ const parseSalesRowsAsInventory = (
     if (isDispatch) {
       dispatchRowCount += 1;
       dispatchAmountCLP += totalAmount.found ? totalAmount.value : 0;
-      continue;
     }
 
     if (!quantity.found || quantity.value === 0) continue;
@@ -713,14 +856,14 @@ const parseSalesRowsAsInventory = (
     const implantDefinition = findImplantDefinition(rawProductName);
     const productName = implantDefinition?.name ?? rawProductName;
     const category = catalogMatch?.category || '';
-    const family = inferInventoryFamily(productName, category);
+    const family = isDispatch ? 'DESPACHO' : inferInventoryFamily(productName, category);
 
     if (!rawSku) {
       warnings.push(`Se encontró una fila sin SKU explícito; se usó el identificador ${sku}.`);
     }
 
     const current = aggregated.get(sku);
-    const isUnclassified = !catalogMatch;
+    const isUnclassified = !catalogMatch && family !== 'DESPACHO';
     if (current) {
       aggregated.set(sku, {
         ...current,
@@ -747,7 +890,7 @@ const parseSalesRowsAsInventory = (
   }
 
   if (dispatchRowCount > 0) {
-    warnings.push(`Se excluyeron ${dispatchRowCount} líneas de SERVICIO DESPACHO por ${formatCLP(dispatchAmountCLP)} porque no corresponden a productos.`);
+    warnings.push(`Se detectaron ${dispatchRowCount} líneas de SERVICIO DESPACHO por ${formatCLP(dispatchAmountCLP)}; se mostrarán aparte del resto de productos.`);
   }
 
   return sortInventoryRows(Array.from(aggregated.values()));
@@ -849,7 +992,7 @@ export const parseInventoryRows = (
     }
 
     const current = aggregated.get(sku);
-    const isUnclassified = !catalogMatch;
+    const isUnclassified = !catalogMatch && family !== 'DESPACHO';
     if (current) {
       aggregated.set(sku, {
         ...current,
@@ -915,6 +1058,15 @@ export const parseMonthlyBalanceFile = async (file: File, selectedPeriodKey: str
 };
 
 export const parseMonthlyPnlFile = async (file: File, selectedPeriodKey: string): Promise<MonthlyParseResult<MonthlyPnlLine>> => {
+  const extension = file.name.split('.').pop()?.toLowerCase();
+  if (extension === 'xlsx' || extension === 'xls') {
+    const matrix = await readSheetMatrix(file);
+    const specializedResult = parsePnlWorksheetRows(matrix, selectedPeriodKey, file.name);
+    if (!specializedResult.errors.some((error) => error.includes('cabecera esperada'))) {
+      return specializedResult;
+    }
+  }
+
   const rows = await readSheetRows(file);
   return parsePnlRows(rows, selectedPeriodKey, file.name);
 };

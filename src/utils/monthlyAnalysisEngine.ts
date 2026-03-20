@@ -15,7 +15,7 @@ const normalize = (text: string): string => text
   .replace(/[\u0300-\u036f]/g, '')
   .trim();
 
-const familyOrder: MonthlyInventoryFamily[] = ['IMPLANTES', 'KITS', 'MOTOR', 'ADITAMENTOS', 'SIN_CLASIFICAR'];
+const familyOrder: MonthlyInventoryFamily[] = ['IMPLANTES', 'KITS', 'MOTOR', 'ADITAMENTOS', 'DESPACHO', 'SIN_CLASIFICAR'];
 
 const asPositiveMagnitude = (value: number): number => (value < 0 ? Math.abs(value) : value);
 
@@ -241,6 +241,7 @@ export const buildMonthlyComparison = (
       compareMetric('sales_kits', 'Kits - Ventas', 'quantity', currentSummary.inventory.byFamily.KITS.exitsQty, previousSummary?.inventory.byFamily.KITS.exitsQty ?? null),
       compareMetric('sales_motor', 'Motor - Ventas', 'quantity', currentSummary.inventory.byFamily.MOTOR.exitsQty, previousSummary?.inventory.byFamily.MOTOR.exitsQty ?? null),
       compareMetric('sales_abutments', 'Aditamentos - Ventas', 'quantity', currentSummary.inventory.byFamily.ADITAMENTOS.exitsQty, previousSummary?.inventory.byFamily.ADITAMENTOS.exitsQty ?? null),
+      compareMetric('sales_dispatch', 'Despacho - Ventas', 'quantity', currentSummary.inventory.byFamily.DESPACHO.exitsQty, previousSummary?.inventory.byFamily.DESPACHO.exitsQty ?? null),
       compareMetric('unclassified_skus', 'SKUs sin Clasificar', 'quantity', currentSummary.inventory.unmappedSkuCount, previousSummary?.inventory.unmappedSkuCount ?? null),
     ],
   };

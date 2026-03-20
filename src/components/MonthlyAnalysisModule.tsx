@@ -22,7 +22,9 @@ import type {
   MonthlyComparisonItem,
   MonthlyInventoryFamily,
   MonthlyInventoryMovement,
+  MonthlyManualInputs,
   MonthlyParseResult,
+  MonthlyPnlCustomMappingResult,
   MonthlyPnlLine,
   MonthlyCloseListItem,
   MonthlyCloseRecord,
@@ -34,6 +36,7 @@ import {
   hasMinimumBalanceStructure,
   hasMinimumPnlStructure,
 } from '../utils/monthlyAnalysisEngine';
+import { buildMonthlyPnlCustomMapping } from '../utils/monthlyPnlCustomEngine';
 import {
   parseMonthlyBalanceFile,
   parseMonthlyInventoryFile,
@@ -44,11 +47,12 @@ import {
   findImplantDefinition,
   IMPLANT_DEFINITIONS,
 } from '../data/implantDefinitions';
+import { MONTHLY_PNL_TARGET_SECTIONS } from '../data/monthlyPnlDefinitions';
 
 type MonthlyTab = 'summary' | 'balance' | 'pnl' | 'inventory';
 type UploadKind = 'balance' | 'pnl' | 'inventory';
 const MONTHLY_ANALYSIS_STORAGE_KEY = 'megagen.monthlyAnalysis.viewState';
-const MONTHLY_ANALYSIS_STORAGE_VERSION = 3;
+const MONTHLY_ANALYSIS_STORAGE_VERSION = 5;
 
 interface MonthlyAnalysisModuleProps {
   products: Product[];
@@ -58,6 +62,7 @@ interface MonthlyDraftState {
   balance: MonthlyParseResult<MonthlyBalanceLine> | null;
   pnl: MonthlyParseResult<MonthlyPnlLine> | null;
   inventory: MonthlyParseResult<MonthlyInventoryMovement> | null;
+  manualInputs: MonthlyManualInputs;
 }
 
 interface QuickCopyMetric {
@@ -79,6 +84,9 @@ const initialDraftState = (): MonthlyDraftState => ({
   balance: null,
   pnl: null,
   inventory: null,
+  manualInputs: {
+    adminSalaryManualCLP: null,
+  },
 });
 
 const currentMonth = (): string => new Date().toISOString().slice(0, 7);
@@ -115,6 +123,10 @@ const formatPeriodLabel = (periodKey: string): string => {
   return formatter.format(new Date(Number(year), monthNumber - 1, 1));
 };
 
+const getPnlSectionTotalLabel = (sectionLabel: string): string => (
+  `Total ${sectionLabel.replace(/^[IVX]+\.\s*/, '')}`
+);
+
 const combineMessages = (
   ...entries: Array<MonthlyParseResult<unknown> | null>
 ): { warnings: string[]; errors: string[] } => {
@@ -142,12 +154,21 @@ const readStoredMonthlyAnalysisState = (): PersistedMonthlyAnalysisState | null 
 
     const parsed = JSON.parse(raw) as Partial<PersistedMonthlyAnalysisState>;
     if (parsed.version !== MONTHLY_ANALYSIS_STORAGE_VERSION) return null;
+    const initialDraft = initialDraftState();
+    const parsedDraft = parsed.draft as Partial<MonthlyDraftState> | undefined;
 
     return {
       version: MONTHLY_ANALYSIS_STORAGE_VERSION,
       periodKey: typeof parsed.periodKey === 'string' && parsed.periodKey ? parsed.periodKey : currentMonth(),
       activeTab: parsed.activeTab === 'balance' || parsed.activeTab === 'pnl' || parsed.activeTab === 'inventory' ? parsed.activeTab : 'summary',
-      draft: parsed.draft ?? initialDraftState(),
+      draft: {
+        ...initialDraft,
+        ...parsedDraft,
+        manualInputs: {
+          ...initialDraft.manualInputs,
+          ...(parsedDraft?.manualInputs ?? {}),
+        },
+      },
       selectedClosurePeriodKey: typeof parsed.selectedClosurePeriodKey === 'string' && parsed.selectedClosurePeriodKey
         ? parsed.selectedClosurePeriodKey
         : null,
@@ -157,14 +178,15 @@ const readStoredMonthlyAnalysisState = (): PersistedMonthlyAnalysisState | null 
   }
 };
 
-const INVENTORY_FAMILIES: MonthlyInventoryFamily[] = ['IMPLANTES', 'KITS', 'MOTOR', 'ADITAMENTOS', 'SIN_CLASIFICAR'];
+const INVENTORY_FAMILIES: MonthlyInventoryFamily[] = ['IMPLANTES', 'KITS', 'MOTOR', 'ADITAMENTOS', 'DESPACHO', 'SIN_CLASIFICAR'];
 
 const INVENTORY_FAMILY_LABELS: Record<MonthlyInventoryFamily, string> = {
   IMPLANTES: 'Implantes',
   KITS: 'Kits',
   MOTOR: 'Motores',
   ADITAMENTOS: 'Aditamentos',
-  SIN_CLASIFICAR: 'Otros Productos',
+  DESPACHO: 'Despacho',
+  SIN_CLASIFICAR: 'Sin clasificar',
 };
 
 const getInventoryFamilyLabel = (family: MonthlyInventoryFamily): string => INVENTORY_FAMILY_LABELS[family];
@@ -343,15 +365,38 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
     );
   }, [draft.balance, draft.inventory, draft.pnl]);
 
+  const draftCustomPnl = useMemo<MonthlyPnlCustomMappingResult | null>(() => (
+    draft.pnl ? buildMonthlyPnlCustomMapping(draft.pnl.rows, draft.manualInputs) : null
+  ), [draft.manualInputs, draft.pnl]);
+
+  const selectedCustomPnl = useMemo<MonthlyPnlCustomMappingResult | null>(() => {
+    if (!selectedClosure) return null;
+    if (!selectedClosure.pnlLines.length) return null;
+    return buildMonthlyPnlCustomMapping(
+      selectedClosure.pnlLines,
+      selectedClosure.summary.manualInputs ?? { adminSalaryManualCLP: null },
+    );
+  }, [selectedClosure]);
+
   const displaySummary = draftSummary ?? selectedClosure?.summary ?? null;
   const displayPeriodKey = draftSummary ? periodKey : selectedClosure?.periodKey ?? null;
+  const displayCustomPnl = draftCustomPnl ?? selectedCustomPnl;
+  const displayManualInputs = draft.pnl
+    ? draft.manualInputs
+    : (selectedClosure?.summary.manualInputs ?? { adminSalaryManualCLP: null });
   const previousPeriodKey = displayPeriodKey ? getPreviousPeriodKey(displayPeriodKey) : null;
   const previousSummary = previousPeriodKey ? history.find((item) => item.periodKey === previousPeriodKey)?.summary ?? null : null;
   const comparison = displaySummary && displayPeriodKey
     ? buildMonthlyComparison(displayPeriodKey, displaySummary, previousPeriodKey, previousSummary)
     : null;
 
-  const draftMessages = useMemo(() => combineMessages(draft.balance, draft.pnl, draft.inventory), [draft.balance, draft.inventory, draft.pnl]);
+  const draftMessages = useMemo(() => {
+    const combined = combineMessages(draft.balance, draft.pnl, draft.inventory);
+    return {
+      warnings: [...combined.warnings, ...(draftCustomPnl?.warnings ?? [])],
+      errors: combined.errors,
+    };
+  }, [draft.balance, draft.inventory, draft.pnl, draftCustomPnl]);
   const draftValidationErrors = useMemo(() => {
     const errors: string[] = [];
 
@@ -363,8 +408,12 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
       errors.push('El estado de resultados no contiene líneas suficientes de ingresos y costos/gastos.');
     }
 
+    if (draftCustomPnl?.errors.length) {
+      errors.push(...draftCustomPnl.errors);
+    }
+
     return errors;
-  }, [draft.balance, draft.pnl]);
+  }, [draft.balance, draft.pnl, draftCustomPnl]);
 
   const canSaveDraft = Boolean(
     draft.balance
@@ -381,6 +430,34 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
     () => draft.inventory?.rows ?? selectedClosure?.inventoryMovements ?? [],
     [draft.inventory, selectedClosure?.inventoryMovements],
   );
+  const displayPnlTraceabilityRows = useMemo(() => (
+    displayCustomPnl?.mappedLines.flatMap((line) => line.sources.map((source) => ({
+      ...source,
+      targetKey: line.targetKey,
+      targetLabel: line.targetLabel,
+      isManual: Boolean(line.isManual),
+    }))) ?? []
+  ), [displayCustomPnl]);
+  const displayPnlLineIndex = useMemo(() => new Map(
+    displayCustomPnl?.mappedLines.map((line) => [line.targetKey, line]) ?? [],
+  ), [displayCustomPnl]);
+  const displayPnlSectionTotalIndex = useMemo(() => new Map(
+    MONTHLY_PNL_TARGET_SECTIONS.map((section) => [
+      section.key,
+      section.accounts.reduce((acc, account) => acc + (displayPnlLineIndex.get(account.key)?.amountCLP ?? 0), 0),
+    ]),
+  ), [displayPnlLineIndex]);
+  const sourceNetProfitLine = useMemo(() => displayPnlLines.find((line) => {
+    const normalizedName = normalizeMetricLabel(line.accountName);
+    return normalizedName === 'resultado ejercicio' || normalizedName === 'resultado del ej antes de imp';
+  }) ?? null, [displayPnlLines]);
+  const appNetProfitLine = displayPnlLineIndex.get('net_profit_loss') ?? null;
+  const totalSalariesSourceCLP = useMemo(() => displayPnlLines
+    .filter((line) => line.accountCode === '4.5.1040.10.01' && normalizeMetricLabel(line.accountName) === 'remuneraciones')
+    .reduce((acc, line) => acc + Math.abs(line.amountCLP), 0), [displayPnlLines]);
+  const netProfitDifferenceCLP = sourceNetProfitLine && appNetProfitLine
+    ? appNetProfitLine.amountCLP - sourceNetProfitLine.amountCLP
+    : null;
   const previewPeriodKey = displayPeriodKey ?? (draft.inventory ? periodKey : null);
 
   const inventorySummaryPreview = useMemo<MonthlyAnalysisSummary['inventory'] | null>(() => {
@@ -553,12 +630,23 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
     () => buildFamilyQuickCopyMetrics('ADITAMENTOS', 'Total Aditamentos'),
     [buildFamilyQuickCopyMetrics],
   );
-  const otherProductsQuickCopyMetrics = useMemo(
-    () => buildFamilyQuickCopyMetrics('SIN_CLASIFICAR', 'Total Otros Productos'),
+  const dispatchQuickCopyMetrics = useMemo(
+    () => buildFamilyQuickCopyMetrics('DESPACHO', 'Total Despacho'),
     [buildFamilyQuickCopyMetrics],
   );
 
   const existingPeriod = history.find((item) => item.periodKey === periodKey) ?? null;
+
+  const handleAdminSalaryInputChange = (value: string): void => {
+    const trimmedValue = value.trim();
+    setDraft((prev) => ({
+      ...prev,
+      manualInputs: {
+        ...prev.manualInputs,
+        adminSalaryManualCLP: trimmedValue ? Number(trimmedValue.replace(/[^\d-]/g, '')) : null,
+      },
+    }));
+  };
 
   const copyMetricValue = async (key: string, value: number): Promise<void> => {
     try {
@@ -568,6 +656,49 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
     } catch {
       setErrorMessage('No fue posible copiar el valor al portapapeles.');
     }
+  };
+
+  const renderCopyableCurrencyButton = (
+    key: string,
+    value: number,
+    options?: {
+      minWidth?: string;
+      fontWeight?: number;
+      subtle?: boolean;
+    },
+  ): React.ReactNode => {
+    const isCopied = copiedMetricKey === key;
+    const isNegative = value < 0;
+
+    return (
+      <button
+        className="btn"
+        style={{
+          fontSize: '0.85rem',
+          fontWeight: options?.fontWeight ?? 700,
+          padding: options?.subtle ? '0.15rem 0.35rem' : '0.25rem 0.55rem',
+          background: isCopied
+            ? 'rgba(16,185,129,0.12)'
+            : options?.subtle
+              ? 'transparent'
+              : 'rgba(2,132,199,0.08)',
+          color: isCopied
+            ? 'var(--success)'
+            : isNegative
+              ? 'var(--error)'
+              : 'var(--accent)',
+          border: options?.subtle ? 'none' : '1px solid var(--border)',
+          borderRadius: '8px',
+          minWidth: options?.minWidth ?? '132px',
+          justifyContent: 'flex-end',
+          whiteSpace: 'nowrap',
+        }}
+        onClick={() => void copyMetricValue(key, value)}
+        title="Click para copiar monto"
+      >
+        {isCopied ? 'Copiado' : formatCLP(value)}
+      </button>
+    );
   };
 
   const renderQuickCopyPanel = (
@@ -652,7 +783,7 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
     kits?: string;
     motors?: string;
     abutments?: string;
-    otherProducts?: string;
+    dispatch?: string;
   }): React.ReactNode => (
     <div style={{ display: 'grid', gap: '1rem' }}>
       {renderQuickCopyPanel(
@@ -676,9 +807,9 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
         messages?.abutments ?? 'No hay ventas de aditamentos clasificadas.',
       )}
       {renderQuickCopyPanel(
-        'Ventas de Otros Productos',
-        otherProductsQuickCopyMetrics,
-        messages?.otherProducts ?? 'No hay ventas de otros productos clasificadas.',
+        'Ventas de Despacho',
+        dispatchQuickCopyMetrics,
+        messages?.dispatch ?? 'No hay líneas de despacho clasificadas.',
       )}
     </div>
   );
@@ -699,6 +830,7 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
       if (kind === 'pnl') {
         const result = await parseMonthlyPnlFile(file, periodKey);
         setDraft((prev) => ({ ...prev, pnl: result }));
+        setActiveTab('pnl');
         return;
       }
 
@@ -727,6 +859,8 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
         balanceLines: draft.balance.rows,
         pnlLines: draft.pnl.rows,
         inventoryMovements: draft.inventory.rows,
+        manualInputs: draft.manualInputs,
+        customPnl: draftCustomPnl,
       });
 
       await refreshHistory({ preferredPeriodKey: periodKey });
@@ -997,7 +1131,7 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
                     kits: 'No hay ventas de kits clasificadas en el periodo seleccionado.',
                     motors: 'No hay ventas de motores clasificadas en el periodo seleccionado.',
                     abutments: 'No hay ventas de aditamentos clasificadas en el periodo seleccionado.',
-                    otherProducts: 'No hay ventas de otros productos en el periodo seleccionado.',
+                    dispatch: 'No hay líneas de despacho en el periodo seleccionado.',
                   })}
 
                   {comparison ? (
@@ -1021,8 +1155,8 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
                   </div>
 
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '0.75rem' }}>
-                    <MetricCard title="Unidades Vendidas" value={formatQty(inventorySummaryPreview.totals.exitsQty)} />
-                    <MetricCard title="Ventas Productos CLP" value={formatCLP(inventorySummaryPreview.totals.salesAmountCLP ?? 0)} />
+                    <MetricCard title="Total Ítems" value={formatQty(inventorySummaryPreview.totals.exitsQty)} />
+                    <MetricCard title="Ventas Totales CLP" value={formatCLP(inventorySummaryPreview.totals.salesAmountCLP ?? 0)} />
                     <MetricCard title="Implantes Totales" value={formatQty(totalImplantsSold)} />
                     <MetricCard title="SKUs con Venta" value={formatQty(inventorySummaryPreview.totals.skuCount)} />
                     <MetricCard
@@ -1052,7 +1186,7 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
                     kits: 'No hay ventas de kits clasificadas en el archivo cargado.',
                     motors: 'No hay ventas de motores clasificadas en el archivo cargado.',
                     abutments: 'No hay ventas de aditamentos clasificadas en el archivo cargado.',
-                    otherProducts: 'No hay ventas de otros productos en el archivo cargado.',
+                    dispatch: 'No hay líneas de despacho en el archivo cargado.',
                   })}
                 </div>
               ) : (
@@ -1098,32 +1232,229 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
             ) : null}
 
             {activeTab === 'pnl' ? (
-              displayPnlLines.length ? (
-                <div className="table-container">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>#</th>
-                        <th>Código</th>
-                        <th>Cuenta</th>
-                        <th>Sección</th>
-                        <th>Subsección</th>
-                        <th style={{ textAlign: 'right' }}>Monto CLP</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {displayPnlLines.map((line) => (
-                        <tr key={`${line.lineOrder}-${line.accountCode}-${line.accountName}`}>
-                          <td>{line.lineOrder}</td>
-                          <td>{line.accountCode || '-'}</td>
-                          <td style={{ fontWeight: line.isSubtotal ? 800 : 500 }}>{line.accountName}</td>
-                          <td>{line.section}</td>
-                          <td>{line.subsection || '-'}</td>
-                          <td style={{ textAlign: 'right', fontWeight: line.isSubtotal ? 800 : 600 }}>{formatCLP(line.amountCLP)}</td>
-                        </tr>
+              displayCustomPnl && displayPnlLines.length ? (
+                <div style={{ display: 'grid', gap: '1rem' }}>
+                  <div className="finance-card" style={{ padding: '1rem' }}>
+                    <h3 style={{ fontSize: '1rem', marginBottom: '0.75rem' }}>Reparto Manual de REMUNERACIONES</h3>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 320px))', gap: '0.75rem' }}>
+                      <label style={{ fontSize: '0.8rem' }}>
+                        Salaries (Admin, GM)
+                        <input
+                          type="number"
+                          className="input-field"
+                          value={displayManualInputs.adminSalaryManualCLP ?? ''}
+                          disabled={!draft.pnl}
+                          placeholder="Ingresa el monto CLP"
+                          onChange={(event) => handleAdminSalaryInputChange(event.target.value)}
+                        />
+                      </label>
+                      <div style={{ fontSize: '0.8rem' }}>
+                        <div className="text-muted" style={{ marginBottom: '0.35rem' }}>Total Salaries Fuente</div>
+                        {renderCopyableCurrencyButton('pnl-total-salaries-source', totalSalariesSourceCLP, {
+                          minWidth: '180px',
+                        })}
+                      </div>
+                      <div className="text-muted" style={{ fontSize: '0.76rem', gridColumn: '1 / -1' }}>
+                        El resto de REMUNERACIONES se asignará a Salaries (Sales Rep). El total mostrado es solo visual y no agrega ninguna suma adicional.
+                      </div>
+                    </div>
+                  </div>
+
+                  {sourceNetProfitLine && appNetProfitLine ? (
+                    <div className="finance-card" style={{ padding: '1rem' }}>
+                      <h3 style={{ fontSize: '1rem', marginBottom: '0.75rem' }}>Control de Neto Fuente vs App</h3>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.75rem' }}>
+                        <div>
+                          <div className="text-muted" style={{ fontSize: '0.74rem', marginBottom: '0.35rem' }}>Fuente: {sourceNetProfitLine.accountName}</div>
+                          {renderCopyableCurrencyButton('pnl-source-net-profit', sourceNetProfitLine.amountCLP, {
+                            minWidth: '180px',
+                          })}
+                        </div>
+                        <div>
+                          <div className="text-muted" style={{ fontSize: '0.74rem', marginBottom: '0.35rem' }}>App: Net profit(loss)</div>
+                          {renderCopyableCurrencyButton('pnl-app-net-profit', appNetProfitLine.amountCLP, {
+                            minWidth: '180px',
+                          })}
+                        </div>
+                        <div>
+                          <div className="text-muted" style={{ fontSize: '0.74rem', marginBottom: '0.35rem' }}>Diferencia</div>
+                          {renderCopyableCurrencyButton('pnl-net-profit-difference', netProfitDifferenceCLP ?? 0, {
+                            minWidth: '180px',
+                          })}
+                        </div>
+                      </div>
+                      <div
+                        style={{
+                          marginTop: '0.75rem',
+                          fontSize: '0.8rem',
+                          color: netProfitDifferenceCLP === 0 ? 'var(--success)' : 'var(--warning)',
+                        }}
+                      >
+                        {netProfitDifferenceCLP === 0
+                          ? 'El neto de la app coincide con el neto del archivo fuente.'
+                          : 'El neto de la app no coincide con el archivo fuente.'}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {displayCustomPnl.errors.length ? (
+                    <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.32)', borderRadius: '12px', padding: '0.85rem', color: 'var(--error)' }}>
+                      {displayCustomPnl.errors.map((message) => (
+                        <div key={message}>{message}</div>
                       ))}
-                    </tbody>
-                  </table>
+                    </div>
+                  ) : null}
+
+                  <div className="finance-card" style={{ padding: '1rem' }}>
+                    <h3 style={{ fontSize: '1rem', marginBottom: '0.75rem' }}>Estado de Resultados Objetivo</h3>
+                    <div className="table-container">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Cuenta objetivo</th>
+                            <th>Origen</th>
+                            <th style={{ textAlign: 'right' }}>Monto CLP</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {MONTHLY_PNL_TARGET_SECTIONS.map((section) => (
+                            <React.Fragment key={section.key}>
+                              <tr>
+                                <td colSpan={3} style={{ fontWeight: 800, background: 'rgba(15,23,42,0.06)' }}>
+                                  {section.label}
+                                </td>
+                              </tr>
+                              {section.accounts.map((account) => {
+                                const line = displayPnlLineIndex.get(account.key);
+                                const originLabel = line?.isManual
+                                  ? 'Manual'
+                                  : line?.sources.length
+                                    ? `${line.sources.length} cuenta(s) fuente`
+                                    : 'Calculado';
+
+                                return (
+                                  <tr key={account.key}>
+                                    <td style={{ fontWeight: account.kind === 'subtotal' ? 800 : 500 }}>
+                                      <div>{account.label}</div>
+                                      {account.notes?.length ? (
+                                        <div className="text-muted" style={{ fontSize: '0.72rem', marginTop: '0.2rem' }}>
+                                          {account.notes.join(' ')}
+                                        </div>
+                                      ) : null}
+                                    </td>
+                                    <td style={{ color: line?.isManual ? 'var(--warning)' : 'var(--text-muted)' }}>
+                                      {originLabel}
+                                    </td>
+                                    <td style={{ textAlign: 'right' }}>
+                                      {renderCopyableCurrencyButton(`pnl-target-${account.key}`, line?.amountCLP ?? 0, {
+                                        fontWeight: account.kind === 'subtotal' ? 800 : 600,
+                                        subtle: true,
+                                        minWidth: '160px',
+                                      })}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                              <tr>
+                                <td style={{ fontWeight: 800, background: 'rgba(2,132,199,0.08)' }}>
+                                  {getPnlSectionTotalLabel(section.label)}
+                                </td>
+                                <td style={{ background: 'rgba(2,132,199,0.08)', color: 'var(--text-muted)' }}>
+                                  Sección
+                                </td>
+                                <td style={{ textAlign: 'right', background: 'rgba(2,132,199,0.08)' }}>
+                                  {renderCopyableCurrencyButton(`pnl-section-total-${section.key}`, displayPnlSectionTotalIndex.get(section.key) ?? 0, {
+                                    fontWeight: 800,
+                                    subtle: true,
+                                    minWidth: '160px',
+                                  })}
+                                </td>
+                              </tr>
+                            </React.Fragment>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {displayCustomPnl.unmappedSourceLines.length ? (
+                    <div className="finance-card" style={{ padding: '1rem', border: '1px solid rgba(239,68,68,0.24)', background: 'rgba(239,68,68,0.05)' }}>
+                      <h3 style={{ fontSize: '1rem', marginBottom: '0.75rem', color: 'var(--error)' }}>Cuentas nuevas / sin tratar</h3>
+                      <div className="table-container">
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>#</th>
+                              <th>Código</th>
+                              <th>Descripción</th>
+                              <th>Sección fuente</th>
+                              <th style={{ textAlign: 'right' }}>Monto CLP</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {displayCustomPnl.unmappedSourceLines.map((line) => (
+                              <tr key={`unmapped-${line.lineOrder}-${line.accountCode}-${line.accountName}`}>
+                                <td>{line.lineOrder}</td>
+                                <td>{line.accountCode || '-'}</td>
+                                <td style={{ fontWeight: 700 }}>{line.accountName}</td>
+                                <td>{line.sourceSectionLabel || '-'}</td>
+                                <td style={{ textAlign: 'right' }}>
+                                  {renderCopyableCurrencyButton(`pnl-unmapped-${line.lineOrder}`, line.amountCLP, {
+                                    subtle: true,
+                                    minWidth: '160px',
+                                  })}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <div className="finance-card" style={{ padding: '1rem' }}>
+                    <h3 style={{ fontSize: '1rem', marginBottom: '0.75rem' }}>Trazabilidad Fuente</h3>
+                    {displayPnlTraceabilityRows.length ? (
+                      <div className="table-container">
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>#</th>
+                              <th>Código fuente</th>
+                              <th>Descripción fuente</th>
+                              <th>Sección fuente</th>
+                              <th>Cuenta objetivo</th>
+                              <th style={{ textAlign: 'right' }}>Monto CLP</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {displayPnlTraceabilityRows.map((row) => (
+                              <tr key={`${row.targetKey}-${row.lineOrder}-${row.accountCode}-${row.amountCLP}`}>
+                                <td>{row.lineOrder}</td>
+                                <td>{row.accountCode || '-'}</td>
+                                <td style={{ fontWeight: row.isManual ? 700 : 500 }}>
+                                  {row.accountName}
+                                  {row.isManual ? ' (manual)' : ''}
+                                </td>
+                                <td>{row.sourceSectionLabel || '-'}</td>
+                                <td>{row.targetLabel}</td>
+                                <td style={{ textAlign: 'right' }}>
+                                  {renderCopyableCurrencyButton(`pnl-trace-${row.targetKey}-${row.lineOrder}`, row.amountCLP, {
+                                    subtle: true,
+                                    minWidth: '160px',
+                                  })}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <div style={{ padding: '0.85rem', border: '1px dashed var(--border)', borderRadius: '12px', background: 'var(--surface)' }}>
+                        No hay cuentas fuente trazables para mostrar todavía.
+                      </div>
+                    )}
+                  </div>
                 </div>
               ) : (
                 <div style={{ padding: '1rem', border: '1px dashed var(--border)', borderRadius: '12px', background: 'var(--surface)' }}>
@@ -1158,7 +1489,8 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
                       <option value="KITS">Kits</option>
                       <option value="MOTOR">Motores</option>
                       <option value="ADITAMENTOS">Aditamentos</option>
-                      <option value="SIN_CLASIFICAR">Otros Productos</option>
+                      <option value="DESPACHO">Despacho</option>
+                      <option value="SIN_CLASIFICAR">Sin clasificar</option>
                     </select>
                   </div>
 
@@ -1181,7 +1513,7 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
                     kits: 'No hay ventas de kits clasificadas para desglosar.',
                     motors: 'No hay ventas de motores clasificadas para desglosar.',
                     abutments: 'No hay ventas de aditamentos clasificadas para desglosar.',
-                    otherProducts: 'No hay ventas de otros productos para desglosar.',
+                    dispatch: 'No hay líneas de despacho para desglosar.',
                   })}
 
                   <div className="table-container">

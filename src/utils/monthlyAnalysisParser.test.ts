@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Product } from '../data/mockProducts';
-import { parseBalanceRows, parseInventoryRows, parsePnlRows } from './monthlyAnalysisParser';
+import { parseBalanceRows, parseInventoryRows, parsePnlRows, parsePnlWorksheetRows } from './monthlyAnalysisParser';
 
 const products: Product[] = [
   {
@@ -104,6 +104,40 @@ describe('monthlyAnalysisParser', () => {
     expect(result.rows.at(-1)?.section).toBe('RESULTADOS');
   });
 
+  it('parsea el layout exportado del ER personalizado con cabecera corrida y subtotales', () => {
+    const result = parsePnlWorksheetRows([
+      ['MEGAGEN IMPLANT CHILE SPA', 'Fecha :19/03/2026', '', '', ''],
+      ['ESTADO DE RESULTADO PERSONALIZADO', '', '', '', ''],
+      ['Período del 01/02/2026 al 28/02/2026', '', '', '', ''],
+      ['', '', '', '', ''],
+      ['Cuenta', 'Descripción', 'Año 2025', 'Año 2026', 'Diferencia $'],
+      ['INGRESO DE EXPLOTACION', '', '', '', ''],
+      ['3.1.1010.10.01', 'VENTAS', 0, 58457090, 58457090],
+      ['', 'INGRESO DE EXPLOTACION', 0, 58457090, 58457090],
+      ['COSTOS DE EXPLOTACION', '', '', '', ''],
+      ['', 'COSTOS DE EXPLOTACION', 0, -33258073, -33258073],
+      ['GTOS. DE ADMINIS. Y VENTAS', '', '', '', ''],
+      ['4.5.1040.10.01', 'REMUNERACIONES', 0, 22915886, 22915886],
+      ['4.5.1030.10.24', 'GTOS. BANCARIOS', 0, 37589, 37589],
+      ['', 'GTOS. DE ADMINIS. Y VENTAS', 0, -36843186, -36843186],
+      ['OTROS INGRESOS', '', '', '', ''],
+      ['3.5.1070.10.01', 'DIFERENCIA DE CAMBIO', 0, -1770908, -1770908],
+      ['', 'OTROS INGRESOS', 0, -1770908, -1770908],
+    ], '2026-02');
+
+    expect(result.errors).toEqual([]);
+    expect(result.detectedPeriodKeys).toEqual(['2026-02']);
+    expect(result.validRows).toBe(8);
+    expect(result.rows[0]?.accountCode).toBe('3.1.1010.10.01');
+    expect(result.rows[0]?.subsection).toBe('INGRESO DE EXPLOTACION');
+    expect(result.rows[1]?.isSubtotal).toBe(true);
+    expect(result.rows[2]?.accountName).toBe('COSTOS DE EXPLOTACION');
+    expect(result.rows[2]?.isSubtotal).toBe(true);
+    expect(result.rows[3]?.section).toBe('GASTOS_OPERACIONALES');
+    expect(result.rows.at(-1)?.accountName).toBe('OTROS INGRESOS');
+    expect(result.rows.at(-1)?.isSubtotal).toBe(true);
+  });
+
   it('clasifica inventario por nombre, agrega movimientos y conserva no mapeados', () => {
     const result = parseInventoryRows([
       {
@@ -183,7 +217,7 @@ describe('monthlyAnalysisParser', () => {
     expect(result.rows[0]?.family).toBe('KITS');
   });
 
-  it('manda a otros productos los artículos generales del catálogo sin marcarlos como faltantes', () => {
+  it('mantiene como aditamentos los artículos generales del catálogo sin marcarlos como faltantes', () => {
     const result = parseInventoryRows([
       {
         'Nombre Doc': '33 Factura Electronica',
@@ -198,7 +232,7 @@ describe('monthlyAnalysisParser', () => {
 
     expect(result.errors).toEqual([]);
     expect(result.validRows).toBe(1);
-    expect(result.rows[0]?.family).toBe('SIN_CLASIFICAR');
+    expect(result.rows[0]?.family).toBe('ADITAMENTOS');
     expect(result.rows[0]?.isUnclassified).toBe(false);
   });
 
@@ -230,7 +264,7 @@ describe('monthlyAnalysisParser', () => {
     expect(result.warnings.some((warning) => warning.includes('cantidades vendidas como salidas'))).toBe(true);
   });
 
-  it('excluye las líneas de despacho del reporte comercial', () => {
+  it('separa las líneas de despacho del reporte comercial sin excluirlas', () => {
     const result = parseInventoryRows([
       {
         'Nombre Doc': '33 Factura Electronica',
@@ -259,9 +293,10 @@ describe('monthlyAnalysisParser', () => {
     ], '2026-02', products);
 
     expect(result.errors).toEqual([]);
-    expect(result.validRows).toBe(1);
-    expect(result.rows[0]?.sku).toBe('HA4050');
-    expect(result.rows[0]?.totalAmountCLP).toBe(49400);
+    expect(result.validRows).toBe(2);
+    expect(result.rows.find((row) => row.sku === 'HA4050')?.totalAmountCLP).toBe(49400);
+    expect(result.rows.find((row) => row.sku === 'DESPACHO')?.family).toBe('DESPACHO');
+    expect(result.rows.find((row) => row.sku === 'DESPACHO')?.totalAmountCLP).toBe(9000);
     expect(result.warnings.some((warning) => warning.includes('SERVICIO DESPACHO'))).toBe(true);
     expect(result.warnings.some((warning) => warning.includes('$9.000'))).toBe(true);
   });
