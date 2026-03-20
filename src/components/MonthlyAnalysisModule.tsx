@@ -48,6 +48,7 @@ import {
 type MonthlyTab = 'summary' | 'balance' | 'pnl' | 'inventory';
 type UploadKind = 'balance' | 'pnl' | 'inventory';
 const MONTHLY_ANALYSIS_STORAGE_KEY = 'megagen.monthlyAnalysis.viewState';
+const MONTHLY_ANALYSIS_STORAGE_VERSION = 2;
 
 interface MonthlyAnalysisModuleProps {
   products: Product[];
@@ -62,11 +63,12 @@ interface MonthlyDraftState {
 interface QuickCopyMetric {
   key: string;
   label: string;
-  value: number;
+  quantity: number;
+  amountCLP: number;
 }
 
 interface PersistedMonthlyAnalysisState {
-  version: 1;
+  version: number;
   periodKey: string;
   activeTab: MonthlyTab;
   draft: MonthlyDraftState;
@@ -139,10 +141,10 @@ const readStoredMonthlyAnalysisState = (): PersistedMonthlyAnalysisState | null 
     if (!raw) return null;
 
     const parsed = JSON.parse(raw) as Partial<PersistedMonthlyAnalysisState>;
-    if (parsed.version !== 1) return null;
+    if (parsed.version !== MONTHLY_ANALYSIS_STORAGE_VERSION) return null;
 
     return {
-      version: 1,
+      version: MONTHLY_ANALYSIS_STORAGE_VERSION,
       periodKey: typeof parsed.periodKey === 'string' && parsed.periodKey ? parsed.periodKey : currentMonth(),
       activeTab: parsed.activeTab === 'balance' || parsed.activeTab === 'pnl' || parsed.activeTab === 'inventory' ? parsed.activeTab : 'summary',
       draft: parsed.draft ?? initialDraftState(),
@@ -307,7 +309,7 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
   useEffect(() => {
     try {
       const payload: PersistedMonthlyAnalysisState = {
-        version: 1,
+        version: MONTHLY_ANALYSIS_STORAGE_VERSION,
         periodKey,
         activeTab,
         draft,
@@ -439,22 +441,29 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
 
   const implantSalesByModel = useMemo(() => {
     const counts = createEmptyImplantCountMap();
+    const amounts = createEmptyImplantCountMap();
 
     for (const movement of implantInventoryMovements) {
       const implant = findImplantDefinition(movement.productName);
       if (!implant) continue;
       counts[implant.key] += movement.exitsQty;
+      amounts[implant.key] += movement.totalAmountCLP ?? 0;
     }
 
     return IMPLANT_DEFINITIONS.map((implant) => ({
       key: implant.key,
       name: implant.name,
       quantity: counts[implant.key],
+      amountCLP: amounts[implant.key],
     }));
   }, [implantInventoryMovements]);
 
   const totalImplantsSold = useMemo(
     () => implantSalesByModel.reduce((acc, implant) => acc + implant.quantity, 0),
+    [implantSalesByModel],
+  );
+  const totalImplantsAmountCLP = useMemo(
+    () => implantSalesByModel.reduce((acc, implant) => acc + implant.amountCLP, 0),
     [implantSalesByModel],
   );
 
@@ -463,15 +472,17 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
       ...implantSalesByModel.map((implant) => ({
         key: `implant-${implant.key}`,
         label: implant.name,
-        value: implant.quantity,
+        quantity: implant.quantity,
+        amountCLP: implant.amountCLP,
       })),
       {
         key: 'implant-total',
         label: 'Total Implantes',
-        value: totalImplantsSold,
+        quantity: totalImplantsSold,
+        amountCLP: totalImplantsAmountCLP,
       },
     ]
-  ), [implantSalesByModel, totalImplantsSold]);
+  ), [implantSalesByModel, totalImplantsAmountCLP, totalImplantsSold]);
 
   const buildFamilyQuickCopyMetrics = useCallback((
     family: Exclude<MonthlyInventoryFamily, 'IMPLANTES' | 'SIN_CLASIFICAR'>,
@@ -485,21 +496,24 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
       const normalizedName = normalizeMetricLabel(movement.productName);
       const existing = aggregated.get(normalizedName);
       if (existing) {
-        existing.value += movement.exitsQty;
+        existing.quantity += movement.exitsQty;
+        existing.amountCLP += movement.totalAmountCLP ?? 0;
         continue;
       }
 
       aggregated.set(normalizedName, {
         key: `${family.toLowerCase()}-${normalizedName}`,
         label: movement.productName,
-        value: movement.exitsQty,
+        quantity: movement.exitsQty,
+        amountCLP: movement.totalAmountCLP ?? 0,
       });
     }
 
     const metrics = Array.from(aggregated.values()).sort((left, right) => (
-      right.value - left.value || left.label.localeCompare(right.label, 'es')
+      right.quantity - left.quantity || left.label.localeCompare(right.label, 'es')
     ));
-    const total = metrics.reduce((acc, metric) => acc + metric.value, 0);
+    const totalQuantity = metrics.reduce((acc, metric) => acc + metric.quantity, 0);
+    const totalAmountCLP = metrics.reduce((acc, metric) => acc + metric.amountCLP, 0);
 
     if (!metrics.length) return [];
 
@@ -508,7 +522,8 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
       {
         key: `${family.toLowerCase()}-total`,
         label: totalLabel,
-        value: total,
+        quantity: totalQuantity,
+        amountCLP: totalAmountCLP,
       },
     ];
   }, [displayInventoryMovements]);
@@ -551,7 +566,7 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
             {metrics.map((metric) => (
               <div key={metric.key} style={{
                 display: 'grid',
-                gridTemplateColumns: '1.4fr auto auto',
+                gridTemplateColumns: 'minmax(0, 1.4fr) auto auto auto',
                 alignItems: 'center',
                 gap: '0.5rem',
                 padding: '0.45rem 0.55rem',
@@ -563,8 +578,8 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
                 <button
                   className="btn"
                   style={{ fontSize: '0.85rem', padding: '0.25rem 0.45rem', background: 'var(--surface)', border: '1px solid var(--border)' }}
-                  onClick={() => void copyMetricValue(metric.key, metric.value)}
-                  title="Copiar valor"
+                  onClick={() => void copyMetricValue(metric.key, metric.quantity)}
+                  title="Copiar cantidad"
                 >
                   <Copy size={13} />
                 </button>
@@ -579,10 +594,29 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
                     minWidth: '88px',
                     justifyContent: 'center',
                   }}
-                  onClick={() => void copyMetricValue(metric.key, metric.value)}
-                  title="Click para copiar"
+                  onClick={() => void copyMetricValue(metric.key, metric.quantity)}
+                  title="Click para copiar cantidad"
                 >
-                  {copiedMetricKey === metric.key ? 'Copiado' : metric.value.toFixed(0)}
+                  {copiedMetricKey === metric.key ? 'Copiado' : metric.quantity.toFixed(0)}
+                </button>
+                <button
+                  className="btn"
+                  style={{
+                    fontSize: '0.84rem',
+                    fontWeight: 700,
+                    padding: '0.25rem 0.55rem',
+                    background: copiedMetricKey === `${metric.key}-amount` ? 'rgba(16,185,129,0.12)' : 'rgba(2,132,199,0.08)',
+                    color: copiedMetricKey === `${metric.key}-amount` ? 'var(--success)' : 'var(--accent)',
+                    border: '1px solid var(--border)',
+                    borderRadius: '8px',
+                    minWidth: '132px',
+                    textAlign: 'right',
+                    whiteSpace: 'nowrap',
+                  }}
+                  onClick={() => void copyMetricValue(`${metric.key}-amount`, metric.amountCLP)}
+                  title="Click para copiar venta total"
+                >
+                  {copiedMetricKey === `${metric.key}-amount` ? 'Copiado' : formatCLP(metric.amountCLP)}
                 </button>
               </div>
             ))}
@@ -605,7 +639,7 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
     <div style={{ display: 'grid', gap: '1rem' }}>
       {renderQuickCopyPanel(
         'Ventas de Implantes por Tipo',
-        totalImplantsSold > 0 ? implantQuickCopyMetrics : [],
+        totalImplantsSold > 0 || totalImplantsAmountCLP > 0 ? implantQuickCopyMetrics : [],
         messages?.implants ?? 'No hay ventas de implantes clasificadas.',
       )}
       {renderQuickCopyPanel(

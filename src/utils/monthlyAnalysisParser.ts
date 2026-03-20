@@ -665,7 +665,7 @@ const parseSalesRowsAsInventory = (
     if (current) {
       aggregated.set(sku, {
         ...current,
-        exitsQty: current.exitsQty + Math.abs(quantity.value),
+        exitsQty: current.exitsQty + quantity.value,
         totalAmountCLP: (current.totalAmountCLP ?? 0) + (totalAmount.found ? totalAmount.value : 0),
         isUnclassified: current.isUnclassified || family === 'SIN_CLASIFICAR',
       });
@@ -678,7 +678,7 @@ const parseSalesRowsAsInventory = (
       family,
       openingQty: 0,
       entriesQty: 0,
-      exitsQty: Math.abs(quantity.value),
+      exitsQty: quantity.value,
       adjustmentsQty: 0,
       closingQty: 0,
       totalAmountCLP: totalAmount.found ? totalAmount.value : undefined,

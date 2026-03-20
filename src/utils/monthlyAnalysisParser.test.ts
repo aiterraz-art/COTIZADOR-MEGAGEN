@@ -199,6 +199,35 @@ describe('monthlyAnalysisParser', () => {
     expect(result.rows[0]?.sku).toBe('HA4050');
     expect(result.rows[0]?.exitsQty).toBe(5);
     expect(result.rows[0]?.closingQty).toBe(0);
+    expect(result.rows[0]?.totalAmountCLP).toBe(49400);
     expect(result.warnings.some((warning) => warning.includes('cantidades vendidas como salidas'))).toBe(true);
+  });
+
+  it('resta devoluciones del reporte comercial cuando la cantidad viene negativa', () => {
+    const result = parseInventoryRows([
+      {
+        'Nombre Doc': '33 Factura Electronica',
+        Fecha: '2026-02-04',
+        'Cod. Producto': 'IF3508C',
+        'Desc. Producto': 'AnyOne Internal Fixture [AO]',
+        Cantidad: 15,
+        'Total Detalle': 1071435,
+        'Costo Vigente': 23060,
+      },
+      {
+        'Nombre Doc': '61 Nota de Credito',
+        Fecha: '2026-02-06',
+        'Cod. Producto': 'IF3508C',
+        'Desc. Producto': 'AnyOne Internal Fixture [AO]',
+        Cantidad: -6,
+        'Total Detalle': -428574,
+        'Costo Vigente': 23060,
+      },
+    ], '2026-02', products);
+
+    expect(result.errors).toEqual([]);
+    expect(result.validRows).toBe(1);
+    expect(result.rows[0]?.exitsQty).toBe(9);
+    expect(result.rows[0]?.totalAmountCLP).toBe(642861);
   });
 });
