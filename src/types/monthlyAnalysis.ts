@@ -94,6 +94,7 @@ export interface MonthlyInventoryFamilySummary {
   adjustmentsQty: number;
   closingQty: number;
   netChangeQty: number;
+  salesAmountCLP: number;
   skuCount: number;
 }
 

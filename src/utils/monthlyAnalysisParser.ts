@@ -55,6 +55,12 @@ const parseNumber = (value: unknown): number => {
   return Number.isFinite(numeric) ? numeric : 0;
 };
 
+const formatCLP = (value: number): string => new Intl.NumberFormat('es-CL', {
+  style: 'currency',
+  currency: 'CLP',
+  maximumFractionDigits: 0,
+}).format(value);
+
 const isNumericLike = (value: unknown): boolean => {
   if (typeof value === 'number') return Number.isFinite(value);
   if (typeof value !== 'string') return false;
@@ -404,6 +410,43 @@ const inferPnlSection = (sourceSection: string, accountName: string): MonthlyPnl
   return 'OTROS';
 };
 
+const normalizedKeywords = (keywords: string[]): string[] => keywords.map((keyword) => normalize(keyword));
+
+const ADITAMENT_CATEGORY_KEYWORDS = normalizedKeywords([
+  'aditamento',
+  'aditamentos',
+  'abutment',
+  'ti-base',
+  'ti base',
+  'tibase',
+]);
+
+const ADITAMENT_NAME_KEYWORDS = normalizedKeywords([
+  'abutment',
+  'healing',
+  'transfer',
+  'analog',
+  'scanbody',
+  'scan body',
+  'screw',
+  'cylinder',
+  'ti-base',
+  'ti base',
+  'tibase',
+  'coping',
+  'multi-unit',
+  'multi unit',
+  'mua',
+  'cover screw',
+  'locator',
+  'temporary cylinder',
+  'impression',
+]);
+
+const hasAnyKeyword = (value: string, keywords: string[]): boolean => (
+  keywords.some((keyword) => value.includes(keyword))
+);
+
 const inferInventoryFamily = (productName: string, category: string): MonthlyInventoryFamily => {
   const implantDefinition = findImplantDefinition(productName);
   const normalizedName = normalize(productName);
@@ -429,7 +472,14 @@ const inferInventoryFamily = (productName: string, category: string): MonthlyInv
     return 'MOTOR';
   }
 
-  return 'ADITAMENTOS';
+  if (
+    hasAnyKeyword(normalizedCategory, ADITAMENT_CATEGORY_KEYWORDS)
+    || hasAnyKeyword(normalizedName, ADITAMENT_NAME_KEYWORDS)
+  ) {
+    return 'ADITAMENTOS';
+  }
+
+  return 'SIN_CLASIFICAR';
 };
 
 interface CatalogEntry {
@@ -629,6 +679,8 @@ const parseSalesRowsAsInventory = (
   warnings: string[],
 ): MonthlyInventoryMovement[] => {
   const aggregated = new Map<string, MonthlyInventoryMovement>();
+  let dispatchRowCount = 0;
+  let dispatchAmountCLP = 0;
 
   warnings.push('Se detectó el mismo formato comercial usado en Análisis Diario; se usarán las cantidades vendidas como salidas. Este reporte no incluye stock inicial ni stock final.');
 
@@ -647,7 +699,13 @@ const parseSalesRowsAsInventory = (
       || normalizedDescription.includes('servicio despacho')
       || normalizedDescription.includes('despacho');
 
-    if (isDispatch || !quantity.found || quantity.value === 0) continue;
+    if (isDispatch) {
+      dispatchRowCount += 1;
+      dispatchAmountCLP += totalAmount.found ? totalAmount.value : 0;
+      continue;
+    }
+
+    if (!quantity.found || quantity.value === 0) continue;
 
     const sku = rawSku ? rawSku.toUpperCase() : `SIN-SKU-${index + 1}`;
     const catalogMatch = resolveCatalogMatch(description, catalogLookup);
@@ -662,12 +720,13 @@ const parseSalesRowsAsInventory = (
     }
 
     const current = aggregated.get(sku);
+    const isUnclassified = !catalogMatch;
     if (current) {
       aggregated.set(sku, {
         ...current,
         exitsQty: current.exitsQty + quantity.value,
         totalAmountCLP: (current.totalAmountCLP ?? 0) + (totalAmount.found ? totalAmount.value : 0),
-        isUnclassified: current.isUnclassified || family === 'SIN_CLASIFICAR',
+        isUnclassified: current.isUnclassified || isUnclassified,
       });
       continue;
     }
@@ -683,8 +742,12 @@ const parseSalesRowsAsInventory = (
       closingQty: 0,
       totalAmountCLP: totalAmount.found ? totalAmount.value : undefined,
       sourcePeriodKey: valueToPeriodKey(resolveColumnValue(row, ['periodo', 'period', 'mes', 'fecha', 'date'])) ?? selectedPeriodKey,
-      isUnclassified: family === 'SIN_CLASIFICAR',
+      isUnclassified,
     });
+  }
+
+  if (dispatchRowCount > 0) {
+    warnings.push(`Se excluyeron ${dispatchRowCount} líneas de SERVICIO DESPACHO por ${formatCLP(dispatchAmountCLP)} porque no corresponden a productos.`);
   }
 
   return sortInventoryRows(Array.from(aggregated.values()));
@@ -786,6 +849,7 @@ export const parseInventoryRows = (
     }
 
     const current = aggregated.get(sku);
+    const isUnclassified = !catalogMatch;
     if (current) {
       aggregated.set(sku, {
         ...current,
@@ -795,7 +859,7 @@ export const parseInventoryRows = (
         adjustmentsQty: current.adjustmentsQty + adjustmentsQty,
         closingQty: current.closingQty + closingQty,
         totalAmountCLP: (current.totalAmountCLP ?? 0) + (totalAmount.found ? totalAmount.value : 0),
-        isUnclassified: current.isUnclassified || family === 'SIN_CLASIFICAR',
+        isUnclassified: current.isUnclassified || isUnclassified,
       });
       continue;
     }
@@ -811,7 +875,7 @@ export const parseInventoryRows = (
       closingQty,
       totalAmountCLP: totalAmount.found ? totalAmount.value : undefined,
       sourcePeriodKey: valueToPeriodKey(resolveColumnValue(row, ['periodo', 'period', 'mes', 'fecha'])) ?? selectedPeriodKey,
-      isUnclassified: family === 'SIN_CLASIFICAR',
+      isUnclassified,
     });
   }
 

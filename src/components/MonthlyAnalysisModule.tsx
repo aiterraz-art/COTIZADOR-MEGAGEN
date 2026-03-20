@@ -48,7 +48,7 @@ import {
 type MonthlyTab = 'summary' | 'balance' | 'pnl' | 'inventory';
 type UploadKind = 'balance' | 'pnl' | 'inventory';
 const MONTHLY_ANALYSIS_STORAGE_KEY = 'megagen.monthlyAnalysis.viewState';
-const MONTHLY_ANALYSIS_STORAGE_VERSION = 2;
+const MONTHLY_ANALYSIS_STORAGE_VERSION = 3;
 
 interface MonthlyAnalysisModuleProps {
   products: Product[];
@@ -159,6 +159,16 @@ const readStoredMonthlyAnalysisState = (): PersistedMonthlyAnalysisState | null 
 
 const INVENTORY_FAMILIES: MonthlyInventoryFamily[] = ['IMPLANTES', 'KITS', 'MOTOR', 'ADITAMENTOS', 'SIN_CLASIFICAR'];
 
+const INVENTORY_FAMILY_LABELS: Record<MonthlyInventoryFamily, string> = {
+  IMPLANTES: 'Implantes',
+  KITS: 'Kits',
+  MOTOR: 'Motores',
+  ADITAMENTOS: 'Aditamentos',
+  SIN_CLASIFICAR: 'Otros Productos',
+};
+
+const getInventoryFamilyLabel = (family: MonthlyInventoryFamily): string => INVENTORY_FAMILY_LABELS[family];
+
 const createEmptyInventoryFamilySummary = (
   family: MonthlyInventoryFamily,
 ): MonthlyAnalysisSummary['inventory']['byFamily'][MonthlyInventoryFamily] => ({
@@ -169,6 +179,7 @@ const createEmptyInventoryFamilySummary = (
   adjustmentsQty: 0,
   closingQty: 0,
   netChangeQty: 0,
+  salesAmountCLP: 0,
   skuCount: 0,
 });
 
@@ -395,6 +406,7 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
       familySummary.adjustmentsQty += movement.adjustmentsQty;
       familySummary.closingQty += movement.closingQty;
       familySummary.netChangeQty += movement.closingQty - movement.openingQty;
+      familySummary.salesAmountCLP += movement.totalAmountCLP ?? 0;
 
       totals.openingQty += movement.openingQty;
       totals.entriesQty += movement.entriesQty;
@@ -402,6 +414,7 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
       totals.adjustmentsQty += movement.adjustmentsQty;
       totals.closingQty += movement.closingQty;
       totals.netChangeQty += movement.closingQty - movement.openingQty;
+      totals.salesAmountCLP += movement.totalAmountCLP ?? 0;
 
       familySkuSets[movement.family].add(movement.sku);
       totalSkuSet.add(movement.sku);
@@ -485,7 +498,7 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
   ), [implantSalesByModel, totalImplantsAmountCLP, totalImplantsSold]);
 
   const buildFamilyQuickCopyMetrics = useCallback((
-    family: Exclude<MonthlyInventoryFamily, 'IMPLANTES' | 'SIN_CLASIFICAR'>,
+    family: Exclude<MonthlyInventoryFamily, 'IMPLANTES'>,
     totalLabel: string,
   ): QuickCopyMetric[] => {
     const aggregated = new Map<string, QuickCopyMetric>();
@@ -538,6 +551,10 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
   );
   const abutmentQuickCopyMetrics = useMemo(
     () => buildFamilyQuickCopyMetrics('ADITAMENTOS', 'Total Aditamentos'),
+    [buildFamilyQuickCopyMetrics],
+  );
+  const otherProductsQuickCopyMetrics = useMemo(
+    () => buildFamilyQuickCopyMetrics('SIN_CLASIFICAR', 'Total Otros Productos'),
     [buildFamilyQuickCopyMetrics],
   );
 
@@ -635,6 +652,7 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
     kits?: string;
     motors?: string;
     abutments?: string;
+    otherProducts?: string;
   }): React.ReactNode => (
     <div style={{ display: 'grid', gap: '1rem' }}>
       {renderQuickCopyPanel(
@@ -656,6 +674,11 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
         'Ventas de Aditamentos',
         abutmentQuickCopyMetrics,
         messages?.abutments ?? 'No hay ventas de aditamentos clasificadas.',
+      )}
+      {renderQuickCopyPanel(
+        'Ventas de Otros Productos',
+        otherProductsQuickCopyMetrics,
+        messages?.otherProducts ?? 'No hay ventas de otros productos clasificadas.',
       )}
     </div>
   );
@@ -960,10 +983,10 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
                       {INVENTORY_FAMILIES.map((family) => (
                         <MetricCard
                           key={family}
-                          title={family}
+                          title={getInventoryFamilyLabel(family)}
                           value={formatQty(inventorySummaryPreview?.byFamily[family].exitsQty ?? 0)}
-                          hint={`SKUs: ${inventorySummaryPreview?.byFamily[family].skuCount ?? 0}`}
-                          tone={family === 'SIN_CLASIFICAR' ? 'warning' : 'default'}
+                          hint={`${formatCLP(inventorySummaryPreview?.byFamily[family].salesAmountCLP ?? 0)} · SKUs: ${inventorySummaryPreview?.byFamily[family].skuCount ?? 0}`}
+                          tone="default"
                         />
                       ))}
                     </div>
@@ -974,6 +997,7 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
                     kits: 'No hay ventas de kits clasificadas en el periodo seleccionado.',
                     motors: 'No hay ventas de motores clasificadas en el periodo seleccionado.',
                     abutments: 'No hay ventas de aditamentos clasificadas en el periodo seleccionado.',
+                    otherProducts: 'No hay ventas de otros productos en el periodo seleccionado.',
                   })}
 
                   {comparison ? (
@@ -997,11 +1021,12 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
                   </div>
 
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '0.75rem' }}>
-                    <MetricCard title="Ventas Totales" value={formatQty(inventorySummaryPreview.totals.exitsQty)} />
+                    <MetricCard title="Unidades Vendidas" value={formatQty(inventorySummaryPreview.totals.exitsQty)} />
+                    <MetricCard title="Ventas Productos CLP" value={formatCLP(inventorySummaryPreview.totals.salesAmountCLP ?? 0)} />
                     <MetricCard title="Implantes Totales" value={formatQty(totalImplantsSold)} />
                     <MetricCard title="SKUs con Venta" value={formatQty(inventorySummaryPreview.totals.skuCount)} />
                     <MetricCard
-                      title="SKUs sin Clasificar"
+                      title="SKUs sin Catálogo"
                       value={formatQty(inventorySummaryPreview.unmappedSkuCount)}
                       tone={inventorySummaryPreview.unmappedSkuCount ? 'warning' : 'default'}
                     />
@@ -1013,10 +1038,10 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
                       {INVENTORY_FAMILIES.map((family) => (
                         <MetricCard
                           key={family}
-                          title={family}
+                          title={getInventoryFamilyLabel(family)}
                           value={formatQty(inventorySummaryPreview.byFamily[family].exitsQty)}
-                          hint={`SKUs: ${inventorySummaryPreview.byFamily[family].skuCount}`}
-                          tone={family === 'SIN_CLASIFICAR' ? 'warning' : 'default'}
+                          hint={`${formatCLP(inventorySummaryPreview.byFamily[family].salesAmountCLP ?? 0)} · SKUs: ${inventorySummaryPreview.byFamily[family].skuCount}`}
+                          tone="default"
                         />
                       ))}
                     </div>
@@ -1027,6 +1052,7 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
                     kits: 'No hay ventas de kits clasificadas en el archivo cargado.',
                     motors: 'No hay ventas de motores clasificadas en el archivo cargado.',
                     abutments: 'No hay ventas de aditamentos clasificadas en el archivo cargado.',
+                    otherProducts: 'No hay ventas de otros productos en el archivo cargado.',
                   })}
                 </div>
               ) : (
@@ -1130,9 +1156,9 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
                       <option value="ALL">Todas las familias</option>
                       <option value="IMPLANTES">Implantes</option>
                       <option value="KITS">Kits</option>
-                      <option value="MOTOR">Motor</option>
+                      <option value="MOTOR">Motores</option>
                       <option value="ADITAMENTOS">Aditamentos</option>
-                      <option value="SIN_CLASIFICAR">Sin clasificar</option>
+                      <option value="SIN_CLASIFICAR">Otros Productos</option>
                     </select>
                   </div>
 
@@ -1141,10 +1167,10 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
                       INVENTORY_FAMILIES.map((family) => (
                         <MetricCard
                           key={family}
-                          title={`${family} - Ventas`}
+                          title={`${getInventoryFamilyLabel(family)} - Unidades`}
                           value={formatQty(inventorySummaryPreview.byFamily[family].exitsQty)}
-                          hint={`SKUs: ${inventorySummaryPreview.byFamily[family].skuCount}`}
-                          tone={family === 'SIN_CLASIFICAR' ? 'warning' : 'default'}
+                          hint={`${formatCLP(inventorySummaryPreview.byFamily[family].salesAmountCLP ?? 0)} · SKUs: ${inventorySummaryPreview.byFamily[family].skuCount}`}
+                          tone="default"
                         />
                       ))
                     ) : null}
@@ -1155,6 +1181,7 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
                     kits: 'No hay ventas de kits clasificadas para desglosar.',
                     motors: 'No hay ventas de motores clasificadas para desglosar.',
                     abutments: 'No hay ventas de aditamentos clasificadas para desglosar.',
+                    otherProducts: 'No hay ventas de otros productos para desglosar.',
                   })}
 
                   <div className="table-container">
@@ -1172,8 +1199,8 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
                           <tr key={movement.sku}>
                             <td style={{ fontWeight: 700 }}>{movement.sku}</td>
                             <td>{movement.productName}</td>
-                            <td style={{ color: movement.family === 'SIN_CLASIFICAR' ? 'var(--warning)' : 'inherit', fontWeight: movement.family === 'SIN_CLASIFICAR' ? 700 : 500 }}>
-                              {movement.family}
+                            <td style={{ fontWeight: movement.family === 'SIN_CLASIFICAR' ? 700 : 500 }}>
+                              {getInventoryFamilyLabel(movement.family)}
                             </td>
                             <td style={{ textAlign: 'right', color: 'var(--error)', fontWeight: 700 }}>{formatQty(movement.exitsQty)}</td>
                           </tr>

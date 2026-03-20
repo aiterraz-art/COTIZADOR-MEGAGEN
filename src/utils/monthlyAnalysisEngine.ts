@@ -67,6 +67,7 @@ const emptyFamilySummary = (family: MonthlyInventoryFamily): MonthlyInventoryFam
   adjustmentsQty: 0,
   closingQty: 0,
   netChangeQty: 0,
+  salesAmountCLP: 0,
   skuCount: 0,
 });
 
@@ -125,6 +126,7 @@ export const buildMonthlyAnalysisSummary = (
     currentFamily.adjustmentsQty += movement.adjustmentsQty;
     currentFamily.closingQty += movement.closingQty;
     currentFamily.netChangeQty += movement.closingQty - movement.openingQty;
+    currentFamily.salesAmountCLP += movement.totalAmountCLP ?? 0;
     currentFamily.skuCount += 1;
 
     if (movement.isUnclassified) {
@@ -140,6 +142,7 @@ export const buildMonthlyAnalysisSummary = (
     acc.adjustmentsQty += familySummary.adjustmentsQty;
     acc.closingQty += familySummary.closingQty;
     acc.netChangeQty += familySummary.netChangeQty;
+    acc.salesAmountCLP += familySummary.salesAmountCLP;
     acc.skuCount += familySummary.skuCount;
     return acc;
   }, emptyFamilySummary('SIN_CLASIFICAR'));

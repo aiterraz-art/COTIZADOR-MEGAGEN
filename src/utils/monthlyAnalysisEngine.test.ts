@@ -41,6 +41,7 @@ const inventoryMovements: MonthlyInventoryMovement[] = [
     exitsQty: 3,
     adjustmentsQty: 0,
     closingQty: 12,
+    totalAmountCLP: 300_000,
     isUnclassified: false,
   },
   {
@@ -52,6 +53,7 @@ const inventoryMovements: MonthlyInventoryMovement[] = [
     exitsQty: 2,
     adjustmentsQty: 0,
     closingQty: 4,
+    totalAmountCLP: 120_000,
     isUnclassified: false,
   },
   {
@@ -63,6 +65,7 @@ const inventoryMovements: MonthlyInventoryMovement[] = [
     exitsQty: 0,
     adjustmentsQty: 0,
     closingQty: 2,
+    totalAmountCLP: 0,
     isUnclassified: false,
   },
   {
@@ -74,6 +77,7 @@ const inventoryMovements: MonthlyInventoryMovement[] = [
     exitsQty: 0,
     adjustmentsQty: -1,
     closingQty: 1,
+    totalAmountCLP: 0,
     isUnclassified: false,
   },
 ];
@@ -99,10 +103,13 @@ describe('monthlyAnalysisEngine', () => {
     expect(summary.inventory.byFamily.ADITAMENTOS.exitsQty).toBe(2);
     expect(summary.inventory.byFamily.IMPLANTES.closingQty).toBe(12);
     expect(summary.inventory.byFamily.ADITAMENTOS.closingQty).toBe(4);
+    expect(summary.inventory.byFamily.IMPLANTES.salesAmountCLP).toBe(300_000);
+    expect(summary.inventory.byFamily.ADITAMENTOS.salesAmountCLP).toBe(120_000);
     expect(summary.inventory.byFamily.MOTOR.closingQty).toBe(2);
     expect(summary.inventory.byFamily.KITS.closingQty).toBe(1);
     expect(summary.inventory.totals.closingQty).toBe(19);
     expect(summary.inventory.totals.exitsQty).toBe(5);
+    expect(summary.inventory.totals.salesAmountCLP).toBe(420_000);
     expect(summary.inventory.unmappedSkuCount).toBe(0);
   });
 
@@ -135,6 +142,7 @@ describe('monthlyAnalysisEngine', () => {
         exitsQty: 8,
         adjustmentsQty: 0,
         closingQty: 0,
+        totalAmountCLP: 800_000,
         isUnclassified: false,
       },
     ];

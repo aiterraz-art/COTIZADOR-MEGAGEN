@@ -46,13 +46,13 @@ const emptySummary = (): MonthlyAnalysisSummary => ({
   },
   inventory: {
     byFamily: {
-      IMPLANTES: { family: 'IMPLANTES', openingQty: 0, entriesQty: 0, exitsQty: 0, adjustmentsQty: 0, closingQty: 0, netChangeQty: 0, skuCount: 0 },
-      KITS: { family: 'KITS', openingQty: 0, entriesQty: 0, exitsQty: 0, adjustmentsQty: 0, closingQty: 0, netChangeQty: 0, skuCount: 0 },
-      MOTOR: { family: 'MOTOR', openingQty: 0, entriesQty: 0, exitsQty: 0, adjustmentsQty: 0, closingQty: 0, netChangeQty: 0, skuCount: 0 },
-      ADITAMENTOS: { family: 'ADITAMENTOS', openingQty: 0, entriesQty: 0, exitsQty: 0, adjustmentsQty: 0, closingQty: 0, netChangeQty: 0, skuCount: 0 },
-      SIN_CLASIFICAR: { family: 'SIN_CLASIFICAR', openingQty: 0, entriesQty: 0, exitsQty: 0, adjustmentsQty: 0, closingQty: 0, netChangeQty: 0, skuCount: 0 },
+      IMPLANTES: { family: 'IMPLANTES', openingQty: 0, entriesQty: 0, exitsQty: 0, adjustmentsQty: 0, closingQty: 0, netChangeQty: 0, salesAmountCLP: 0, skuCount: 0 },
+      KITS: { family: 'KITS', openingQty: 0, entriesQty: 0, exitsQty: 0, adjustmentsQty: 0, closingQty: 0, netChangeQty: 0, salesAmountCLP: 0, skuCount: 0 },
+      MOTOR: { family: 'MOTOR', openingQty: 0, entriesQty: 0, exitsQty: 0, adjustmentsQty: 0, closingQty: 0, netChangeQty: 0, salesAmountCLP: 0, skuCount: 0 },
+      ADITAMENTOS: { family: 'ADITAMENTOS', openingQty: 0, entriesQty: 0, exitsQty: 0, adjustmentsQty: 0, closingQty: 0, netChangeQty: 0, salesAmountCLP: 0, skuCount: 0 },
+      SIN_CLASIFICAR: { family: 'SIN_CLASIFICAR', openingQty: 0, entriesQty: 0, exitsQty: 0, adjustmentsQty: 0, closingQty: 0, netChangeQty: 0, salesAmountCLP: 0, skuCount: 0 },
     },
-    totals: { family: 'SIN_CLASIFICAR', openingQty: 0, entriesQty: 0, exitsQty: 0, adjustmentsQty: 0, closingQty: 0, netChangeQty: 0, skuCount: 0 },
+    totals: { family: 'SIN_CLASIFICAR', openingQty: 0, entriesQty: 0, exitsQty: 0, adjustmentsQty: 0, closingQty: 0, netChangeQty: 0, salesAmountCLP: 0, skuCount: 0 },
     unmappedSkuCount: 0,
   },
 });
@@ -93,6 +93,7 @@ const parseSummary = (value: unknown): MonthlyAnalysisSummary => {
           adjustmentsQty: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.IMPLANTES as GenericRow | undefined)?.adjustmentsQty),
           closingQty: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.IMPLANTES as GenericRow | undefined)?.closingQty),
           netChangeQty: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.IMPLANTES as GenericRow | undefined)?.netChangeQty),
+          salesAmountCLP: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.IMPLANTES as GenericRow | undefined)?.salesAmountCLP),
           skuCount: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.IMPLANTES as GenericRow | undefined)?.skuCount),
         },
         ADITAMENTOS: {
@@ -103,6 +104,7 @@ const parseSummary = (value: unknown): MonthlyAnalysisSummary => {
           adjustmentsQty: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.ADITAMENTOS as GenericRow | undefined)?.adjustmentsQty),
           closingQty: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.ADITAMENTOS as GenericRow | undefined)?.closingQty),
           netChangeQty: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.ADITAMENTOS as GenericRow | undefined)?.netChangeQty),
+          salesAmountCLP: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.ADITAMENTOS as GenericRow | undefined)?.salesAmountCLP),
           skuCount: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.ADITAMENTOS as GenericRow | undefined)?.skuCount),
         },
         KITS: {
@@ -113,6 +115,7 @@ const parseSummary = (value: unknown): MonthlyAnalysisSummary => {
           adjustmentsQty: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.KITS as GenericRow | undefined)?.adjustmentsQty),
           closingQty: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.KITS as GenericRow | undefined)?.closingQty),
           netChangeQty: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.KITS as GenericRow | undefined)?.netChangeQty),
+          salesAmountCLP: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.KITS as GenericRow | undefined)?.salesAmountCLP),
           skuCount: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.KITS as GenericRow | undefined)?.skuCount),
         },
         MOTOR: {
@@ -123,6 +126,7 @@ const parseSummary = (value: unknown): MonthlyAnalysisSummary => {
           adjustmentsQty: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.MOTOR as GenericRow | undefined)?.adjustmentsQty),
           closingQty: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.MOTOR as GenericRow | undefined)?.closingQty),
           netChangeQty: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.MOTOR as GenericRow | undefined)?.netChangeQty),
+          salesAmountCLP: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.MOTOR as GenericRow | undefined)?.salesAmountCLP),
           skuCount: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.MOTOR as GenericRow | undefined)?.skuCount),
         },
         SIN_CLASIFICAR: {
@@ -133,6 +137,7 @@ const parseSummary = (value: unknown): MonthlyAnalysisSummary => {
           adjustmentsQty: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.SIN_CLASIFICAR as GenericRow | undefined)?.adjustmentsQty),
           closingQty: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.SIN_CLASIFICAR as GenericRow | undefined)?.closingQty),
           netChangeQty: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.SIN_CLASIFICAR as GenericRow | undefined)?.netChangeQty),
+          salesAmountCLP: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.SIN_CLASIFICAR as GenericRow | undefined)?.salesAmountCLP),
           skuCount: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.SIN_CLASIFICAR as GenericRow | undefined)?.skuCount),
         },
       },
@@ -144,6 +149,7 @@ const parseSummary = (value: unknown): MonthlyAnalysisSummary => {
         adjustmentsQty: toNumber(((row.inventory as GenericRow | undefined)?.totals as GenericRow | undefined)?.adjustmentsQty),
         closingQty: toNumber(((row.inventory as GenericRow | undefined)?.totals as GenericRow | undefined)?.closingQty),
         netChangeQty: toNumber(((row.inventory as GenericRow | undefined)?.totals as GenericRow | undefined)?.netChangeQty),
+        salesAmountCLP: toNumber(((row.inventory as GenericRow | undefined)?.totals as GenericRow | undefined)?.salesAmountCLP),
         skuCount: toNumber(((row.inventory as GenericRow | undefined)?.totals as GenericRow | undefined)?.skuCount),
       },
       unmappedSkuCount: toNumber((row.inventory as GenericRow | undefined)?.unmappedSkuCount),

@@ -23,6 +23,13 @@ const products: Product[] = [
     category: 'Kits',
     costUSD: 14,
   },
+  {
+    id: 'other-001',
+    sku: 'BM10605',
+    name: 'Bone Matrix I',
+    category: 'General',
+    costUSD: 20,
+  },
 ];
 
 describe('monthlyAnalysisParser', () => {
@@ -176,6 +183,25 @@ describe('monthlyAnalysisParser', () => {
     expect(result.rows[0]?.family).toBe('KITS');
   });
 
+  it('manda a otros productos los artículos generales del catálogo sin marcarlos como faltantes', () => {
+    const result = parseInventoryRows([
+      {
+        'Nombre Doc': '33 Factura Electronica',
+        Fecha: '2026-02-04',
+        'Cod. Producto': 'BM10605',
+        'Desc. Producto': 'Bone Matrix I',
+        Cantidad: 3,
+        'Precio Unitario': 25000,
+        'Total Detalle': 75000,
+      },
+    ], '2026-02', products);
+
+    expect(result.errors).toEqual([]);
+    expect(result.validRows).toBe(1);
+    expect(result.rows[0]?.family).toBe('SIN_CLASIFICAR');
+    expect(result.rows[0]?.isUnclassified).toBe(false);
+  });
+
   it('adapta el reporte comercial diario como salidas mensuales por SKU', () => {
     const result = parseInventoryRows([
       {
@@ -200,7 +226,44 @@ describe('monthlyAnalysisParser', () => {
     expect(result.rows[0]?.exitsQty).toBe(5);
     expect(result.rows[0]?.closingQty).toBe(0);
     expect(result.rows[0]?.totalAmountCLP).toBe(49400);
+    expect(result.rows[0]?.family).toBe('ADITAMENTOS');
     expect(result.warnings.some((warning) => warning.includes('cantidades vendidas como salidas'))).toBe(true);
+  });
+
+  it('excluye las líneas de despacho del reporte comercial', () => {
+    const result = parseInventoryRows([
+      {
+        'Nombre Doc': '33 Factura Electronica',
+        'Nmero del Documento': 1175,
+        'Nombre del Vendedor': 'YESSIKA ARRIECHE',
+        'Código del Cliente': '78.409.120-1',
+        Fecha: '2026-02-04',
+        'Cod. Producto': 'HA4050',
+        'Desc. Producto': 'Healing Abutment [AO]',
+        Cantidad: 5,
+        'Precio Unitario': 9880,
+        'Total Detalle': 49400,
+      },
+      {
+        'Nombre Doc': '33 Factura Electronica',
+        'Nmero del Documento': 1176,
+        'Nombre del Vendedor': 'YESSIKA ARRIECHE',
+        'Código del Cliente': '78.409.120-1',
+        Fecha: '2026-02-04',
+        'Cod. Producto': 'DESPACHO',
+        'Desc. Producto': 'SERVICIO DESPACHO',
+        Cantidad: 1,
+        'Precio Unitario': 9000,
+        'Total Detalle': 9000,
+      },
+    ], '2026-02', products);
+
+    expect(result.errors).toEqual([]);
+    expect(result.validRows).toBe(1);
+    expect(result.rows[0]?.sku).toBe('HA4050');
+    expect(result.rows[0]?.totalAmountCLP).toBe(49400);
+    expect(result.warnings.some((warning) => warning.includes('SERVICIO DESPACHO'))).toBe(true);
+    expect(result.warnings.some((warning) => warning.includes('$9.000'))).toBe(true);
   });
 
   it('resta devoluciones del reporte comercial cuando la cantidad viene negativa', () => {
