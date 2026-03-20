@@ -827,7 +827,7 @@ export const parseBalanceWorksheetRows = (
         accountName: 'Resultado',
         section: 'OTROS',
         subsection: 'Control Balance',
-        amountCLP: parseNumber(row[9]) - parseNumber(row[8]),
+        amountCLP: parseNumber(row[8]) - parseNumber(row[9]),
         sourcePeriodKey: selectedPeriodKey,
         isSubtotal: true,
       });
@@ -842,15 +842,9 @@ export const parseBalanceWorksheetRows = (
     if (!rawCode.startsWith('1.') && !rawCode.startsWith('2.')) continue;
 
     const section = inferBalanceSectionFromAccountCode(rawCode);
-    let amountCLP = 0;
-
-    if (rawCode === '2.4.1500.30.01') {
-      amountCLP = parseNumber(row[7]) - parseNumber(row[6]);
-    } else if (rawCode.startsWith('1.')) {
-      amountCLP = parseNumber(row[6]);
-    } else {
-      amountCLP = parseNumber(row[7]);
-    }
+    const amountCLP = rawCode.startsWith('1.')
+      ? parseNumber(row[6]) - parseNumber(row[7])
+      : parseNumber(row[7]) - parseNumber(row[6]);
 
     parsedRows.push({
       lineOrder: index + 1,

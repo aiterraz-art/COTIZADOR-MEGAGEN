@@ -1,7 +1,4 @@
-import {
-  findMonthlyBalanceTargetRow,
-  MONTHLY_BALANCE_TARGET_ROWS,
-} from '../data/monthlyBalanceDefinitions';
+import { MONTHLY_BALANCE_TARGET_ROWS } from '../data/monthlyBalanceDefinitions';
 import { MONTHLY_BALANCE_SOURCE_NET_INCOME_CONTROL_CODE } from '../types/monthlyAnalysis';
 import type {
   MonthlyBalanceCustomMappingResult,
@@ -21,8 +18,6 @@ interface BuildMonthlyBalanceCustomMappingOptions {
   customPnl?: MonthlyPnlCustomMappingResult | null;
   fallbackNetIncomeCLP?: number | null;
 }
-
-const asPositiveMagnitude = (value: number): number => (value < 0 ? Math.abs(value) : value);
 
 const toSourceRows = (lines: MonthlyBalanceLine[]): MonthlyBalanceSourceRow[] => lines.map((line) => ({
   lineOrder: line.lineOrder,
@@ -54,14 +49,9 @@ const createMappedLineIndex = (): Map<string, MonthlyBalanceMappedLine> => {
 };
 
 const normalizeTargetAmount = (
-  targetKey: string,
+  _targetKey: string,
   amountCLP: number,
-): number => {
-  const definition = findMonthlyBalanceTargetRow(targetKey);
-  if (definition?.isContraAsset) return -asPositiveMagnitude(amountCLP);
-  if (targetKey === 'retained_earnings') return amountCLP;
-  return asPositiveMagnitude(amountCLP);
-};
+): number => amountCLP;
 
 const resolveNetIncomeCLP = (
   customPnl: MonthlyPnlCustomMappingResult | null | undefined,

@@ -57,8 +57,8 @@ describe('monthlyBalanceCustomEngine', () => {
       makeBalanceLine({ lineOrder: 13, accountCode: '1.2.1050.10.02', accountName: 'GARANTIA DE ARRIENDO', amountCLP: 25, section: 'ACTIVO_NO_CORRIENTE' }),
       makeBalanceLine({ lineOrder: 14, accountCode: '1.2.1210.30.02', accountName: 'VEHICULOS', amountCLP: 130, section: 'ACTIVO_NO_CORRIENTE' }),
       makeBalanceLine({ lineOrder: 15, accountCode: '1.2.1210.30.04', accountName: 'EQUIPOS COMPUTACIONALES', amountCLP: 200, section: 'ACTIVO_NO_CORRIENTE' }),
-      makeBalanceLine({ lineOrder: 16, accountCode: '1.2.1210.70.02', accountName: 'D A VEHICULOS', amountCLP: 30, section: 'ACTIVO_NO_CORRIENTE' }),
-      makeBalanceLine({ lineOrder: 17, accountCode: '1.2.1210.70.04', accountName: 'D A EQUIPOS COMPUTACIONALES', amountCLP: 50, section: 'ACTIVO_NO_CORRIENTE' }),
+      makeBalanceLine({ lineOrder: 16, accountCode: '1.2.1210.70.02', accountName: 'D A VEHICULOS', amountCLP: -30, section: 'ACTIVO_NO_CORRIENTE' }),
+      makeBalanceLine({ lineOrder: 17, accountCode: '1.2.1210.70.04', accountName: 'D A EQUIPOS COMPUTACIONALES', amountCLP: -50, section: 'ACTIVO_NO_CORRIENTE' }),
       makeBalanceLine({ lineOrder: 18, accountCode: '2.1.1010.30.20', accountName: 'TARJETA VISA', amountCLP: 5, section: 'PASIVO_CORRIENTE' }),
       makeBalanceLine({ lineOrder: 19, accountCode: '2.1.1070.20.01', accountName: 'PROVEEDORES NACIONALES', amountCLP: 300, section: 'PASIVO_CORRIENTE' }),
       makeBalanceLine({ lineOrder: 20, accountCode: '2.1.1070.20.02', accountName: 'PROVEEDORES EXTRANJEROS', amountCLP: 100, section: 'PASIVO_CORRIENTE' }),
@@ -133,5 +133,18 @@ describe('monthlyBalanceCustomEngine', () => {
     expect(result.warnings).toContain('La cuenta CONTRACUENTA DE APERTURA se ignora en el balance objetivo y viene con saldo distinto de cero.');
     expect(result.warnings).toContain('Hay cuentas nuevas en el Balance que aún no tienen regla de tratamiento.');
     expect(result.warnings).toContain('El Net Income del ER difiere del Resultado del balance por 3.');
+  });
+
+  it('preserva saldos netos negativos cuando una cuenta queda en la columna opuesta a su naturaleza', () => {
+    const result = buildMonthlyBalanceCustomMapping([
+      makeBalanceLine({ accountCode: '1.1.1040.10.07', accountName: 'WEBPAY', amountCLP: -20 }),
+      makeBalanceLine({ accountCode: '2.1.1070.20.03', accountName: 'FACTURAS POR RECIBIR', amountCLP: -35, section: 'PASIVO_CORRIENTE' }),
+    ], {
+      customPnl: makeCustomPnl(0),
+    });
+
+    expect(result.mappedLines.find((line) => line.targetKey === 'undeposited_funds')?.amountCLP).toBe(-20);
+    expect(result.mappedLines.find((line) => line.targetKey === 'accounts_payable_other')?.amountCLP).toBe(-35);
+    expect(result.unmappedSourceLines).toHaveLength(0);
   });
 });

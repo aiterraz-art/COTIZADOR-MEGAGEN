@@ -74,8 +74,10 @@ describe('monthlyAnalysisParser', () => {
       ['Periodo del 01/01/2026 al 28/02/2026', '', '', '', '', '', '', '', '', ''],
       ['Cuenta', 'Descripción', 'Debe $', 'Haber $', 'Deudor $', 'Acreedor $', 'Activo $', 'Pasivo $', 'Pérdida $', 'Ganancia $'],
       ['1.1.1010.20.07', 'BCO_BCI - 32832061', 10, 5, 5, 0, 5, 0, 0, 0],
+      ['1.1.1040.10.07', 'WEBPAY', 0, 2, 0, 2, 0, 2, 0, 0],
       ['1.1.1080.50.01', 'IMPORTACIONES EN TRANSITO', 0, 0, 0, 0, 0, 0, 0, 0],
       ['2.1.1070.20.02', 'PROVEEDORES EXTRANJEROS', 1, 4, 0, 3, 0, 3, 0, 0],
+      ['2.1.1070.20.03', 'FACTURAS POR RECIBIR', 7, 0, 7, 0, 7, 0, 0, 0],
       ['2.4.1500.30.01', 'PERDIDAS ACUMULADAS', 4, 0, 4, 0, 4, 0, 0, 0],
       ['3.1.1010.10.01', 'VENTAS', 0, 100, 0, 100, 0, 0, 0, 100],
       ['Resultado', '', '', '', '', '', '', '', 25, 10],
@@ -86,18 +88,22 @@ describe('monthlyAnalysisParser', () => {
     expect(result.detectedPeriodKeys).toEqual(['2026-01', '2026-02']);
     expect(result.rows.map((row) => row.accountCode)).toEqual([
       '1.1.1010.20.07',
+      '1.1.1040.10.07',
       '1.1.1080.50.01',
       '2.1.1070.20.02',
+      '2.1.1070.20.03',
       '2.4.1500.30.01',
       MONTHLY_BALANCE_SOURCE_NET_INCOME_CONTROL_CODE,
     ]);
     expect(result.rows[0]?.amountCLP).toBe(5);
-    expect(result.rows[1]?.amountCLP).toBe(0);
-    expect(result.rows[2]?.amountCLP).toBe(3);
-    expect(result.rows[3]?.amountCLP).toBe(-4);
-    expect(result.rows[3]?.section).toBe('PATRIMONIO');
-    expect(result.rows[4]?.amountCLP).toBe(-15);
-    expect(result.rows[4]?.isSubtotal).toBe(true);
+    expect(result.rows[1]?.amountCLP).toBe(-2);
+    expect(result.rows[2]?.amountCLP).toBe(0);
+    expect(result.rows[3]?.amountCLP).toBe(3);
+    expect(result.rows[4]?.amountCLP).toBe(-7);
+    expect(result.rows[5]?.amountCLP).toBe(-4);
+    expect(result.rows[5]?.section).toBe('PATRIMONIO');
+    expect(result.rows[6]?.amountCLP).toBe(15);
+    expect(result.rows[6]?.isSubtotal).toBe(true);
   });
 
   it('parsea ER completo y detecta resultados explícitos', () => {
