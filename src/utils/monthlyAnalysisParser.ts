@@ -2,6 +2,7 @@ import * as XLSX from 'xlsx';
 import Papa from 'papaparse';
 import type { Product } from '../data/mockProducts';
 import { findImplantDefinition } from '../data/implantDefinitions';
+import { MONTHLY_BALANCE_SOURCE_NET_INCOME_CONTROL_CODE } from '../types/monthlyAnalysis';
 import type {
   MonthlyBalanceLine,
   MonthlyBalanceSection,
@@ -380,6 +381,39 @@ const collectDetectedPeriodKeysFromMatrix = (rows: SheetMatrixRow[]): string[] =
   return Array.from(detected).sort();
 };
 
+const normalizeMatrixCell = (value: unknown): string => normalize(String(value ?? ''));
+
+const findBalanceWorksheetHeaderIndex = (rows: SheetMatrixRow[]): number => rows.findIndex((row) => {
+  const normalizedRow = row.map((cell) => normalizeMatrixCell(cell));
+  if (!normalizedRow.length) return false;
+
+  return normalizedRow[0] === 'cuenta'
+    && normalizedRow.some((cell) => cell.includes('activo'))
+    && normalizedRow.some((cell) => cell.includes('pasivo'));
+});
+
+const inferBalanceSectionFromAccountCode = (accountCode: string): MonthlyBalanceSection => {
+  if (accountCode.startsWith('1.1.')) return 'ACTIVO_CORRIENTE';
+  if (accountCode.startsWith('1.2.') || accountCode.startsWith('1.3.') || accountCode.startsWith('1.4.')) {
+    return 'ACTIVO_NO_CORRIENTE';
+  }
+  if (accountCode.startsWith('2.1.')) return 'PASIVO_CORRIENTE';
+  if (accountCode.startsWith('2.2.') || accountCode.startsWith('2.3.')) return 'PASIVO_NO_CORRIENTE';
+  if (accountCode.startsWith('2.4.')) return 'PATRIMONIO';
+  return 'OTROS';
+};
+
+const getBalanceSectionLabel = (section: MonthlyBalanceSection): string => {
+  if (section === 'ACTIVO_CORRIENTE') return 'Activo Corriente';
+  if (section === 'ACTIVO_NO_CORRIENTE') return 'Activo No Corriente';
+  if (section === 'PASIVO_CORRIENTE') return 'Pasivo Corriente';
+  if (section === 'PASIVO_NO_CORRIENTE') return 'Pasivo No Corriente';
+  if (section === 'PATRIMONIO') return 'Patrimonio';
+  return 'Otros';
+};
+
+const isBalanceWorksheetAccountCode = (value: string): boolean => /^\d+(?:\.\d+)+$/.test(value.trim());
+
 const isSubtotalName = (value: string): boolean => {
   const normalized = normalize(value);
   return normalized.includes('total')
@@ -748,6 +782,103 @@ export const parseBalanceRows = (
   };
 };
 
+export const parseBalanceWorksheetRows = (
+  rows: SheetMatrixRow[],
+  selectedPeriodKey: string,
+  fileName = '',
+): MonthlyParseResult<MonthlyBalanceLine> => {
+  const warnings: string[] = [];
+  const errors: string[] = [];
+  const detectedPeriodKeys = collectDetectedPeriodKeysFromMatrix(rows);
+  const parsedRows: MonthlyBalanceLine[] = [];
+
+  if (!rows.length) {
+    errors.push('El archivo de balance está vacío.');
+  }
+
+  evaluateDetectedPeriods(selectedPeriodKey, detectedPeriodKeys, errors, warnings);
+
+  const headerIndex = findBalanceWorksheetHeaderIndex(rows);
+  if (headerIndex === -1) {
+    errors.push('No se encontró la cabecera esperada del balance exportado.');
+    return {
+      fileName,
+      rows: [],
+      warnings,
+      errors,
+      totalRows: rows.length,
+      validRows: 0,
+      detectedPeriodKeys,
+    };
+  }
+
+  for (let index = headerIndex + 1; index < rows.length; index += 1) {
+    const row = rows[index];
+    const rawCode = String(row[0] ?? '').trim();
+    const rawName = String(row[1] ?? '').trim();
+    const normalizedCode = normalize(rawCode);
+
+    if (!rawCode && !rawName) continue;
+
+    if (normalizedCode === 'resultado') {
+      parsedRows.push({
+        lineOrder: index + 1,
+        accountCode: MONTHLY_BALANCE_SOURCE_NET_INCOME_CONTROL_CODE,
+        accountName: 'Resultado',
+        section: 'OTROS',
+        subsection: 'Control Balance',
+        amountCLP: parseNumber(row[9]) - parseNumber(row[8]),
+        sourcePeriodKey: selectedPeriodKey,
+        isSubtotal: true,
+      });
+      continue;
+    }
+
+    if (normalizedCode === 'total' || normalizedCode === 'sumas parciales' || normalizedCode === 'suma total') {
+      continue;
+    }
+
+    if (!isBalanceWorksheetAccountCode(rawCode)) continue;
+    if (!rawCode.startsWith('1.') && !rawCode.startsWith('2.')) continue;
+
+    const section = inferBalanceSectionFromAccountCode(rawCode);
+    let amountCLP = 0;
+
+    if (rawCode === '2.4.1500.30.01') {
+      amountCLP = parseNumber(row[7]) - parseNumber(row[6]);
+    } else if (rawCode.startsWith('1.')) {
+      amountCLP = parseNumber(row[6]);
+    } else {
+      amountCLP = parseNumber(row[7]);
+    }
+
+    parsedRows.push({
+      lineOrder: index + 1,
+      accountCode: rawCode,
+      accountName: rawName,
+      section,
+      subsection: getBalanceSectionLabel(section),
+      amountCLP,
+      sourcePeriodKey: selectedPeriodKey,
+      isSubtotal: false,
+    });
+  }
+
+  if (!parsedRows.filter((row) => row.accountCode !== MONTHLY_BALANCE_SOURCE_NET_INCOME_CONTROL_CODE).length) {
+    errors.push('No se detectaron líneas válidas en el balance exportado.');
+  }
+
+  return {
+    fileName,
+    rows: parsedRows,
+    warnings,
+    errors,
+    totalRows: rows.length,
+    validRows: parsedRows.length,
+    detectedPeriodKeys,
+  };
+};
+
 export const parsePnlRows = (
   rows: TabularRow[],
   selectedPeriodKey: string,
@@ -1053,6 +1184,15 @@ export const parseInventoryRows = (
 };
 
 export const parseMonthlyBalanceFile = async (file: File, selectedPeriodKey: string): Promise<MonthlyParseResult<MonthlyBalanceLine>> => {
+  const extension = file.name.split('.').pop()?.toLowerCase();
+  if (extension === 'xlsx' || extension === 'xls') {
+    const matrix = await readSheetMatrix(file);
+    const specializedResult = parseBalanceWorksheetRows(matrix, selectedPeriodKey, file.name);
+    if (!specializedResult.errors.some((error) => error.includes('cabecera esperada'))) {
+      return specializedResult;
+    }
+  }
+
   const rows = await readSheetRows(file);
   return parseBalanceRows(rows, selectedPeriodKey, file.name);
 };

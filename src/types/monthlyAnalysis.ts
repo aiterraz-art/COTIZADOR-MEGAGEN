@@ -28,6 +28,10 @@ export type MonthlyPnlTargetSectionKey =
   | 'INCOME_TAX'
   | 'NET_PROFIT';
 
+export type MonthlyBalanceTargetSectionKey = 'ASSETS' | 'LIABILITIES_EQUITY';
+export type MonthlyBalanceTargetRowKind = 'header' | 'detail' | 'subtotal' | 'grand_total';
+export const MONTHLY_BALANCE_SOURCE_NET_INCOME_CONTROL_CODE = '__BALANCE_SOURCE_NET_INCOME_CONTROL__';
+
 export interface MonthlyBalanceLine {
   lineOrder: number;
   accountCode: string;
@@ -155,6 +159,54 @@ export interface MonthlyPnlMappingTotals {
   totalNonOperatingExpensesCLP: number;
 }
 
+export interface MonthlyBalanceSourceRow {
+  lineOrder: number;
+  accountCode: string;
+  accountName: string;
+  amountCLP: number;
+  sourceSectionLabel: string;
+  isSubtotal: boolean;
+}
+
+export interface MonthlyBalanceMappedSource {
+  lineOrder: number;
+  accountCode: string;
+  accountName: string;
+  amountCLP: number;
+  sourceSectionLabel: string;
+}
+
+export interface MonthlyBalanceMappedLine {
+  targetKey: string;
+  targetLabel: string;
+  sectionKey: MonthlyBalanceTargetSectionKey;
+  amountCLP: number;
+  kind: MonthlyBalanceTargetRowKind;
+  level: number;
+  parentKey?: string;
+  sources: MonthlyBalanceMappedSource[];
+  notes?: string[];
+}
+
+export interface MonthlyBalanceMappingTotals {
+  totalAssetsCLP: number;
+  totalLiabilitiesCLP: number;
+  totalEquityCLP: number;
+  totalLiabilitiesAndEquityCLP: number;
+}
+
+export interface MonthlyBalanceCustomMappingResult {
+  mappedLines: MonthlyBalanceMappedLine[];
+  sourceRows: MonthlyBalanceSourceRow[];
+  unmappedSourceLines: MonthlyBalanceSourceRow[];
+  totals: MonthlyBalanceMappingTotals;
+  warnings: string[];
+  errors: string[];
+  balanceDifferenceCLP: number;
+  sourceNetIncomeControlCLP?: number | null;
+  netIncomeDifferenceCLP?: number | null;
+}
+
 export interface MonthlyPnlCustomMappingResult {
   mappedLines: MonthlyPnlMappedLine[];
   sourceRows: MonthlyPnlSourceRow[];
@@ -170,6 +222,7 @@ export interface MonthlyAnalysisSummary {
   pnl: MonthlyPnlSummary;
   inventory: MonthlyInventorySummary;
   manualInputs?: MonthlyManualInputs;
+  customBalance?: MonthlyBalanceCustomMappingResult | null;
   customPnl?: MonthlyPnlCustomMappingResult | null;
 }
 
@@ -218,5 +271,6 @@ export interface UpsertMonthlyClosurePayload {
   pnlLines: MonthlyPnlLine[];
   inventoryMovements: MonthlyInventoryMovement[];
   manualInputs?: MonthlyManualInputs;
+  customBalance?: MonthlyBalanceCustomMappingResult | null;
   customPnl?: MonthlyPnlCustomMappingResult | null;
 }

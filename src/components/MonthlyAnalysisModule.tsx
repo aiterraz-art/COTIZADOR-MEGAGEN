@@ -18,6 +18,7 @@ import {
 } from '../lib/monthlyAnalysisRepository';
 import type {
   MonthlyAnalysisSummary,
+  MonthlyBalanceCustomMappingResult,
   MonthlyBalanceLine,
   MonthlyComparisonItem,
   MonthlyInventoryFamily,
@@ -36,6 +37,7 @@ import {
   hasMinimumBalanceStructure,
   hasMinimumPnlStructure,
 } from '../utils/monthlyAnalysisEngine';
+import { buildMonthlyBalanceCustomMapping } from '../utils/monthlyBalanceCustomEngine';
 import { buildMonthlyPnlCustomMapping } from '../utils/monthlyPnlCustomEngine';
 import {
   parseMonthlyBalanceFile,
@@ -47,6 +49,7 @@ import {
   findImplantDefinition,
   IMPLANT_DEFINITIONS,
 } from '../data/implantDefinitions';
+import { MONTHLY_BALANCE_TARGET_SECTIONS } from '../data/monthlyBalanceDefinitions';
 import { MONTHLY_PNL_TARGET_SECTIONS } from '../data/monthlyPnlDefinitions';
 
 type MonthlyTab = 'summary' | 'balance' | 'pnl' | 'inventory';
@@ -369,6 +372,14 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
     draft.pnl ? buildMonthlyPnlCustomMapping(draft.pnl.rows, draft.manualInputs) : null
   ), [draft.manualInputs, draft.pnl]);
 
+  const draftCustomBalance = useMemo<MonthlyBalanceCustomMappingResult | null>(() => (
+    draft.balance
+      ? buildMonthlyBalanceCustomMapping(draft.balance.rows, {
+        customPnl: draftCustomPnl,
+      })
+      : null
+  ), [draft.balance, draftCustomPnl]);
+
   const selectedCustomPnl = useMemo<MonthlyPnlCustomMappingResult | null>(() => {
     if (!selectedClosure) return null;
     if (!selectedClosure.pnlLines.length) return null;
@@ -378,8 +389,27 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
     );
   }, [selectedClosure]);
 
+  const selectedCustomBalance = useMemo<MonthlyBalanceCustomMappingResult | null>(() => {
+    if (!selectedClosure) return null;
+    if (!selectedClosure.balanceLines.length) return null;
+
+    if (
+      selectedClosure.summary.customBalance
+      && selectedClosure.summary.customBalance.sourceNetIncomeControlCLP !== undefined
+      && selectedClosure.summary.customBalance.netIncomeDifferenceCLP !== undefined
+    ) {
+      return selectedClosure.summary.customBalance;
+    }
+
+    return buildMonthlyBalanceCustomMapping(selectedClosure.balanceLines, {
+      customPnl: selectedCustomPnl,
+      fallbackNetIncomeCLP: selectedClosure.summary.pnl.netIncomeCLP,
+    });
+  }, [selectedClosure, selectedCustomPnl]);
+
   const displaySummary = draftSummary ?? selectedClosure?.summary ?? null;
   const displayPeriodKey = draftSummary ? periodKey : selectedClosure?.periodKey ?? null;
+  const displayCustomBalance = draftCustomBalance ?? selectedCustomBalance;
   const displayCustomPnl = draftCustomPnl ?? selectedCustomPnl;
   const displayManualInputs = draft.pnl
     ? draft.manualInputs
@@ -393,10 +423,10 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
   const draftMessages = useMemo(() => {
     const combined = combineMessages(draft.balance, draft.pnl, draft.inventory);
     return {
-      warnings: [...combined.warnings, ...(draftCustomPnl?.warnings ?? [])],
+      warnings: [...combined.warnings, ...(draftCustomPnl?.warnings ?? []), ...(draftCustomBalance?.warnings ?? [])],
       errors: combined.errors,
     };
-  }, [draft.balance, draft.inventory, draft.pnl, draftCustomPnl]);
+  }, [draft.balance, draft.inventory, draft.pnl, draftCustomBalance, draftCustomPnl]);
   const draftValidationErrors = useMemo(() => {
     const errors: string[] = [];
 
@@ -424,12 +454,21 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
     && draftSummary,
   );
 
-  const displayBalanceLines = draft.balance?.rows ?? selectedClosure?.balanceLines ?? [];
   const displayPnlLines = draft.pnl?.rows ?? selectedClosure?.pnlLines ?? [];
   const displayInventoryMovements = useMemo(
     () => draft.inventory?.rows ?? selectedClosure?.inventoryMovements ?? [],
     [draft.inventory, selectedClosure?.inventoryMovements],
   );
+  const displayBalanceTraceabilityRows = useMemo(() => (
+    displayCustomBalance?.mappedLines.flatMap((line) => line.sources.map((source) => ({
+      ...source,
+      targetKey: line.targetKey,
+      targetLabel: line.targetLabel,
+    }))) ?? []
+  ), [displayCustomBalance]);
+  const displayBalanceLineIndex = useMemo(() => new Map(
+    displayCustomBalance?.mappedLines.map((line) => [line.targetKey, line]) ?? [],
+  ), [displayCustomBalance]);
   const displayPnlTraceabilityRows = useMemo(() => (
     displayCustomPnl?.mappedLines.flatMap((line) => line.sources.map((source) => ({
       ...source,
@@ -447,6 +486,16 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
       section.accounts.reduce((acc, account) => acc + (displayPnlLineIndex.get(account.key)?.amountCLP ?? 0), 0),
     ]),
   ), [displayPnlLineIndex]);
+  const totalAssetsLine = displayBalanceLineIndex.get('total_assets') ?? null;
+  const totalLiabilitiesAndEquityLine = displayBalanceLineIndex.get('total_liabilities_and_equity') ?? null;
+  const balanceNetIncomeLine = displayBalanceLineIndex.get('net_income') ?? null;
+  const displayBalanceInlineWarnings = useMemo(() => (
+    displayCustomBalance?.warnings.filter((warning) => (
+      !warning.startsWith('Hay cuentas nuevas en el Balance')
+      && !warning.startsWith('El balance no cuadra')
+      && !warning.startsWith('El Net Income del ER difiere')
+    )) ?? []
+  ), [displayCustomBalance]);
   const sourceNetProfitLine = useMemo(() => displayPnlLines.find((line) => {
     const normalizedName = normalizeMetricLabel(line.accountName);
     return normalizedName === 'resultado ejercicio' || normalizedName === 'resultado del ej antes de imp';
@@ -701,6 +750,36 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
     );
   };
 
+  const renderSourceAccountList = (
+    sources: Array<{
+      accountCode: string;
+      accountName: string;
+      amountCLP: number;
+    }>,
+    options?: {
+      accent?: string;
+    },
+  ): React.ReactNode => {
+    if (!sources.length) return null;
+
+    return (
+      <div style={{ display: 'grid', gap: '0.22rem', marginTop: '0.3rem' }}>
+        {sources.map((source, index) => (
+          <div
+            key={`${source.accountCode}-${source.accountName}-${index}`}
+            style={{
+              fontSize: '0.72rem',
+              lineHeight: 1.3,
+              color: options?.accent ?? 'var(--text-muted)',
+            }}
+          >
+            {source.accountCode || 'Sin código'} · {source.accountName}
+          </div>
+        ))}
+      </div>
+    );
+  };
+
   const renderQuickCopyPanel = (
     title: string,
     metrics: QuickCopyMetric[],
@@ -860,6 +939,7 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
         pnlLines: draft.pnl.rows,
         inventoryMovements: draft.inventory.rows,
         manualInputs: draft.manualInputs,
+        customBalance: draftCustomBalance,
         customPnl: draftCustomPnl,
       });
 
@@ -1197,32 +1277,254 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
             ) : null}
 
             {activeTab === 'balance' ? (
-              displayBalanceLines.length ? (
-                <div className="table-container">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>#</th>
-                        <th>Código</th>
-                        <th>Cuenta</th>
-                        <th>Sección</th>
-                        <th>Subsección</th>
-                        <th style={{ textAlign: 'right' }}>Monto CLP</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {displayBalanceLines.map((line) => (
-                        <tr key={`${line.lineOrder}-${line.accountCode}-${line.accountName}`}>
-                          <td>{line.lineOrder}</td>
-                          <td>{line.accountCode || '-'}</td>
-                          <td style={{ fontWeight: line.isSubtotal ? 800 : 500 }}>{line.accountName}</td>
-                          <td>{line.section}</td>
-                          <td>{line.subsection || '-'}</td>
-                          <td style={{ textAlign: 'right', fontWeight: line.isSubtotal ? 800 : 600 }}>{formatCLP(line.amountCLP)}</td>
-                        </tr>
+              displayCustomBalance ? (
+                <div style={{ display: 'grid', gap: '1rem' }}>
+                  {displayBalanceInlineWarnings.length ? (
+                    <div style={{
+                      padding: '0.9rem',
+                      borderRadius: '12px',
+                      border: '1px solid rgba(245,158,11,0.28)',
+                      background: 'rgba(245,158,11,0.08)',
+                      color: 'var(--warning)',
+                      display: 'grid',
+                      gap: '0.35rem',
+                    }}>
+                      {displayBalanceInlineWarnings.map((warning) => (
+                        <div key={warning}>{warning}</div>
                       ))}
-                    </tbody>
-                  </table>
+                    </div>
+                  ) : null}
+
+                  <div className="finance-card" style={{ padding: '1rem' }}>
+                    <h3 style={{ fontSize: '1rem', marginBottom: '0.75rem' }}>Control de Cuadre</h3>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.75rem' }}>
+                      <div>
+                        <div className="text-muted" style={{ fontSize: '0.74rem', marginBottom: '0.35rem' }}>TOTAL ASSETS</div>
+                        {renderCopyableCurrencyButton('balance-total-assets', totalAssetsLine?.amountCLP ?? 0, {
+                          minWidth: '180px',
+                        })}
+                      </div>
+                      <div>
+                        <div className="text-muted" style={{ fontSize: '0.74rem', marginBottom: '0.35rem' }}>TOTAL LIABILITIES &amp; EQUITY</div>
+                        {renderCopyableCurrencyButton('balance-total-liabilities-equity', totalLiabilitiesAndEquityLine?.amountCLP ?? 0, {
+                          minWidth: '180px',
+                        })}
+                      </div>
+                      <div>
+                        <div className="text-muted" style={{ fontSize: '0.74rem', marginBottom: '0.35rem' }}>Diferencia</div>
+                        {renderCopyableCurrencyButton('balance-difference', displayCustomBalance.balanceDifferenceCLP, {
+                          minWidth: '180px',
+                        })}
+                      </div>
+                    </div>
+                    <div
+                      style={{
+                        marginTop: '0.75rem',
+                        fontSize: '0.8rem',
+                        color: displayCustomBalance.balanceDifferenceCLP === 0 ? 'var(--success)' : 'var(--warning)',
+                        fontWeight: 600,
+                      }}
+                    >
+                      {displayCustomBalance.balanceDifferenceCLP === 0
+                        ? 'El balance cuadra correctamente.'
+                        : 'El balance no cuadra. La diferencia se muestra arriba como advertencia visual.'}
+                    </div>
+                  </div>
+
+                  <div className="finance-card" style={{ padding: '1rem' }}>
+                    <h3 style={{ fontSize: '1rem', marginBottom: '0.75rem' }}>Control de Resultado</h3>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.75rem' }}>
+                      <div>
+                        <div className="text-muted" style={{ fontSize: '0.74rem', marginBottom: '0.35rem' }}>Resultado Fuente Balance</div>
+                        {displayCustomBalance.sourceNetIncomeControlCLP === null || displayCustomBalance.sourceNetIncomeControlCLP === undefined ? (
+                          <span className="text-muted">No detectado</span>
+                        ) : renderCopyableCurrencyButton('balance-source-net-income', displayCustomBalance.sourceNetIncomeControlCLP, {
+                          minWidth: '180px',
+                        })}
+                      </div>
+                      <div>
+                        <div className="text-muted" style={{ fontSize: '0.74rem', marginBottom: '0.35rem' }}>Net Income ER</div>
+                        {renderCopyableCurrencyButton('balance-er-net-income', balanceNetIncomeLine?.amountCLP ?? 0, {
+                          minWidth: '180px',
+                        })}
+                      </div>
+                      <div>
+                        <div className="text-muted" style={{ fontSize: '0.74rem', marginBottom: '0.35rem' }}>Diferencia</div>
+                        {displayCustomBalance.netIncomeDifferenceCLP === null || displayCustomBalance.netIncomeDifferenceCLP === undefined ? (
+                          <span className="text-muted">N/D</span>
+                        ) : renderCopyableCurrencyButton('balance-net-income-difference', displayCustomBalance.netIncomeDifferenceCLP, {
+                          minWidth: '180px',
+                        })}
+                      </div>
+                    </div>
+                    <div
+                      style={{
+                        marginTop: '0.75rem',
+                        fontSize: '0.8rem',
+                        color: displayCustomBalance.netIncomeDifferenceCLP === null || displayCustomBalance.netIncomeDifferenceCLP === 0
+                          ? 'var(--success)'
+                          : 'var(--warning)',
+                        fontWeight: 600,
+                      }}
+                    >
+                      {displayCustomBalance.sourceNetIncomeControlCLP === null || displayCustomBalance.sourceNetIncomeControlCLP === undefined
+                        ? 'El archivo de balance no trajo una fila Resultado utilizable para control.'
+                        : displayCustomBalance.netIncomeDifferenceCLP === 0
+                          ? 'El Resultado del balance coincide con el Net Income del ER.'
+                          : 'El Resultado del balance no coincide con el Net Income del ER.'}
+                    </div>
+                  </div>
+
+                  <div className="finance-card" style={{ padding: '1rem' }}>
+                    <h3 style={{ fontSize: '1rem', marginBottom: '0.75rem' }}>Balance Objetivo</h3>
+                    <div className="table-container">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Cuenta objetivo</th>
+                            <th>Origen</th>
+                            <th style={{ textAlign: 'right' }}>Monto CLP</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {MONTHLY_BALANCE_TARGET_SECTIONS.map((section) => (
+                            <React.Fragment key={section.key}>
+                              <tr>
+                                <td colSpan={3} style={{ fontWeight: 900, letterSpacing: '0.04em', background: 'var(--surface)' }}>
+                                  {section.label}
+                                </td>
+                              </tr>
+                              {section.rows.map((row) => {
+                                const line = displayBalanceLineIndex.get(row.key);
+                                const amountCLP = line?.amountCLP ?? 0;
+                                const originLabel = row.kind === 'header'
+                                  ? 'Encabezado'
+                                  : row.key === 'net_income' && !line?.sources.length
+                                    ? 'Derivado desde ER'
+                                    : line?.sources.length
+                                      ? `${line.sources.length} cuenta(s) fuente`
+                                      : 'Calculado';
+                                const notes = line?.notes?.length ? line.notes : [];
+                                const fontWeight = row.kind === 'grand_total'
+                                  ? 900
+                                  : row.kind === 'subtotal'
+                                    ? 800
+                                    : row.kind === 'header'
+                                      ? 700
+                                      : 500;
+
+                                return (
+                                  <tr key={row.key}>
+                                    <td style={{ paddingLeft: `${row.level * 1.1}rem`, fontWeight }}>
+                                      <div>{row.label}</div>
+                                      {notes.length ? (
+                                        <div className="text-muted" style={{ fontSize: '0.72rem', marginTop: '0.2rem' }}>
+                                          {notes.join(' ')}
+                                        </div>
+                                      ) : null}
+                                    </td>
+                                    <td style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>
+                                      <div>{originLabel}</div>
+                                      {line?.sources.length
+                                        ? renderSourceAccountList(line.sources)
+                                        : null}
+                                    </td>
+                                    <td style={{ textAlign: 'right' }}>
+                                      {row.kind === 'header' ? (
+                                        <span className="text-muted">-</span>
+                                      ) : (
+                                        renderCopyableCurrencyButton(`balance-target-${row.key}`, amountCLP, {
+                                          subtle: true,
+                                          minWidth: '160px',
+                                          fontWeight,
+                                        })
+                                      )}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </React.Fragment>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {displayCustomBalance.unmappedSourceLines.length ? (
+                    <div className="finance-card" style={{ padding: '1rem', borderColor: 'rgba(245,158,11,0.28)', background: 'rgba(245,158,11,0.06)' }}>
+                      <h3 style={{ fontSize: '1rem', marginBottom: '0.75rem', color: 'var(--warning)' }}>Cuentas nuevas / sin tratar</h3>
+                      <div className="table-container">
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>#</th>
+                              <th>Código</th>
+                              <th>Descripción</th>
+                              <th>Sección fuente</th>
+                              <th style={{ textAlign: 'right' }}>Monto CLP</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {displayCustomBalance.unmappedSourceLines.map((line) => (
+                              <tr key={`balance-unmapped-${line.lineOrder}-${line.accountCode}-${line.accountName}`}>
+                                <td>{line.lineOrder}</td>
+                                <td>{line.accountCode || '-'}</td>
+                                <td>{line.accountName}</td>
+                                <td>{line.sourceSectionLabel || '-'}</td>
+                                <td style={{ textAlign: 'right' }}>
+                                  {renderCopyableCurrencyButton(`balance-unmapped-${line.lineOrder}`, line.amountCLP, {
+                                    subtle: true,
+                                    minWidth: '150px',
+                                  })}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <div className="finance-card" style={{ padding: '1rem' }}>
+                    <h3 style={{ fontSize: '1rem', marginBottom: '0.75rem' }}>Trazabilidad Fuente</h3>
+                    {displayBalanceTraceabilityRows.length ? (
+                      <div className="table-container">
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>#</th>
+                              <th>Código fuente</th>
+                              <th>Descripción fuente</th>
+                              <th>Sección fuente</th>
+                              <th>Fila objetivo</th>
+                              <th style={{ textAlign: 'right' }}>Monto CLP</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {displayBalanceTraceabilityRows.map((row) => (
+                              <tr key={`balance-trace-${row.targetKey}-${row.lineOrder}-${row.accountCode}-${row.accountName}`}>
+                                <td>{row.lineOrder}</td>
+                                <td>{row.accountCode || '-'}</td>
+                                <td>{row.accountName}</td>
+                                <td>{row.sourceSectionLabel || '-'}</td>
+                                <td>{row.targetLabel}</td>
+                                <td style={{ textAlign: 'right' }}>
+                                  {renderCopyableCurrencyButton(`balance-trace-${row.targetKey}-${row.lineOrder}`, row.amountCLP, {
+                                    subtle: true,
+                                    minWidth: '150px',
+                                  })}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <div style={{ padding: '1rem', border: '1px dashed var(--border)', borderRadius: '12px', background: 'var(--surface)' }}>
+                        No hay cuentas fuente mapeadas todavía. Cuando conectemos el archivo fuente del balance, aquí verás la trazabilidad completa.
+                      </div>
+                    )}
+                  </div>
                 </div>
               ) : (
                 <div style={{ padding: '1rem', border: '1px dashed var(--border)', borderRadius: '12px', background: 'var(--surface)' }}>
@@ -1343,7 +1645,12 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
                                       ) : null}
                                     </td>
                                     <td style={{ color: line?.isManual ? 'var(--warning)' : 'var(--text-muted)' }}>
-                                      {originLabel}
+                                      <div>{originLabel}</div>
+                                      {line?.sources.length
+                                        ? renderSourceAccountList(line.sources, {
+                                          accent: line?.isManual ? 'var(--warning)' : 'var(--text-muted)',
+                                        })
+                                        : null}
                                     </td>
                                     <td style={{ textAlign: 'right' }}>
                                       {renderCopyableCurrencyButton(`pnl-target-${account.key}`, line?.amountCLP ?? 0, {

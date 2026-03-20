@@ -3,7 +3,11 @@ import { pocketbase } from './pocketbase';
 import { supabase } from './supabase';
 import type {
   MonthlyAnalysisSummary,
+  MonthlyBalanceCustomMappingResult,
   MonthlyBalanceLine,
+  MonthlyBalanceMappedLine,
+  MonthlyBalanceMappedSource,
+  MonthlyBalanceSourceRow,
   MonthlyBalanceSection,
   MonthlyCloseListItem,
   MonthlyCloseRecord,
@@ -65,6 +69,7 @@ const emptySummary = (): MonthlyAnalysisSummary => ({
     adminSalaryManualCLP: null,
   },
   customPnl: null,
+  customBalance: null,
 });
 
 const toStringArray = (value: unknown): string[] => (
@@ -121,6 +126,46 @@ const parsePnlMappedLine = (value: unknown): MonthlyPnlMappedLine => {
   };
 };
 
+const parseBalanceSourceRow = (value: unknown): MonthlyBalanceSourceRow => {
+  const row = (value && typeof value === 'object' ? value : {}) as GenericRow;
+  return {
+    lineOrder: toNumber(row.lineOrder),
+    accountCode: String(row.accountCode || ''),
+    accountName: String(row.accountName || ''),
+    amountCLP: toNumber(row.amountCLP),
+    sourceSectionLabel: String(row.sourceSectionLabel || ''),
+    isSubtotal: Boolean(row.isSubtotal),
+  };
+};
+
+const parseBalanceMappedSource = (value: unknown): MonthlyBalanceMappedSource => {
+  const row = (value && typeof value === 'object' ? value : {}) as GenericRow;
+  return {
+    lineOrder: toNumber(row.lineOrder),
+    accountCode: String(row.accountCode || ''),
+    accountName: String(row.accountName || ''),
+    amountCLP: toNumber(row.amountCLP),
+    sourceSectionLabel: String(row.sourceSectionLabel || ''),
+  };
+};
+
+const parseBalanceMappedLine = (value: unknown): MonthlyBalanceMappedLine => {
+  const row = (value && typeof value === 'object' ? value : {}) as GenericRow;
+  return {
+    targetKey: String(row.targetKey || ''),
+    targetLabel: String(row.targetLabel || ''),
+    sectionKey: String(row.sectionKey || 'ASSETS') as MonthlyBalanceMappedLine['sectionKey'],
+    amountCLP: toNumber(row.amountCLP),
+    kind: ['header', 'detail', 'subtotal', 'grand_total'].includes(String(row.kind))
+      ? (String(row.kind) as MonthlyBalanceMappedLine['kind'])
+      : 'detail',
+    level: toNumber(row.level),
+    parentKey: row.parentKey ? String(row.parentKey) : undefined,
+    sources: Array.isArray(row.sources) ? row.sources.map(parseBalanceMappedSource) : [],
+    notes: toStringArray(row.notes),
+  };
+};
+
 const parseCustomPnl = (value: unknown): MonthlyPnlCustomMappingResult | null => {
   if (!value || typeof value !== 'object') return null;
 
@@ -140,6 +185,30 @@ const parseCustomPnl = (value: unknown): MonthlyPnlCustomMappingResult | null =>
     },
     warnings: toStringArray(row.warnings),
     errors: toStringArray(row.errors),
+  };
+};
+
+const parseCustomBalance = (value: unknown): MonthlyBalanceCustomMappingResult | null => {
+  if (!value || typeof value !== 'object') return null;
+
+  const row = value as GenericRow;
+  const totals = (row.totals && typeof row.totals === 'object' ? row.totals : {}) as GenericRow;
+
+  return {
+    mappedLines: Array.isArray(row.mappedLines) ? row.mappedLines.map(parseBalanceMappedLine) : [],
+    sourceRows: Array.isArray(row.sourceRows) ? row.sourceRows.map(parseBalanceSourceRow) : [],
+    unmappedSourceLines: Array.isArray(row.unmappedSourceLines) ? row.unmappedSourceLines.map(parseBalanceSourceRow) : [],
+    totals: {
+      totalAssetsCLP: toNumber(totals.totalAssetsCLP),
+      totalLiabilitiesCLP: toNumber(totals.totalLiabilitiesCLP),
+      totalEquityCLP: toNumber(totals.totalEquityCLP),
+      totalLiabilitiesAndEquityCLP: toNumber(totals.totalLiabilitiesAndEquityCLP),
+    },
+    warnings: toStringArray(row.warnings),
+    errors: toStringArray(row.errors),
+    balanceDifferenceCLP: toNumber(row.balanceDifferenceCLP),
+    sourceNetIncomeControlCLP: row.sourceNetIncomeControlCLP == null ? null : toNumber(row.sourceNetIncomeControlCLP),
+    netIncomeDifferenceCLP: row.netIncomeDifferenceCLP == null ? null : toNumber(row.netIncomeDifferenceCLP),
   };
 };
 
@@ -252,6 +321,7 @@ const parseSummary = (value: unknown): MonthlyAnalysisSummary => {
       unmappedSkuCount: toNumber((row.inventory as GenericRow | undefined)?.unmappedSkuCount),
     },
     manualInputs: parseManualInputs(row.manualInputs),
+    customBalance: parseCustomBalance(row.customBalance),
     customPnl: parseCustomPnl(row.customPnl),
   };
 };
@@ -409,6 +479,7 @@ export const upsertMonthlyClosure = async (payload: UpsertMonthlyClosurePayload)
     summary: {
       ...payload.summary,
       manualInputs: payload.manualInputs ?? payload.summary.manualInputs ?? { adminSalaryManualCLP: null },
+      customBalance: payload.customBalance ?? payload.summary.customBalance ?? null,
       customPnl: payload.customPnl ?? payload.summary.customPnl ?? null,
     },
     updated_at: new Date().toISOString(),
