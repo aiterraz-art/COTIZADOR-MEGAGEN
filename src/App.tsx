@@ -14,13 +14,17 @@ import CotizadorModule from './components/CotizadorModule';
 import MonthlyAnalysisModule from './components/MonthlyAnalysisModule';
 import {
   createProductRecord,
+  deleteImportSnapshotRecord,
   deleteProductRecord,
   deleteSimulationRecord,
+  fetchImportSnapshotRecords,
   fetchProductsList,
   fetchSimulationRecords,
   getDataBackendLabel,
   replaceProductsCatalog,
+  saveImportSnapshotRecord,
   saveSimulationRecord,
+  type SavedImportSnapshotRecord,
   type SavedSimulationRecord,
   type SimulationItemPayload,
   updateProductCategoryRecord,
@@ -97,20 +101,7 @@ interface ImportItemCalculated extends ImportItemRaw {
   suggestedIvaUnitCLP: number;
 }
 
-interface ImportCalculationSnapshot {
-  id: string;
-  name: string;
-  createdAt: string;
-  sourceFile: string;
-  currency: 'USD' | 'EUR';
-  importUsdRate: number;
-  euroRate: number;
-  shippingCost: number;
-  shippingCurrency: 'CLP' | 'USD' | 'EUR';
-  customsCostCLP: number;
-  targetGrossMarginPercent: number;
-  items: ImportItemRaw[];
-}
+type ImportCalculationSnapshot = SavedImportSnapshotRecord;
 
 const App: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
@@ -171,6 +162,9 @@ const App: React.FC = () => {
   const [targetGrossMarginPercentImport, setTargetGrossMarginPercentImport] = useState<number>(() => Number(localStorage.getItem(IMPORT_MARGIN_STORAGE_KEY)) || 50);
   const [importSectionTab, setImportSectionTab] = useState<'calculator' | 'saved'>('calculator');
   const [importSnapshots, setImportSnapshots] = useState<ImportCalculationSnapshot[]>(() => readStoredJSON<ImportCalculationSnapshot[]>(IMPORT_SNAPSHOTS_STORAGE_KEY) || []);
+  const [isLoadingImportSnapshots, setIsLoadingImportSnapshots] = useState(false);
+  const [importSnapshotsError, setImportSnapshotsError] = useState('');
+  const [isSavingImportSnapshot, setIsSavingImportSnapshot] = useState(false);
   const [importSearchTerm, setImportSearchTerm] = useState('');
   const [showSaveImportModal, setShowSaveImportModal] = useState(false);
   const [importSaveName, setImportSaveName] = useState('');
@@ -240,6 +234,12 @@ const App: React.FC = () => {
   useEffect(() => {
     fetchProducts();
   }, []);
+
+  useEffect(() => {
+    if (activeModule === 'imports' && importSectionTab === 'saved') {
+      fetchImportSnapshots();
+    }
+  }, [activeModule, importSectionTab]);
 
   // Fetch quotations when switching to history tab
   useEffect(() => {
@@ -477,6 +477,20 @@ const App: React.FC = () => {
       alert('Error al cargar cotizaciones: ' + (error as Error).message);
     } finally {
       setIsLoadingQuotations(false);
+    }
+  };
+
+  const fetchImportSnapshots = async () => {
+    setIsLoadingImportSnapshots(true);
+    setImportSnapshotsError('');
+    try {
+      const data = await fetchImportSnapshotRecords();
+      setImportSnapshots(data || []);
+    } catch (error) {
+      console.error('Error fetching import snapshots:', error);
+      setImportSnapshotsError(`No se pudieron cargar los cálculos permanentes desde ${getDataBackendLabel()}.`);
+    } finally {
+      setIsLoadingImportSnapshots(false);
     }
   };
 
@@ -1274,31 +1288,40 @@ const App: React.FC = () => {
     setShowSaveImportModal(true);
   };
 
-  const saveImportCalculationSnapshot = () => {
+  const saveImportCalculationSnapshot = async () => {
     const name = importSaveName.trim();
     if (!name) {
       alert('Ingresa un nombre para guardar.');
       return;
     }
 
-    const snapshot: ImportCalculationSnapshot = {
-      id: `${Date.now()}`,
-      name,
-      createdAt: new Date().toISOString(),
-      sourceFile: importSourceFile,
-      currency: importCurrency,
-      importUsdRate,
-      euroRate,
-      shippingCost: shippingCostCLP,
-      shippingCurrency,
-      customsCostCLP,
-      targetGrossMarginPercent: targetGrossMarginPercentImport,
-      items: importItems,
-    };
+    setIsSavingImportSnapshot(true);
+    try {
+      const snapshot = await saveImportSnapshotRecord({
+        name,
+        sourceFile: importSourceFile,
+        currency: importCurrency,
+        importUsdRate,
+        euroRate,
+        shippingCost: shippingCostCLP,
+        shippingCurrency,
+        customsCostCLP,
+        targetGrossMarginPercent: targetGrossMarginPercentImport,
+        items: importItems,
+      });
 
-    setImportSnapshots((prev) => [snapshot, ...prev]);
-    setShowSaveImportModal(false);
-    setImportSaveName('');
+      setImportSnapshots((prev) => [snapshot, ...prev.filter((existing) => existing.id !== snapshot.id)]);
+      setShowSaveImportModal(false);
+      setImportSaveName('');
+      setImportSectionTab('saved');
+      setImportSnapshotsError('');
+      alert(`Cálculo de importación guardado permanentemente en ${getDataBackendLabel()}.`);
+    } catch (error) {
+      console.error('Error saving import snapshot:', error);
+      alert('Error al guardar el cálculo de importación: ' + (error as Error).message);
+    } finally {
+      setIsSavingImportSnapshot(false);
+    }
   };
 
   const loadImportSnapshot = (snapshot: ImportCalculationSnapshot) => {
@@ -1314,8 +1337,16 @@ const App: React.FC = () => {
     setImportSectionTab('calculator');
   };
 
-  const deleteImportSnapshot = (snapshotId: string) => {
-    setImportSnapshots((prev) => prev.filter((snapshot) => snapshot.id !== snapshotId));
+  const deleteImportSnapshot = async (snapshotId: string) => {
+    if (!confirm('¿Eliminar este cálculo de importación guardado permanentemente?')) return;
+
+    try {
+      await deleteImportSnapshotRecord(snapshotId);
+      setImportSnapshots((prev) => prev.filter((snapshot) => snapshot.id !== snapshotId));
+    } catch (error) {
+      console.error('Error deleting import snapshot:', error);
+      alert('Error al eliminar el cálculo de importación: ' + (error as Error).message);
+    }
   };
 
   const formatCLP = (value: number) => {
@@ -1971,7 +2002,17 @@ const App: React.FC = () => {
                 </div>
               </div>
 
-              {filteredImportSnapshots.length > 0 ? (
+              {importSnapshotsError && (
+                <div style={{ padding: '0.85rem 1rem', borderRadius: '12px', background: 'rgba(245, 158, 11, 0.12)', color: '#92400e', border: '1px solid rgba(245, 158, 11, 0.25)' }}>
+                  {importSnapshotsError}
+                </div>
+              )}
+
+              {isLoadingImportSnapshots ? (
+                <div style={{ padding: '1rem', border: '1px dashed var(--border)', borderRadius: '12px', background: 'var(--surface)' }}>
+                  Cargando cálculos guardados...
+                </div>
+              ) : filteredImportSnapshots.length > 0 ? (
                 <div style={{ display: 'grid', gap: '0.75rem' }}>
                   {filteredImportSnapshots.map((snapshot) => (
                     <div key={snapshot.id} className="finance-card" style={{ padding: '0.9rem' }}>
@@ -2046,8 +2087,8 @@ const App: React.FC = () => {
                   <button className="btn" onClick={() => setShowSaveImportModal(false)}>
                     Cancelar
                   </button>
-                  <button className="btn btn-primary" onClick={saveImportCalculationSnapshot}>
-                    Guardar
+                  <button className="btn btn-primary" onClick={saveImportCalculationSnapshot} disabled={isSavingImportSnapshot}>
+                    {isSavingImportSnapshot ? 'Guardando...' : 'Guardar'}
                   </button>
                 </div>
               </div>

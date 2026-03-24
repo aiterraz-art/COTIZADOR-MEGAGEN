@@ -75,6 +75,23 @@ const collectionDefinitions = [
     ],
   },
   {
+    name: 'import_snapshots',
+    fields: [
+      { name: 'source_id', type: 'text' },
+      { name: 'name', type: 'text', required: true },
+      { name: 'source_file', type: 'text' },
+      { name: 'currency', type: 'text' },
+      { name: 'import_usd_rate', type: 'number' },
+      { name: 'euro_rate', type: 'number' },
+      { name: 'shipping_cost', type: 'number' },
+      { name: 'shipping_currency', type: 'text' },
+      { name: 'customs_cost_clp', type: 'number' },
+      { name: 'target_gross_margin_percent', type: 'number' },
+      { name: 'items', type: 'json' },
+      { name: 'created_at', type: 'date' },
+    ],
+  },
+  {
     name: 'inventory_supplier_master',
     fields: [
       { name: 'source_id', type: 'text' },
@@ -229,6 +246,7 @@ const run = async () => {
   const [
     products,
     simulations,
+    importSnapshots,
     supplierMaster,
     rotation90d,
     weeklyStock,
@@ -239,6 +257,7 @@ const run = async () => {
   ] = await Promise.all([
     fetchSupabaseRows('products'),
     fetchSupabaseRows('simulations'),
+    fetchSupabaseRows('import_snapshots'),
     fetchSupabaseRows('inventory_supplier_master'),
     fetchSupabaseRows('inventory_rotation_90d'),
     fetchSupabaseRows('inventory_weekly_stock'),
@@ -274,6 +293,24 @@ const run = async () => {
       margin_percent: toNumber(row.margin_percent),
       net_profit_clp: toNumber(row.net_profit_clp),
       items: Array.isArray(row.items) ? row.items : [],
+    })),
+  );
+
+  await replaceCollectionData(
+    'import_snapshots',
+    importSnapshots.map((row) => ({
+      source_id: String(row.id || ''),
+      name: row.name || '',
+      source_file: row.source_file || '',
+      currency: row.currency || 'USD',
+      import_usd_rate: toNumber(row.import_usd_rate),
+      euro_rate: toNumber(row.euro_rate),
+      shipping_cost: toNumber(row.shipping_cost),
+      shipping_currency: row.shipping_currency || 'CLP',
+      customs_cost_clp: toNumber(row.customs_cost_clp),
+      target_gross_margin_percent: toNumber(row.target_gross_margin_percent),
+      items: Array.isArray(row.items) ? row.items : [],
+      created_at: row.created_at || null,
     })),
   );
 
