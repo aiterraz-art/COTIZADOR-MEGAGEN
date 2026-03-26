@@ -12,6 +12,7 @@ import InventoryModule from './components/InventoryModule';
 import CRMModule from './components/CRMModule';
 import CotizadorModule from './components/CotizadorModule';
 import MonthlyAnalysisModule from './components/MonthlyAnalysisModule';
+import CommissionClosureModule from './components/CommissionClosureModule';
 import {
   createProductRecord,
   deleteImportSnapshotRecord,
@@ -88,7 +89,7 @@ const readStoredJSON = <T,>(key: string): T | null => {
 
 
 
-type ModuleKey = 'cotizador' | 'monthlyAnalysis' | 'analysis' | 'imports' | 'inventory' | 'crm' | 'clientes' | 'facturacion';
+type ModuleKey = 'cotizador' | 'monthlyAnalysis' | 'analysis' | 'imports' | 'inventory' | 'crm' | 'commissionsMegagen' | 'commissions3dental' | 'clientes' | 'facturacion';
 
 interface ImportItemCalculated extends ImportItemRaw {
   baseTotalForeign: number;
@@ -1581,6 +1582,20 @@ const App: React.FC = () => {
         isReady: true
       },
       {
+        key: 'commissionsMegagen',
+        name: 'Comisiones MegaGen',
+        description: 'Cierre mensual de comisiones sobre ventas cobradas MegaGen.',
+        icon: <ReceiptText size={18} />,
+        isReady: true
+      },
+      {
+        key: 'commissions3dental',
+        name: 'Comisiones 3Dental',
+        description: 'Cierre mensual de comisiones sobre ventas cobradas 3Dental.',
+        icon: <LineChart size={18} />,
+        isReady: true
+      },
+      {
         key: 'clientes',
         name: 'Gestión de Clientes',
         description: 'Fichas, contactos, estado y asignaciones.',
@@ -2099,6 +2114,20 @@ const App: React.FC = () => {
         <InventoryModule />
       ) : activeModule === 'crm' ? (
         <CRMModule />
+      ) : activeModule === 'commissionsMegagen' ? (
+        <CommissionClosureModule
+          companyKey="megagen"
+          companyLabel="MegaGen"
+          requiresProductClass={false}
+          defaultClassConfig={['MEGAGEN']}
+        />
+      ) : activeModule === 'commissions3dental' ? (
+        <CommissionClosureModule
+          companyKey="3dental"
+          companyLabel="3Dental"
+          requiresProductClass
+          defaultClassConfig={['IMPLANTES', '3DENTAL']}
+        />
       ) : activeModule === 'monthlyAnalysis' ? (
         <MonthlyAnalysisModule products={products} />
       ) : activeModule === 'analysis' ? (
