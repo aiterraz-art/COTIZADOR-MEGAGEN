@@ -112,6 +112,17 @@ interface ImportCalculationSnapshot {
   items: ImportItemRaw[];
 }
 
+const createEmptyImportItem = (): ImportItemRaw => ({
+  sku: '',
+  name: '',
+  quantity: 0,
+  unitCost: 0,
+});
+
+const isImportItemReady = (item: ImportItemRaw): boolean => (
+  Boolean((item.sku.trim() || item.name.trim()) && item.quantity > 0 && item.unitCost > 0)
+);
+
 const App: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [exchangeRate, setExchangeRate] = useState<number>(() => {
@@ -1023,6 +1034,51 @@ const App: React.FC = () => {
     }
   };
 
+  const markImportSourceAsManual = () => {
+    setImportSourceFile((prev) => {
+      if (!prev) return 'Carga manual';
+      return prev.toLowerCase().includes('manual') ? prev : `${prev} + manual`;
+    });
+  };
+
+  const addManualImportItem = () => {
+    setImportItems((prev) => [...prev, createEmptyImportItem()]);
+    markImportSourceAsManual();
+    setImportSectionTab('calculator');
+  };
+
+  const updateImportItem = (
+    index: number,
+    field: keyof ImportItemRaw,
+    value: string | number,
+  ) => {
+    setImportItems((prev) => prev.map((item, itemIndex) => {
+      if (itemIndex !== index) return item;
+      if (field === 'quantity' || field === 'unitCost') {
+        return { ...item, [field]: typeof value === 'number' ? value : parseFloat(String(value)) || 0 };
+      }
+      return { ...item, [field]: String(value) };
+    }));
+  };
+
+  const removeImportItem = (index: number) => {
+    setImportItems((prev) => {
+      const next = prev.filter((_, itemIndex) => itemIndex !== index);
+      if (!next.length) {
+        setImportSourceFile('');
+      }
+      return next;
+    });
+  };
+
+  const clearImportData = () => {
+    if (!confirm('¿Limpiar los productos cargados y el archivo fuente actual?')) return;
+    setImportItems([]);
+    setImportSourceFile('');
+    setShowSaveImportModal(false);
+    setImportSaveName('');
+  };
+
   const formatImportCurrency = (value: number) => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
@@ -1053,11 +1109,11 @@ const App: React.FC = () => {
 
   const downloadImportCalculation = () => {
     if (!importCalculatedItems.length) {
-      alert('Primero carga un archivo de importaciones.');
+      alert('Primero carga o ingresa productos de importación.');
       return;
     }
 
-    const exportItems = importItems;
+    const exportItems = activeImportItems;
     const exportCurrency = importCurrency;
     const exportImportUsdRate = importUsdRate;
     const exportEuroRate = euroRate;
@@ -1129,7 +1185,7 @@ const App: React.FC = () => {
       f: '=IF(B5="USD",B6*B3,IF(B5="EUR",B6*B4,B6))'
     };
 
-    for (let i = 0; i < importItems.length; i += 1) {
+    for (let i = 0; i < exportItems.length; i += 1) {
       const row = dataStartRow + i;
       worksheet[`F${row}`] = { t: 'n', f: `=C${row}*E${row}` };
       worksheet[`G${row}`] = { t: 'n', f: `=IF(D${row}="USD",$B$3,IF(D${row}="EUR",$B$4,1))` };
@@ -1266,8 +1322,8 @@ const App: React.FC = () => {
   };
 
   const openSaveImportDialog = () => {
-    if (!importItems.length) {
-      alert('Primero carga productos para guardar el cálculo.');
+    if (!activeImportItems.length) {
+      alert('Primero carga o ingresa productos válidos para guardar el cálculo.');
       return;
     }
     setImportSaveName(importSourceFile ? `Importación ${importSourceFile}` : '');
@@ -1293,7 +1349,7 @@ const App: React.FC = () => {
       shippingCurrency,
       customsCostCLP,
       targetGrossMarginPercent: targetGrossMarginPercentImport,
-      items: importItems,
+      items: activeImportItems,
     };
 
     setImportSnapshots((prev) => [snapshot, ...prev]);
@@ -1369,10 +1425,16 @@ const App: React.FC = () => {
     return shippingCostCLP;
   }, [shippingCostCLP, shippingCurrency, importUsdRate, euroRate]);
 
-  const importCalculatedItems = useMemo<ImportItemCalculated[]>(() => {
-    if (!importItems.length || importFxRate <= 0) return [];
+  const activeImportItems = useMemo(
+    () => importItems.filter(isImportItemReady),
+    [importItems],
+  );
+  const incompleteImportItemsCount = importItems.length - activeImportItems.length;
 
-    const baseRows = importItems.map((item) => {
+  const importCalculatedItems = useMemo<ImportItemCalculated[]>(() => {
+    if (!activeImportItems.length || importFxRate <= 0) return [];
+
+    const baseRows = activeImportItems.map((item) => {
       const baseTotalForeign = item.quantity * item.unitCost;
       const baseTotalCLP = baseTotalForeign * importFxRate;
       return {
@@ -1405,7 +1467,7 @@ const App: React.FC = () => {
         suggestedIvaUnitCLP,
       };
     });
-  }, [importItems, importFxRate, shippingCostInCLP, customsCostCLP, targetGrossMarginPercentImport]);
+  }, [activeImportItems, importFxRate, shippingCostInCLP, customsCostCLP, targetGrossMarginPercentImport]);
 
   const importTotals = useMemo(() => {
     const baseForeign = importCalculatedItems.reduce((acc, row) => acc + row.baseTotalForeign, 0);
@@ -1734,6 +1796,12 @@ const App: React.FC = () => {
               <button className="btn btn-primary" style={{ background: 'var(--success)' }} onClick={openSaveImportDialog}>
                 <Save size={14} /> Guardar Cálculo
               </button>
+              <button className="btn" style={{ background: '#0f766e', color: 'white' }} onClick={addManualImportItem}>
+                + Agregar item manual
+              </button>
+              <button className="btn" style={{ background: 'rgba(239,68,68,0.12)', color: 'var(--error)' }} onClick={clearImportData}>
+                <Trash2 size={14} /> Limpiar datos
+              </button>
             </div>
           </div>
 
@@ -1891,6 +1959,94 @@ const App: React.FC = () => {
             </div>
           </div>
 
+          <div style={{ marginBottom: '1rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
+              <div style={{ fontWeight: 700 }}>Detalle de productos</div>
+              <div className="text-muted" style={{ fontSize: '0.76rem' }}>
+                Puedes cargar Excel/PDF o agregar filas manualmente para importaciones con pocos ítems.
+              </div>
+            </div>
+
+            {importItems.length > 0 ? (
+              <div className="table-container">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>SKU</th>
+                      <th>Producto</th>
+                      <th style={{ textAlign: 'right' }}>Cantidad</th>
+                      <th style={{ textAlign: 'right' }}>Costo Unit ({importCurrency})</th>
+                      <th style={{ textAlign: 'center' }}>Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {importItems.map((item, idx) => (
+                      <tr key={`import-edit-${idx}`}>
+                        <td>
+                          <input
+                            type="text"
+                            className="input-field"
+                            value={item.sku}
+                            placeholder="SKU"
+                            onChange={(e) => updateImportItem(idx, 'sku', e.target.value)}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            type="text"
+                            className="input-field"
+                            value={item.name}
+                            placeholder="Nombre del producto"
+                            onChange={(e) => updateImportItem(idx, 'name', e.target.value)}
+                          />
+                        </td>
+                        <td style={{ minWidth: '110px' }}>
+                          <input
+                            type="number"
+                            className="input-field"
+                            style={{ textAlign: 'right' }}
+                            value={item.quantity}
+                            placeholder="0"
+                            onChange={(e) => updateImportItem(idx, 'quantity', parseFloat(e.target.value) || 0)}
+                          />
+                        </td>
+                        <td style={{ minWidth: '150px' }}>
+                          <input
+                            type="number"
+                            className="input-field"
+                            style={{ textAlign: 'right' }}
+                            value={item.unitCost}
+                            placeholder="0"
+                            onChange={(e) => updateImportItem(idx, 'unitCost', parseFloat(e.target.value) || 0)}
+                          />
+                        </td>
+                        <td style={{ textAlign: 'center' }}>
+                          <button
+                            className="btn"
+                            style={{ background: 'rgba(239,68,68,0.12)', color: 'var(--error)', padding: '0.45rem 0.6rem' }}
+                            onClick={() => removeImportItem(idx)}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div style={{ padding: '1rem', border: '1px dashed var(--border)', borderRadius: '12px', background: 'var(--surface)' }}>
+                No hay productos cargados. Usa <strong>Agregar item manual</strong> o sube un archivo.
+              </div>
+            )}
+
+            {incompleteImportItemsCount > 0 && (
+              <div style={{ marginTop: '0.6rem', padding: '0.7rem 0.9rem', borderRadius: '10px', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', color: '#9A5A00', fontSize: '0.78rem' }}>
+                Hay {incompleteImportItemsCount} fila(s) incompleta(s). Solo se calculan, guardan y exportan los ítems con nombre o SKU, cantidad y costo mayores a cero.
+              </div>
+            )}
+          </div>
+
           {importCalculatedItems.length > 0 ? (
             <>
               <div className="table-container">
@@ -1946,12 +2102,12 @@ const App: React.FC = () => {
                 </table>
               </div>
               <div className="text-muted" style={{ fontSize: '0.78rem', marginTop: '0.6rem' }}>
-                Archivo: <strong>{importSourceFile}</strong> | Productos: {importCalculatedItems.length} | Moneda: {importCurrency} | Tipo de cambio aplicado: {importFxRate.toFixed(2)} CLP
+                Archivo: <strong>{importSourceFile || 'Carga manual'}</strong> | Productos válidos: {importCalculatedItems.length} | Moneda: {importCurrency} | Tipo de cambio aplicado: {importFxRate.toFixed(2)} CLP
               </div>
             </>
           ) : (
             <div style={{ padding: '1rem', border: '1px dashed var(--border)', borderRadius: '12px', background: 'var(--surface)' }}>
-              Carga un archivo de importación con columnas de SKU, nombre, cantidad y costo para calcular precios.
+              Carga un archivo de importación o agrega filas manuales con SKU, nombre, cantidad y costo para calcular precios.
             </div>
           )}
             </>
