@@ -32,6 +32,7 @@ import {
 } from './lib/appDataRepository';
 import html2canvas from 'html2canvas';
 import logoMegaGen from './assets/MegaGen.jpg';
+import { convertImportAmountToCLP } from './utils/importCosting';
 import { calculateQuote } from './utils/quotePricingEngine';
 import type { LinePricingMode, QuoteLineDraft, QuotePricingConfig } from './types/quotation';
 import { useCotizadorState } from './hooks/useCotizadorState';
@@ -1134,6 +1135,12 @@ const App: React.FC = () => {
     const exportEuroRate = euroRate;
     const exportShippingCost = shippingCostCLP;
     const exportShippingCurrency = shippingCurrency;
+    const exportShippingCostInCLP = convertImportAmountToCLP(
+      exportShippingCost,
+      exportShippingCurrency,
+      exportImportUsdRate,
+      exportEuroRate,
+    );
     const exportCustomsCost = customsCostCLP;
     const exportMargin = targetGrossMarginPercentImport;
     const exportSourceFile = importSourceFile;
@@ -1151,7 +1158,7 @@ const App: React.FC = () => {
       ['EUR (CLP)', Number(exportEuroRate.toFixed(4))],
       ['Moneda flete', exportShippingCurrency],
       ['Gasto envio original', Number(exportShippingCost.toFixed(4))],
-      ['Gasto envio convertido CLP', ''],
+      ['Gasto envio convertido CLP', Math.round(exportShippingCostInCLP)],
       ['Gasto aduana (CLP)', Math.round(exportCustomsCost)],
       ['Margen bruto objetivo (%)', Number(exportMargin.toFixed(2))],
       [''],
@@ -1194,11 +1201,6 @@ const App: React.FC = () => {
     ];
 
     const worksheet = XLSX.utils.aoa_to_sheet([...summaryRows, ...dataRows, totalRowData]);
-
-    worksheet.B7 = {
-      t: 'n',
-      f: '=IF(B5="USD",B6*B3,IF(B5="EUR",B6*B4,B6))'
-    };
 
     for (let i = 0; i < exportItems.length; i += 1) {
       const row = dataStartRow + i;
@@ -1241,6 +1243,12 @@ const App: React.FC = () => {
     const exportEuroRate = snapshot.euroRate;
     const exportShippingCost = snapshot.shippingCost;
     const exportShippingCurrency = snapshot.shippingCurrency;
+    const exportShippingCostInCLP = convertImportAmountToCLP(
+      exportShippingCost,
+      exportShippingCurrency,
+      exportImportUsdRate,
+      exportEuroRate,
+    );
     const exportCustomsCost = snapshot.customsCostCLP;
     const exportMargin = snapshot.targetGrossMarginPercent;
     const exportSourceFile = snapshot.sourceFile;
@@ -1258,7 +1266,7 @@ const App: React.FC = () => {
       ['EUR (CLP)', Number(exportEuroRate.toFixed(4))],
       ['Moneda flete', exportShippingCurrency],
       ['Gasto envio original', Number(exportShippingCost.toFixed(4))],
-      ['Gasto envio convertido CLP', ''],
+      ['Gasto envio convertido CLP', Math.round(exportShippingCostInCLP)],
       ['Gasto aduana (CLP)', Math.round(exportCustomsCost)],
       ['Margen bruto objetivo (%)', Number(exportMargin.toFixed(2))],
       [''],
@@ -1301,11 +1309,6 @@ const App: React.FC = () => {
     ];
 
     const worksheet = XLSX.utils.aoa_to_sheet([...summaryRows, ...dataRows, totalRowData]);
-
-    worksheet.B7 = {
-      t: 'n',
-      f: '=IF(B5="USD",B6*B3,IF(B5="EUR",B6*B4,B6))'
-    };
 
     for (let i = 0; i < exportItems.length; i += 1) {
       const row = dataStartRow + i;
@@ -1451,11 +1454,10 @@ const App: React.FC = () => {
   }, [dailySalesSummary, exchangeRate]);
 
   const importFxRate = importCurrency === 'USD' ? importUsdRate : euroRate;
-  const shippingCostInCLP = useMemo(() => {
-    if (shippingCurrency === 'USD') return shippingCostCLP * importUsdRate;
-    if (shippingCurrency === 'EUR') return shippingCostCLP * euroRate;
-    return shippingCostCLP;
-  }, [shippingCostCLP, shippingCurrency, importUsdRate, euroRate]);
+  const shippingCostInCLP = useMemo(
+    () => convertImportAmountToCLP(shippingCostCLP, shippingCurrency, importUsdRate, euroRate),
+    [shippingCostCLP, shippingCurrency, importUsdRate, euroRate],
+  );
 
   const activeImportItems = useMemo(
     () => importItems.filter(isImportItemReady),
