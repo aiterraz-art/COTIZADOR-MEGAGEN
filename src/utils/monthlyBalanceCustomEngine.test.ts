@@ -76,14 +76,14 @@ describe('monthlyBalanceCustomEngine', () => {
       makeBalanceLine({ lineOrder: 32, accountCode: '2.1.2030.60.01', accountName: 'IMPUESTO A LA RENTA', amountCLP: 110, section: 'PASIVO_CORRIENTE' }),
       makeBalanceLine({ lineOrder: 33, accountCode: '2.4.1000.10.01', accountName: 'CAPITAL', amountCLP: 120, section: 'PATRIMONIO' }),
       makeBalanceLine({ lineOrder: 34, accountCode: '2.4.1500.30.01', accountName: 'PERDIDAS ACUMULADAS', amountCLP: -140, section: 'PATRIMONIO' }),
-      makeBalanceLine({ lineOrder: 35, accountCode: MONTHLY_BALANCE_SOURCE_NET_INCOME_CONTROL_CODE, accountName: 'Resultado', amountCLP: 80, section: 'OTROS', isSubtotal: true }),
+      makeBalanceLine({ lineOrder: 35, accountCode: MONTHLY_BALANCE_SOURCE_NET_INCOME_CONTROL_CODE, accountName: 'Resultado', amountCLP: -80, section: 'OTROS', isSubtotal: true }),
     ], {
       customPnl: makeCustomPnl(80),
     });
 
     expect(result.errors).toEqual([]);
     expect(result.warnings).toEqual([
-      'El balance no cuadra: TOTAL ASSETS difiere de TOTAL LIABILITIES & EQUITY por -285.',
+      'El balance no cuadra: TOTAL ASSETS difiere de TOTAL LIABILITIES AND EQUITY por -125.',
     ]);
     expect(result.mappedLines.find((line) => line.targetKey === 'undeposited_funds')?.amountCLP).toBe(60);
     expect(result.mappedLines.find((line) => line.targetKey === 'prepaid_tax')?.amountCLP).toBe(105);
@@ -97,12 +97,12 @@ describe('monthlyBalanceCustomEngine', () => {
     expect(result.mappedLines.find((line) => line.targetKey === 'total_accounts_payable')?.amountCLP).toBe(600);
     expect(result.mappedLines.find((line) => line.targetKey === 'total_other_current_liabilities')?.amountCLP).toBe(660);
     expect(result.mappedLines.find((line) => line.targetKey === 'total_current_liabilities')?.amountCLP).toBe(1265);
-    expect(result.mappedLines.find((line) => line.targetKey === 'net_income')?.amountCLP).toBe(80);
-    expect(result.mappedLines.find((line) => line.targetKey === 'total_equity')?.amountCLP).toBe(60);
-    expect(result.mappedLines.find((line) => line.targetKey === 'total_liabilities_and_equity')?.amountCLP).toBe(1325);
-    expect(result.sourceNetIncomeControlCLP).toBe(80);
+    expect(result.mappedLines.find((line) => line.targetKey === 'net_income')?.amountCLP).toBe(-80);
+    expect(result.mappedLines.find((line) => line.targetKey === 'total_equity')?.amountCLP).toBe(-100);
+    expect(result.mappedLines.find((line) => line.targetKey === 'total_liabilities_and_equity')?.amountCLP).toBe(1165);
+    expect(result.sourceNetIncomeControlCLP).toBe(-80);
     expect(result.netIncomeDifferenceCLP).toBe(0);
-    expect(result.balanceDifferenceCLP).toBe(-285);
+    expect(result.balanceDifferenceCLP).toBe(-125);
   });
 
   it('usa el fallback del summary para Net Income y reporta el descuadre resultante', () => {
@@ -110,11 +110,11 @@ describe('monthlyBalanceCustomEngine', () => {
       fallbackNetIncomeCLP: 1250,
     });
 
-    expect(result.mappedLines.find((line) => line.targetKey === 'net_income')?.amountCLP).toBe(1250);
+    expect(result.mappedLines.find((line) => line.targetKey === 'net_income')?.amountCLP).toBe(-1250);
     expect(result.sourceNetIncomeControlCLP).toBeNull();
     expect(result.netIncomeDifferenceCLP).toBeNull();
     expect(result.warnings).toEqual([
-      'El balance no cuadra: TOTAL ASSETS difiere de TOTAL LIABILITIES & EQUITY por -1250.',
+      'El balance no cuadra: TOTAL ASSETS difiere de TOTAL LIABILITIES AND EQUITY por 1250.',
     ]);
   });
 
@@ -122,7 +122,7 @@ describe('monthlyBalanceCustomEngine', () => {
     const result = buildMonthlyBalanceCustomMapping([
       makeBalanceLine({ accountCode: '1.1.1080.10.02', accountName: 'CONTRACUENTA DE APERTURA', amountCLP: 91 }),
       makeBalanceLine({ accountCode: '2.4.1500.40.01', accountName: 'UTILIDAD O PERDIDA DEL EJERCICIO', amountCLP: 33, section: 'PATRIMONIO' }),
-      makeBalanceLine({ accountCode: MONTHLY_BALANCE_SOURCE_NET_INCOME_CONTROL_CODE, accountName: 'Resultado', amountCLP: 77, section: 'OTROS', isSubtotal: true }),
+      makeBalanceLine({ accountCode: MONTHLY_BALANCE_SOURCE_NET_INCOME_CONTROL_CODE, accountName: 'Resultado', amountCLP: -77, section: 'OTROS', isSubtotal: true }),
       makeBalanceLine({ accountCode: '9.9.9999.99.99', accountName: 'Cuenta Nueva Balance', amountCLP: 44 }),
     ], {
       customPnl: makeCustomPnl(80),
@@ -130,9 +130,8 @@ describe('monthlyBalanceCustomEngine', () => {
 
     expect(result.unmappedSourceLines).toHaveLength(1);
     expect(result.unmappedSourceLines[0]?.accountName).toBe('Cuenta Nueva Balance');
-    expect(result.warnings).toContain('La cuenta CONTRACUENTA DE APERTURA se ignora en el balance objetivo y viene con saldo distinto de cero.');
     expect(result.warnings).toContain('Hay cuentas nuevas en el Balance que aún no tienen regla de tratamiento.');
-    expect(result.warnings).toContain('El Net Income del ER difiere del Resultado del balance por 3.');
+    expect(result.warnings).toContain('El Net Income del ER difiere del Resultado del balance por -3.');
   });
 
   it('preserva saldos netos negativos cuando una cuenta queda en la columna opuesta a su naturaleza', () => {

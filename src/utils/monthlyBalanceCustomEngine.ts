@@ -61,7 +61,7 @@ const resolveNetIncomeCLP = (
     const netIncomeLine = customPnl.mappedLines.find((line) => line.targetKey === 'net_profit_loss');
     if (netIncomeLine) {
       return {
-        value: netIncomeLine.amountCLP,
+        value: -netIncomeLine.amountCLP,
         warnings: [],
       };
     }
@@ -69,7 +69,7 @@ const resolveNetIncomeCLP = (
 
   if (typeof fallbackNetIncomeCLP === 'number' && Number.isFinite(fallbackNetIncomeCLP)) {
     return {
-      value: fallbackNetIncomeCLP,
+      value: -fallbackNetIncomeCLP,
       warnings: [],
     };
   }
@@ -183,7 +183,7 @@ export const buildMonthlyBalanceCustomMapping = (
   }
 
   if (balanceDifferenceCLP !== 0) {
-    warnings.push(`El balance no cuadra: TOTAL ASSETS difiere de TOTAL LIABILITIES & EQUITY por ${balanceDifferenceCLP.toFixed(0)}.`);
+    warnings.push(`El balance no cuadra: TOTAL ASSETS difiere de TOTAL LIABILITIES AND EQUITY por ${balanceDifferenceCLP.toFixed(0)}.`);
   }
 
   return {

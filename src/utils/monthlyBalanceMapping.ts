@@ -40,6 +40,7 @@ export const MONTHLY_BALANCE_SOURCE_ACCOUNT_MAPPINGS: MonthlyBalanceSourceAccoun
   { sourceCode: '1.1.1040.50.02', sourceName: 'ANTICIPO A PROVEEDORES', sourceKind: 'detail', targetKey: 'advance_to_vendor' },
   { sourceCode: '1.1.1040.50.03', sourceName: 'ANTICIPO DE HONORARIOS', sourceKind: 'detail', targetKey: 'prepaid_expenses' },
   { sourceCode: '1.1.1080.10.01', sourceName: 'MERCADERIAS', sourceKind: 'detail', targetKey: 'inventory_etc' },
+  { sourceCode: '1.1.1080.10.02', sourceName: 'CONTRACUENTA DE APERTURA', sourceKind: 'detail', targetKey: 'inventory_etc' },
   { sourceCode: '1.1.1080.50.01', sourceName: 'IMPORTACIONES EN TRANSITO', sourceKind: 'detail', targetKey: 'inventory_in_transit' },
   { sourceCode: '1.1.1090.10.01', sourceName: 'IVA CREDITO FISCAL', sourceKind: 'detail', targetKey: 'prepaid_tax' },
   { sourceCode: '1.1.1090.10.02', sourceName: 'PPM', sourceKind: 'detail', targetKey: 'prepaid_tax' },
@@ -48,6 +49,8 @@ export const MONTHLY_BALANCE_SOURCE_ACCOUNT_MAPPINGS: MonthlyBalanceSourceAccoun
   { sourceCode: '1.2.1210.30.04', sourceName: 'EQUIPOS COMPUTACIONALES', sourceKind: 'detail', targetKey: 'computer_equipment_other' },
   { sourceCode: '1.2.1210.70.02', sourceName: 'D A VEHICULOS', sourceKind: 'detail', targetKey: 'accumulated_depreciation_auto' },
   { sourceCode: '1.2.1210.70.04', sourceName: 'D A EQUIPOS COMPUTACIONALES', sourceKind: 'detail', targetKey: 'accumulated_depreciation_me' },
+  { sourceCode: '2.1.1010.30.20', sourceName: 'TARJETA DE CREDITO VISA NACIONAL', sourceKind: 'detail', targetKey: 'credit_cards' },
+  { sourceCode: '2.1.1010.30.30', sourceName: 'TARJETA DE CREDITO VISA INTERNACIONAL', sourceKind: 'detail', targetKey: 'credit_cards' },
   { sourceCode: '2.1.1010.30.20', sourceName: 'TARJETA VISA', sourceKind: 'detail', targetKey: 'credit_cards' },
   { sourceCode: '2.1.1070.20.01', sourceName: 'PROVEEDORES NACIONALES', sourceKind: 'detail', targetKey: 'accounts_payable_other' },
   { sourceCode: '2.1.1070.20.02', sourceName: 'PROVEEDORES EXTRANJEROS', sourceKind: 'detail', targetKey: 'accounts_payable_mgg_hq' },
@@ -68,13 +71,6 @@ export const MONTHLY_BALANCE_SOURCE_ACCOUNT_MAPPINGS: MonthlyBalanceSourceAccoun
 ];
 
 export const MONTHLY_BALANCE_EXPECTED_SOURCE_ACCOUNTS: MonthlyBalanceExpectedSourceAccount[] = [
-  {
-    sourceCode: '1.1.1080.10.02',
-    sourceName: 'CONTRACUENTA DE APERTURA',
-    sourceKind: 'detail',
-    ignore: true,
-    warnIfNonZero: 'La cuenta CONTRACUENTA DE APERTURA se ignora en el balance objetivo y viene con saldo distinto de cero.',
-  },
   {
     sourceCode: '2.4.1500.40.01',
     sourceName: 'UTILIDAD O PERDIDA DEL EJERCICIO',

@@ -179,7 +179,7 @@ const LIABILITIES_AND_EQUITY_ROWS: MonthlyBalanceTargetRowDefinition[] = [
   defineRow('LIABILITIES_EQUITY', 'total_equity', 'Total Equity', 0, 'subtotal', {
     sumOf: ['capital_stock', 'retained_earnings', 'net_income'],
   }),
-  defineRow('LIABILITIES_EQUITY', 'total_liabilities_and_equity', 'TOTAL LIABILITIES & EQUITY', 0, 'grand_total', {
+  defineRow('LIABILITIES_EQUITY', 'total_liabilities_and_equity', 'TOTAL LIABILITIES AND EQUITY', 0, 'grand_total', {
     sumOf: ['total_liabilities', 'total_equity'],
   }),
 ];
@@ -192,7 +192,7 @@ export const MONTHLY_BALANCE_TARGET_SECTIONS: MonthlyBalanceTargetSectionDefinit
   },
   {
     key: 'LIABILITIES_EQUITY',
-    label: 'LIABILITIES & EQUITY',
+    label: 'LIABILITIES AND EQUITY',
     rows: LIABILITIES_AND_EQUITY_ROWS,
   },
 ];

@@ -1340,7 +1340,7 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
                         })}
                       </div>
                       <div>
-                        <div className="text-muted" style={{ fontSize: '0.74rem', marginBottom: '0.35rem' }}>TOTAL LIABILITIES &amp; EQUITY</div>
+                        <div className="text-muted" style={{ fontSize: '0.74rem', marginBottom: '0.35rem' }}>TOTAL LIABILITIES AND EQUITY</div>
                         {renderCopyableCurrencyButton('balance-total-liabilities-equity', totalLiabilitiesAndEquityLine?.amountCLP ?? 0, {
                           minWidth: '180px',
                         })}
@@ -1416,8 +1416,8 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
                       <table>
                         <thead>
                           <tr>
-                            <th>Cuenta objetivo</th>
-                            <th>Origen</th>
+                            <th>Account subject</th>
+                            <th>Source</th>
                             <th style={{ textAlign: 'right' }}>Monto CLP</th>
                           </tr>
                         </thead>
