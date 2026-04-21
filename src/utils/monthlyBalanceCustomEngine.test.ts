@@ -146,4 +146,20 @@ describe('monthlyBalanceCustomEngine', () => {
     expect(result.mappedLines.find((line) => line.targetKey === 'accounts_payable_other')?.amountCLP).toBe(-35);
     expect(result.unmappedSourceLines).toHaveLength(0);
   });
+
+  it('mapea por codigo contable aunque el nombre venga con una variante', () => {
+    const result = buildMonthlyBalanceCustomMapping([
+      makeBalanceLine({
+        accountCode: '2.1.1010.30.20',
+        accountName: 'TARJETA VISA NACIONAL EMPRESA',
+        amountCLP: 125,
+        section: 'PASIVO_CORRIENTE',
+      }),
+    ], {
+      customPnl: makeCustomPnl(0),
+    });
+
+    expect(result.mappedLines.find((line) => line.targetKey === 'credit_cards')?.amountCLP).toBe(125);
+    expect(result.unmappedSourceLines).toHaveLength(0);
+  });
 });

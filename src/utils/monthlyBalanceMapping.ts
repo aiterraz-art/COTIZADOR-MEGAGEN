@@ -87,6 +87,20 @@ const sourceMappingIndex = new Map<string, MonthlyBalanceSourceAccountMapping>(
   ]),
 );
 
+const sourceMappingByCodeIndex = new Map<string, MonthlyBalanceSourceAccountMapping>();
+for (const mapping of MONTHLY_BALANCE_SOURCE_ACCOUNT_MAPPINGS) {
+  const codeKey = `${mapping.sourceKind}::${normalize(mapping.sourceCode)}`;
+  const existing = sourceMappingByCodeIndex.get(codeKey);
+  if (!existing) {
+    sourceMappingByCodeIndex.set(codeKey, mapping);
+    continue;
+  }
+
+  if (existing.targetKey !== mapping.targetKey) {
+    sourceMappingByCodeIndex.delete(codeKey);
+  }
+}
+
 const expectedSourceAccountIndex = new Map<string, MonthlyBalanceExpectedSourceAccount>(
   MONTHLY_BALANCE_EXPECTED_SOURCE_ACCOUNTS.map((account) => [
     buildMatchKey(account.sourceCode, account.sourceName, account.sourceKind),
@@ -94,16 +108,37 @@ const expectedSourceAccountIndex = new Map<string, MonthlyBalanceExpectedSourceA
   ]),
 );
 
+const expectedSourceAccountByCodeIndex = new Map<string, MonthlyBalanceExpectedSourceAccount>();
+for (const account of MONTHLY_BALANCE_EXPECTED_SOURCE_ACCOUNTS) {
+  const codeKey = `${account.sourceKind}::${normalize(account.sourceCode)}`;
+  const existing = expectedSourceAccountByCodeIndex.get(codeKey);
+  if (!existing) {
+    expectedSourceAccountByCodeIndex.set(codeKey, account);
+    continue;
+  }
+
+  if (
+    existing.ignore !== account.ignore
+    || existing.warnIfNonZero !== account.warnIfNonZero
+  ) {
+    expectedSourceAccountByCodeIndex.delete(codeKey);
+  }
+}
+
 export const findMonthlyBalanceSourceMapping = (
   row: MonthlyBalanceSourceRow,
 ): MonthlyBalanceSourceAccountMapping | null => {
   const kind: MonthlyBalanceSourceAccountMapping['sourceKind'] = row.isSubtotal ? 'subtotal' : 'detail';
-  return sourceMappingIndex.get(buildMatchKey(row.accountCode, row.accountName, kind)) ?? null;
+  return sourceMappingIndex.get(buildMatchKey(row.accountCode, row.accountName, kind))
+    ?? sourceMappingByCodeIndex.get(`${kind}::${normalize(row.accountCode)}`)
+    ?? null;
 };
 
 export const findMonthlyBalanceExpectedSourceAccount = (
   row: MonthlyBalanceSourceRow,
 ): MonthlyBalanceExpectedSourceAccount | null => {
   const kind: MonthlyBalanceExpectedSourceAccount['sourceKind'] = row.isSubtotal ? 'subtotal' : 'detail';
-  return expectedSourceAccountIndex.get(buildMatchKey(row.accountCode, row.accountName, kind)) ?? null;
+  return expectedSourceAccountIndex.get(buildMatchKey(row.accountCode, row.accountName, kind))
+    ?? expectedSourceAccountByCodeIndex.get(`${kind}::${normalize(row.accountCode)}`)
+    ?? null;
 };
