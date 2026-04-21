@@ -295,6 +295,19 @@ const readSheetRows = async (file: File): Promise<TabularRow[]> => {
   throw new Error('Formato no soportado. Usa .xlsx, .xls o .csv');
 };
 
+const readSheetRowsWithHeaderRow = async (file: File, headerRowIndex: number): Promise<TabularRow[]> => {
+  const extension = file.name.split('.').pop()?.toLowerCase();
+  if (extension !== 'xlsx' && extension !== 'xls') {
+    return readSheetRows(file);
+  }
+
+  const content = new Uint8Array(await file.arrayBuffer());
+  const workbook = XLSX.read(content, { type: 'array' });
+  const firstSheet = workbook.SheetNames[0];
+  const worksheet = workbook.Sheets[firstSheet];
+  return XLSX.utils.sheet_to_json(worksheet, { range: headerRowIndex, defval: '' }) as TabularRow[];
+};
+
 const readSheetMatrix = async (file: File): Promise<SheetMatrixRow[]> => {
   const extension = file.name.split('.').pop()?.toLowerCase();
   if (extension !== 'xlsx' && extension !== 'xls') {
@@ -1232,6 +1245,12 @@ export const parseMonthlyBalanceFile = async (file: File, selectedPeriodKey: str
     const specializedResult = parseBalanceWorksheetRows(matrix, selectedPeriodKey, file.name);
     if (!specializedResult.errors.some((error) => error.includes('cabecera esperada'))) {
       return specializedResult;
+    }
+
+    const headerRowIndex = findBalanceWorksheetHeaderIndex(matrix);
+    if (headerRowIndex !== -1) {
+      const rows = await readSheetRowsWithHeaderRow(file, headerRowIndex);
+      return parseBalanceRows(rows, selectedPeriodKey, file.name);
     }
   }
 
