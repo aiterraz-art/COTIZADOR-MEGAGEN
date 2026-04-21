@@ -64,6 +64,26 @@ describe('monthlyPnlCustomEngine', () => {
     expect(result.unmappedSourceLines[0]?.accountName).toBe('CUENTA NUEVA SIN MAPEO');
   });
 
+  it('mapea las nuevas cuentas del ER al concepto operativo correcto', () => {
+    const result = buildMonthlyPnlCustomMapping([
+      makeLine({ lineOrder: 1, accountCode: '4.5.1030.10.11', accountName: 'GTOS. DE PUBLICIDAD', subsection: 'GTOS. DE ADMINIS. Y VENTAS', amountCLP: 8_044_017 }),
+      makeLine({ lineOrder: 2, accountCode: '4.5.1030.10.25', accountName: 'PATENTES Y CONTRIBUCIONES', subsection: 'GTOS. DE ADMINIS. Y VENTAS', amountCLP: 34_876 }),
+      makeLine({ lineOrder: 3, accountCode: '4.5.1030.10.30', accountName: 'GTOS. MENORES VEHICULOS', subsection: 'GTOS. DE ADMINIS. Y VENTAS', amountCLP: 351_263 }),
+      makeLine({ lineOrder: 4, accountCode: '4.5.1040.10.11', accountName: 'INDEMNIZACION VACACIONES', subsection: 'GTOS. DE ADMINIS. Y VENTAS', amountCLP: 537_892 }),
+      makeLine({ lineOrder: 5, accountCode: '4.5.1090.10.01', accountName: 'DIFERENCIA DE CAMBIO', section: 'OTROS_INGRESOS_EGRESOS', subsection: 'OTROS EGRESOS F. DE LA EXPLOT.', amountCLP: 19_056_179 }),
+    ], {
+      adminSalaryManualCLP: 0,
+    });
+
+    expect(result.errors).toEqual([]);
+    expect(result.unmappedSourceLines).toEqual([]);
+    expect(result.mappedLines.find((line) => line.targetKey === 'advertising_and_marketing_expense')?.amountCLP).toBe(8_044_017);
+    expect(result.mappedLines.find((line) => line.targetKey === 'taxes_and_dues')?.amountCLP).toBe(34_876);
+    expect(result.mappedLines.find((line) => line.targetKey === 'vehicle_maintenance_expense')?.amountCLP).toBe(351_263);
+    expect(result.mappedLines.find((line) => line.targetKey === 'accrued_vacation_expense')?.amountCLP).toBe(537_892);
+    expect(result.mappedLines.find((line) => line.targetKey === 'loss_fx_transactions')?.amountCLP).toBe(19_056_179);
+  });
+
   it('valida que Salaries (Admin, GM) no exceda REMUNERACIONES', () => {
     const result = buildMonthlyPnlCustomMapping([
       makeLine({ lineOrder: 1, accountCode: '4.5.1040.10.01', accountName: 'REMUNERACIONES', subsection: 'GTOS. DE ADMINIS. Y VENTAS', amountCLP: 2_000_000 }),
