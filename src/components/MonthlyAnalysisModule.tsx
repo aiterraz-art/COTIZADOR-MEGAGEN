@@ -209,11 +209,20 @@ const createEmptyInventoryFamilySummary = (
   skuCount: 0,
 });
 
-const MetricCard: React.FC<{ title: string; value: string; hint?: string; tone?: 'default' | 'success' | 'warning' }> = ({
+const MetricCard: React.FC<{
+  title: string;
+  value: string;
+  hint?: string;
+  tone?: 'default' | 'success' | 'warning';
+  onClick?: () => void;
+  copied?: boolean;
+}> = ({
   title,
   value,
   hint,
   tone = 'default',
+  onClick,
+  copied = false,
 }) => {
   const colors = {
     default: 'var(--accent)',
@@ -221,13 +230,29 @@ const MetricCard: React.FC<{ title: string; value: string; hint?: string; tone?:
     warning: 'var(--warning)',
   };
 
-  return (
-    <div className="finance-card">
+  const content = (
+    <>
       <div className="text-muted" style={{ fontSize: '0.68rem', marginBottom: '0.35rem' }}>{title}</div>
-      <div style={{ fontWeight: 800, fontSize: '1.22rem', color: colors[tone] }}>{value}</div>
+      <div style={{ fontWeight: 800, fontSize: '1.22rem', color: colors[tone] }}>{copied ? 'Copiado' : value}</div>
       {hint ? <div className="text-muted" style={{ fontSize: '0.74rem', marginTop: '0.25rem' }}>{hint}</div> : null}
-    </div>
+    </>
   );
+
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        className="finance-card"
+        onClick={onClick}
+        title="Click para copiar valor"
+        style={{ width: '100%', textAlign: 'left', cursor: 'pointer' }}
+      >
+        {content}
+      </button>
+    );
+  }
+
+  return <div className="finance-card">{content}</div>;
 };
 
 const ComparisonTable: React.FC<{ title: string; items: MonthlyComparisonItem[] }> = ({ title, items }) => (
@@ -1205,24 +1230,24 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
                   <div>
                     <h3 style={{ fontSize: '1rem', marginBottom: '0.75rem' }}>KPIs Balance</h3>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '0.75rem' }}>
-                      <MetricCard title="Caja" value={formatCLP(displaySummary.balance.cashCLP)} />
-                      <MetricCard title="Cuentas por Cobrar" value={formatCLP(displaySummary.balance.accountsReceivableCLP)} />
-                      <MetricCard title="Inventario" value={formatCLP(displaySummary.balance.inventoryCLP)} />
-                      <MetricCard title="Cuentas por Pagar" value={formatCLP(displaySummary.balance.accountsPayableCLP)} />
-                      <MetricCard title="Capital de Trabajo" value={formatCLP(displaySummary.balance.workingCapitalCLP)} tone={displaySummary.balance.workingCapitalCLP >= 0 ? 'success' : 'warning'} />
-                      <MetricCard title="Patrimonio" value={formatCLP(displaySummary.balance.equityCLP)} />
+                      <MetricCard title="Caja" value={formatCLP(displaySummary.balance.cashCLP)} onClick={() => void copyMetricValue('summary-balance-cash', displaySummary.balance.cashCLP)} copied={copiedMetricKey === 'summary-balance-cash'} />
+                      <MetricCard title="Cuentas por Cobrar" value={formatCLP(displaySummary.balance.accountsReceivableCLP)} onClick={() => void copyMetricValue('summary-balance-ar', displaySummary.balance.accountsReceivableCLP)} copied={copiedMetricKey === 'summary-balance-ar'} />
+                      <MetricCard title="Inventario" value={formatCLP(displaySummary.balance.inventoryCLP)} onClick={() => void copyMetricValue('summary-balance-inventory', displaySummary.balance.inventoryCLP)} copied={copiedMetricKey === 'summary-balance-inventory'} />
+                      <MetricCard title="Cuentas por Pagar" value={formatCLP(displaySummary.balance.accountsPayableCLP)} onClick={() => void copyMetricValue('summary-balance-ap', displaySummary.balance.accountsPayableCLP)} copied={copiedMetricKey === 'summary-balance-ap'} />
+                      <MetricCard title="Capital de Trabajo" value={formatCLP(displaySummary.balance.workingCapitalCLP)} tone={displaySummary.balance.workingCapitalCLP >= 0 ? 'success' : 'warning'} onClick={() => void copyMetricValue('summary-balance-working-capital', displaySummary.balance.workingCapitalCLP)} copied={copiedMetricKey === 'summary-balance-working-capital'} />
+                      <MetricCard title="Patrimonio" value={formatCLP(displaySummary.balance.equityCLP)} onClick={() => void copyMetricValue('summary-balance-equity', displaySummary.balance.equityCLP)} copied={copiedMetricKey === 'summary-balance-equity'} />
                     </div>
                   </div>
 
                   <div>
                     <h3 style={{ fontSize: '1rem', marginBottom: '0.75rem' }}>KPIs Estado de Resultados</h3>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '0.75rem' }}>
-                      <MetricCard title="Ventas" value={formatCLP(displaySummary.pnl.revenueCLP)} />
-                      <MetricCard title="Costo de Ventas" value={formatCLP(displaySummary.pnl.costOfSalesCLP)} />
-                      <MetricCard title="Utilidad Bruta" value={formatCLP(displaySummary.pnl.grossProfitCLP)} />
+                      <MetricCard title="Ventas" value={formatCLP(displaySummary.pnl.revenueCLP)} onClick={() => void copyMetricValue('summary-pnl-revenue', displaySummary.pnl.revenueCLP)} copied={copiedMetricKey === 'summary-pnl-revenue'} />
+                      <MetricCard title="Costo de Ventas" value={formatCLP(displaySummary.pnl.costOfSalesCLP)} onClick={() => void copyMetricValue('summary-pnl-cos', displaySummary.pnl.costOfSalesCLP)} copied={copiedMetricKey === 'summary-pnl-cos'} />
+                      <MetricCard title="Utilidad Bruta" value={formatCLP(displaySummary.pnl.grossProfitCLP)} onClick={() => void copyMetricValue('summary-pnl-gross-profit', displaySummary.pnl.grossProfitCLP)} copied={copiedMetricKey === 'summary-pnl-gross-profit'} />
                       <MetricCard title="Margen Bruto" value={`${displaySummary.pnl.grossMarginPercent.toFixed(2)}%`} />
-                      <MetricCard title="Utilidad Operativa" value={formatCLP(displaySummary.pnl.operatingIncomeCLP)} />
-                      <MetricCard title="Utilidad Neta" value={formatCLP(displaySummary.pnl.netIncomeCLP)} tone={displaySummary.pnl.netIncomeCLP >= 0 ? 'success' : 'warning'} />
+                      <MetricCard title="Utilidad Operativa" value={formatCLP(displaySummary.pnl.operatingIncomeCLP)} onClick={() => void copyMetricValue('summary-pnl-operating-income', displaySummary.pnl.operatingIncomeCLP)} copied={copiedMetricKey === 'summary-pnl-operating-income'} />
+                      <MetricCard title="Utilidad Neta" value={formatCLP(displaySummary.pnl.netIncomeCLP)} tone={displaySummary.pnl.netIncomeCLP >= 0 ? 'success' : 'warning'} onClick={() => void copyMetricValue('summary-pnl-net-income', displaySummary.pnl.netIncomeCLP)} copied={copiedMetricKey === 'summary-pnl-net-income'} />
                     </div>
                   </div>
 
@@ -1270,10 +1295,10 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
                   </div>
 
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '0.75rem' }}>
-                    <MetricCard title="Total Ítems" value={formatQty(inventorySummaryPreview.totals.exitsQty)} />
-                    <MetricCard title="Ventas Totales CLP" value={formatCLP(inventorySummaryPreview.totals.salesAmountCLP ?? 0)} />
-                    <MetricCard title="Implantes Totales" value={formatQty(totalImplantsSold)} />
-                    <MetricCard title="SKUs con Venta" value={formatQty(inventorySummaryPreview.totals.skuCount)} />
+                    <MetricCard title="Total Ítems" value={formatQty(inventorySummaryPreview.totals.exitsQty)} onClick={() => void copyMetricValue('summary-inventory-total-items', inventorySummaryPreview.totals.exitsQty)} copied={copiedMetricKey === 'summary-inventory-total-items'} />
+                    <MetricCard title="Ventas Totales CLP" value={formatCLP(inventorySummaryPreview.totals.salesAmountCLP ?? 0)} onClick={() => void copyMetricValue('summary-inventory-total-sales', inventorySummaryPreview.totals.salesAmountCLP ?? 0)} copied={copiedMetricKey === 'summary-inventory-total-sales'} />
+                    <MetricCard title="Implantes Totales" value={formatQty(totalImplantsSold)} onClick={() => void copyMetricValue('summary-inventory-total-implants', totalImplantsSold)} copied={copiedMetricKey === 'summary-inventory-total-implants'} />
+                    <MetricCard title="SKUs con Venta" value={formatQty(inventorySummaryPreview.totals.skuCount)} onClick={() => void copyMetricValue('summary-inventory-sku-count', inventorySummaryPreview.totals.skuCount)} copied={copiedMetricKey === 'summary-inventory-sku-count'} />
                     <MetricCard
                       title="SKUs sin Catálogo"
                       value={formatQty(inventorySummaryPreview.unmappedSkuCount)}
@@ -2081,10 +2106,10 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
                       ) : null}
 
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(165px, 1fr))', gap: '0.65rem', marginBottom: '0.9rem' }}>
-                        <MetricCard title="Ventas" value={formatCLP(historyPreviewItem.summary.pnl.revenueCLP)} />
-                        <MetricCard title="Resultado Neto" value={formatCLP(historyPreviewItem.summary.pnl.netIncomeCLP)} tone={historyPreviewItem.summary.pnl.netIncomeCLP < 0 ? 'warning' : 'success'} />
-                        <MetricCard title="Activos" value={formatCLP(historyPreviewItem.summary.balance.totalAssetsCLP)} />
-                        <MetricCard title="Unidades Vendidas" value={formatQty(historyPreviewItem.summary.inventory.totals.exitsQty)} />
+                        <MetricCard title="Ventas" value={formatCLP(historyPreviewItem.summary.pnl.revenueCLP)} onClick={() => void copyMetricValue('history-preview-revenue', historyPreviewItem.summary.pnl.revenueCLP)} copied={copiedMetricKey === 'history-preview-revenue'} />
+                        <MetricCard title="Resultado Neto" value={formatCLP(historyPreviewItem.summary.pnl.netIncomeCLP)} tone={historyPreviewItem.summary.pnl.netIncomeCLP < 0 ? 'warning' : 'success'} onClick={() => void copyMetricValue('history-preview-net-income', historyPreviewItem.summary.pnl.netIncomeCLP)} copied={copiedMetricKey === 'history-preview-net-income'} />
+                        <MetricCard title="Activos" value={formatCLP(historyPreviewItem.summary.balance.totalAssetsCLP)} onClick={() => void copyMetricValue('history-preview-assets', historyPreviewItem.summary.balance.totalAssetsCLP)} copied={copiedMetricKey === 'history-preview-assets'} />
+                        <MetricCard title="Unidades Vendidas" value={formatQty(historyPreviewItem.summary.inventory.totals.exitsQty)} onClick={() => void copyMetricValue('history-preview-units', historyPreviewItem.summary.inventory.totals.exitsQty)} copied={copiedMetricKey === 'history-preview-units'} />
                       </div>
 
                       <div style={{ display: 'grid', gap: '0.55rem', fontSize: '0.8rem' }}>
