@@ -1,5 +1,10 @@
 import * as XLSX from 'xlsx';
 import Papa from 'papaparse';
+import {
+    createEmptyImplantCountMap,
+    findImplantDefinition,
+    type ImplantModelKey,
+} from '../data/implantDefinitions';
 
 export interface RawProduct {
     sku?: string;
@@ -25,7 +30,7 @@ export interface DailySalesSummary {
     movementCount: number;
     dateFrom?: string;
     dateTo?: string;
-    implantsByModel: Record<'AR' | 'AO' | 'ST' | 'BD' | 'MN' | 'ARiE', number>;
+    implantsByModel: Record<ImplantModelKey, number>;
     totalImplants: number;
 }
 
@@ -55,6 +60,50 @@ const findValue = (row: GenericRow, keywords: string[]): unknown => {
     });
 
     return match ? row[match] : null;
+};
+
+const findValueExactFirst = (row: GenericRow, keywords: string[]): unknown => {
+    const keys = Object.keys(row);
+    const normalizedKeywords = keywords.map(normalize);
+
+    for (const keyword of normalizedKeywords) {
+        const exactKey = keys.find((key) => normalize(key) === keyword);
+        if (exactKey) {
+            return row[exactKey];
+        }
+    }
+
+    const match = keys.find((key) => {
+        const normKey = normalize(key);
+        return normalizedKeywords.some((keyword) => normKey.includes(keyword));
+    });
+
+    return match ? row[match] : null;
+};
+
+const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const sanitizeImportItemName = (sku: string, name: string): string => {
+    const trimmedName = name.trim();
+    if (!trimmedName) return sku.trim();
+
+    const cleanSku = sku.trim();
+    if (!cleanSku) return trimmedName;
+
+    const skuPattern = escapeRegExp(cleanSku);
+    let normalizedName = trimmedName
+        .replace(new RegExp(`^${skuPattern}[\\s\\-_/|:]*`, 'i'), '')
+        .replace(new RegExp(`[\\s\\-_/|:]*${skuPattern}$`, 'i'), '')
+        .trim();
+
+    if (!normalizedName) {
+        return cleanSku;
+    }
+
+    const duplicatePrefixPattern = /^([A-Z0-9][A-Z0-9\-_.]{2,})\s+\1\b/i;
+    normalizedName = normalizedName.replace(duplicatePrefixPattern, '$1').trim();
+
+    return normalizedName || cleanSku;
 };
 
 export const parseFile = (file: File): Promise<RawProduct[]> => {
@@ -351,23 +400,7 @@ export const parseDailySalesFile = (file: File): Promise<DailySalesSummary> => {
                     return;
                 }
 
-                const implantMatchers: Array<{ key: 'AR' | 'AO' | 'ST' | 'BD' | 'MN' | 'ARiE'; label: string }> = [
-                    { key: 'AR', label: 'xpeed anyridge internal fixture [ar]' },
-                    { key: 'AO', label: 'anyone internal fixture [ao]' },
-                    { key: 'ST', label: 'st internal fixture [st]' },
-                    { key: 'BD', label: 'bluediamond implant [bd]' },
-                    { key: 'MN', label: 'mini internal fixture [mn]' },
-                    { key: 'ARiE', label: 'ari excon implant [arie]' },
-                ];
-
-                const implantsByModel: Record<'AR' | 'AO' | 'ST' | 'BD' | 'MN' | 'ARiE', number> = {
-                    AR: 0,
-                    AO: 0,
-                    ST: 0,
-                    BD: 0,
-                    MN: 0,
-                    ARiE: 0,
-                };
+                const implantsByModel = createEmptyImplantCountMap();
 
                 let totalSalesCLPExcludingDispatch = 0;
                 let totalCostCLPExcludingDispatch = 0;
@@ -398,7 +431,7 @@ export const parseDailySalesFile = (file: File): Promise<DailySalesSummary> => {
                     totalCostCLPExcludingDispatch += currentCost * quantity;
                     movementCount += 1;
 
-                    const implant = implantMatchers.find((model) => normalizedDescription.includes(model.label));
+                    const implant = findImplantDefinition(normalizedDescription);
                     if (implant) {
                         implantsByModel[implant.key] += quantity;
                     }
@@ -427,6 +460,41 @@ export const parseDailySalesFile = (file: File): Promise<DailySalesSummary> => {
     });
 };
 
+export const mapRowsToImportItems = (rows: Record<string, unknown>[]): ImportItemRaw[] => {
+    const items: ImportItemRaw[] = [];
+
+    rows.forEach((row, index) => {
+        const sku = findValueExactFirst(row, ['sku', 'codigo', 'cod', 'item code']);
+        const name = findValueExactFirst(row, ['nombre', 'name', 'descripcion', 'description', 'producto', 'item name', 'product name']);
+        const quantity = findValueExactFirst(row, ['cantidad', 'qty', 'quantity', 'cant']);
+        const unitCost = findValueExactFirst(row, ['costo', 'cost', 'precio', 'price', 'valor unitario', 'unit cost']);
+
+        const values = Object.values(row);
+        const fallbackSku = values[0];
+        const fallbackName = values[1];
+        const fallbackQty = values[2];
+        const fallbackCost = values[3] ?? extractFallbackCost(values);
+
+        const finalSku = (sku ?? fallbackSku ?? `row-${index + 1}`).toString().trim();
+        const rawName = (name ?? fallbackName ?? '').toString().trim();
+        const finalName = sanitizeImportItemName(finalSku, rawName);
+        const finalQty = parseNumber(quantity ?? fallbackQty);
+        const finalUnitCost = parseNumber(unitCost ?? fallbackCost);
+
+        if (!finalName && !finalSku) return;
+        if (finalQty <= 0 || finalUnitCost <= 0) return;
+
+        items.push({
+            sku: finalSku,
+            name: finalName || finalSku,
+            quantity: finalQty,
+            unitCost: finalUnitCost,
+        });
+    });
+
+    return items;
+};
+
 export const parseImportProductsFile = (file: File): Promise<ImportItemRaw[]> => {
     return new Promise((resolve, reject) => {
         const extension = file.name.split('.').pop()?.toLowerCase();
@@ -434,40 +502,6 @@ export const parseImportProductsFile = (file: File): Promise<ImportItemRaw[]> =>
             reject(new Error('El archivo de importaciones debe ser .xlsx, .xls o .csv.'));
             return;
         }
-
-        const mapRowsToImportItems = (rows: Record<string, unknown>[]) => {
-            const items: ImportItemRaw[] = [];
-
-            rows.forEach((row, index) => {
-                const sku = findValue(row, ['sku', 'codigo', 'cod', 'item code']);
-                const name = findValue(row, ['nombre', 'name', 'descripcion', 'description', 'producto', 'item']);
-                const quantity = findValue(row, ['cantidad', 'qty', 'quantity', 'cant']);
-                const unitCost = findValue(row, ['costo', 'cost', 'precio', 'price', 'valor unitario', 'unit cost']);
-
-                const values = Object.values(row);
-                const fallbackSku = values[0];
-                const fallbackName = values[1];
-                const fallbackQty = values[2];
-                const fallbackCost = values[3] ?? extractFallbackCost(values);
-
-                const finalSku = (sku ?? fallbackSku ?? `row-${index + 1}`).toString().trim();
-                const finalName = (name ?? fallbackName ?? '').toString().trim();
-                const finalQty = parseNumber(quantity ?? fallbackQty);
-                const finalUnitCost = parseNumber(unitCost ?? fallbackCost);
-
-                if (!finalName && !finalSku) return;
-                if (finalQty <= 0 || finalUnitCost <= 0) return;
-
-                items.push({
-                    sku: finalSku,
-                    name: finalName || finalSku,
-                    quantity: finalQty,
-                    unitCost: finalUnitCost,
-                });
-            });
-
-            return items;
-        };
 
         const reader = new FileReader();
         if (extension === 'csv') {

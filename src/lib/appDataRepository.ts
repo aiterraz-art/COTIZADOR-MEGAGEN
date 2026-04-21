@@ -48,6 +48,31 @@ export interface SavedSimulationRecord {
   items: SimulationItemPayload[];
 }
 
+export interface ImportSnapshotItemPayload {
+  sku: string;
+  name: string;
+  quantity: number;
+  unitCost: number;
+}
+
+export interface SaveImportSnapshotPayload {
+  name: string;
+  sourceFile: string;
+  currency: 'USD' | 'EUR';
+  importUsdRate: number;
+  euroRate: number;
+  shippingCost: number;
+  shippingCurrency: 'CLP' | 'USD' | 'EUR';
+  customsCostCLP: number;
+  targetGrossMarginPercent: number;
+  items: ImportSnapshotItemPayload[];
+}
+
+export interface SavedImportSnapshotRecord extends SaveImportSnapshotPayload {
+  id: string;
+  createdAt: string;
+}
+
 interface ProductRecord {
   id: string;
   sku?: string;
@@ -91,6 +116,38 @@ const normalizeItems = (value: unknown): SimulationItemPayload[] => {
     };
   });
 };
+
+const normalizeImportSnapshotItems = (value: unknown): ImportSnapshotItemPayload[] => {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => {
+    const row = item as Record<string, unknown>;
+    return {
+      sku: String(row.sku || ''),
+      name: String(row.name || ''),
+      quantity: toNumber(row.quantity),
+      unitCost: toNumber(row.unit_cost ?? row.unitCost),
+    };
+  });
+};
+
+const toSavedImportSnapshotRecord = (row: Record<string, unknown>): SavedImportSnapshotRecord => ({
+  id: String(row.id || ''),
+  createdAt: String(row.created_at || row.created || ''),
+  name: String(row.name || ''),
+  sourceFile: String(row.source_file || row.sourceFile || ''),
+  currency: String(row.currency || '').toUpperCase() === 'EUR' ? 'EUR' : 'USD',
+  importUsdRate: toNumber(row.import_usd_rate ?? row.importUsdRate),
+  euroRate: toNumber(row.euro_rate ?? row.euroRate),
+  shippingCost: toNumber(row.shipping_cost ?? row.shippingCost),
+  shippingCurrency: String(row.shipping_currency || row.shippingCurrency || '').toUpperCase() === 'USD'
+    ? 'USD'
+    : String(row.shipping_currency || row.shippingCurrency || '').toUpperCase() === 'EUR'
+      ? 'EUR'
+      : 'CLP',
+  customsCostCLP: toNumber(row.customs_cost_clp ?? row.customsCostCLP),
+  targetGrossMarginPercent: toNumber(row.target_gross_margin_percent ?? row.targetGrossMarginPercent),
+  items: normalizeImportSnapshotItems(row.items),
+});
 
 const deleteAllPocketBaseRecords = async (collectionName: string): Promise<void> => {
   const rows = await pocketbase.collection(collectionName).getFullList<{ id: string }>({ fields: 'id' });
@@ -229,6 +286,78 @@ export const deleteSimulationRecord = async (id: string): Promise<void> => {
   }
 
   await pocketbase.collection('simulations').delete(id);
+};
+
+export const saveImportSnapshotRecord = async (payload: SaveImportSnapshotPayload): Promise<SavedImportSnapshotRecord> => {
+  const recordPayload = {
+    name: payload.name,
+    source_file: payload.sourceFile,
+    currency: payload.currency,
+    import_usd_rate: payload.importUsdRate,
+    euro_rate: payload.euroRate,
+    shipping_cost: payload.shippingCost,
+    shipping_currency: payload.shippingCurrency,
+    customs_cost_clp: payload.customsCostCLP,
+    target_gross_margin_percent: payload.targetGrossMarginPercent,
+    items: payload.items.map((item) => ({
+      sku: item.sku,
+      name: item.name,
+      quantity: item.quantity,
+      unit_cost: item.unitCost,
+    })),
+  };
+
+  if (!isPocketBaseProvider) {
+    const { data, error } = await supabase
+      .from('import_snapshots')
+      .insert([recordPayload])
+      .select('*')
+      .single();
+
+    if (error) throw error;
+    return toSavedImportSnapshotRecord(data as Record<string, unknown>);
+  }
+
+  const data = await pocketbase.collection('import_snapshots').create<Record<string, unknown>>({
+    ...recordPayload,
+    created_at: new Date().toISOString(),
+  });
+  return toSavedImportSnapshotRecord(data);
+};
+
+export const fetchImportSnapshotRecords = async (): Promise<SavedImportSnapshotRecord[]> => {
+  if (!isPocketBaseProvider) {
+    const { data, error } = await supabase
+      .from('import_snapshots')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    return (data || []).map((row) => toSavedImportSnapshotRecord(row as Record<string, unknown>));
+  }
+
+  let rows: Record<string, unknown>[] = [];
+  try {
+    rows = await pocketbase.collection('import_snapshots').getFullList<Record<string, unknown>>({ sort: '-created_at' });
+  } catch {
+    rows = await pocketbase.collection('import_snapshots').getFullList<Record<string, unknown>>();
+  }
+
+  return rows.map((row) => toSavedImportSnapshotRecord(row));
+};
+
+export const deleteImportSnapshotRecord = async (id: string): Promise<void> => {
+  if (!isPocketBaseProvider) {
+    const { error } = await supabase
+      .from('import_snapshots')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw error;
+    return;
+  }
+
+  await pocketbase.collection('import_snapshots').delete(id);
 };
 
 export const deleteProductRecord = async (id: string): Promise<void> => {

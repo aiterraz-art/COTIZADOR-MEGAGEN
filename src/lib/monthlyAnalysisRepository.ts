@@ -3,14 +3,23 @@ import { pocketbase } from './pocketbase';
 import { supabase } from './supabase';
 import type {
   MonthlyAnalysisSummary,
+  MonthlyBalanceCustomMappingResult,
   MonthlyBalanceLine,
+  MonthlyBalanceMappedLine,
+  MonthlyBalanceMappedSource,
+  MonthlyBalanceSourceRow,
   MonthlyBalanceSection,
   MonthlyCloseListItem,
   MonthlyCloseRecord,
   MonthlyInventoryFamily,
   MonthlyInventoryMovement,
+  MonthlyManualInputs,
+  MonthlyPnlCustomMappingResult,
   MonthlyPnlLine,
+  MonthlyPnlMappedLine,
+  MonthlyPnlMappedSource,
   MonthlyPnlSection,
+  MonthlyPnlSourceRow,
   UpsertMonthlyClosurePayload,
 } from '../types/monthlyAnalysis';
 
@@ -46,15 +55,162 @@ const emptySummary = (): MonthlyAnalysisSummary => ({
   },
   inventory: {
     byFamily: {
-      IMPLANTES: { family: 'IMPLANTES', openingQty: 0, entriesQty: 0, exitsQty: 0, adjustmentsQty: 0, closingQty: 0, netChangeQty: 0, skuCount: 0 },
-      ADITAMENTOS: { family: 'ADITAMENTOS', openingQty: 0, entriesQty: 0, exitsQty: 0, adjustmentsQty: 0, closingQty: 0, netChangeQty: 0, skuCount: 0 },
-      KITS: { family: 'KITS', openingQty: 0, entriesQty: 0, exitsQty: 0, adjustmentsQty: 0, closingQty: 0, netChangeQty: 0, skuCount: 0 },
-      SIN_CLASIFICAR: { family: 'SIN_CLASIFICAR', openingQty: 0, entriesQty: 0, exitsQty: 0, adjustmentsQty: 0, closingQty: 0, netChangeQty: 0, skuCount: 0 },
+      IMPLANTES: { family: 'IMPLANTES', openingQty: 0, entriesQty: 0, exitsQty: 0, adjustmentsQty: 0, closingQty: 0, netChangeQty: 0, salesAmountCLP: 0, skuCount: 0 },
+      KITS: { family: 'KITS', openingQty: 0, entriesQty: 0, exitsQty: 0, adjustmentsQty: 0, closingQty: 0, netChangeQty: 0, salesAmountCLP: 0, skuCount: 0 },
+      MOTOR: { family: 'MOTOR', openingQty: 0, entriesQty: 0, exitsQty: 0, adjustmentsQty: 0, closingQty: 0, netChangeQty: 0, salesAmountCLP: 0, skuCount: 0 },
+      ADITAMENTOS: { family: 'ADITAMENTOS', openingQty: 0, entriesQty: 0, exitsQty: 0, adjustmentsQty: 0, closingQty: 0, netChangeQty: 0, salesAmountCLP: 0, skuCount: 0 },
+      DESPACHO: { family: 'DESPACHO', openingQty: 0, entriesQty: 0, exitsQty: 0, adjustmentsQty: 0, closingQty: 0, netChangeQty: 0, salesAmountCLP: 0, skuCount: 0 },
+      SIN_CLASIFICAR: { family: 'SIN_CLASIFICAR', openingQty: 0, entriesQty: 0, exitsQty: 0, adjustmentsQty: 0, closingQty: 0, netChangeQty: 0, salesAmountCLP: 0, skuCount: 0 },
     },
-    totals: { family: 'SIN_CLASIFICAR', openingQty: 0, entriesQty: 0, exitsQty: 0, adjustmentsQty: 0, closingQty: 0, netChangeQty: 0, skuCount: 0 },
+    totals: { family: 'SIN_CLASIFICAR', openingQty: 0, entriesQty: 0, exitsQty: 0, adjustmentsQty: 0, closingQty: 0, netChangeQty: 0, salesAmountCLP: 0, skuCount: 0 },
     unmappedSkuCount: 0,
   },
+  manualInputs: {
+    adminSalaryManualCLP: null,
+  },
+  customPnl: null,
+  customBalance: null,
 });
+
+const toStringArray = (value: unknown): string[] => (
+  Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+    : []
+);
+
+const parseManualInputs = (value: unknown): MonthlyManualInputs => {
+  if (!value || typeof value !== 'object') {
+    return { adminSalaryManualCLP: null };
+  }
+
+  const row = value as GenericRow;
+  return {
+    adminSalaryManualCLP: row.adminSalaryManualCLP == null ? null : toNumber(row.adminSalaryManualCLP),
+  };
+};
+
+const parsePnlSourceRow = (value: unknown): MonthlyPnlSourceRow => {
+  const row = (value && typeof value === 'object' ? value : {}) as GenericRow;
+  return {
+    lineOrder: toNumber(row.lineOrder),
+    accountCode: String(row.accountCode || ''),
+    accountName: String(row.accountName || ''),
+    amountCLP: toNumber(row.amountCLP),
+    sourceSectionLabel: String(row.sourceSectionLabel || ''),
+    isSubtotal: Boolean(row.isSubtotal),
+  };
+};
+
+const parsePnlMappedSource = (value: unknown): MonthlyPnlMappedSource => {
+  const row = (value && typeof value === 'object' ? value : {}) as GenericRow;
+  return {
+    lineOrder: toNumber(row.lineOrder),
+    accountCode: String(row.accountCode || ''),
+    accountName: String(row.accountName || ''),
+    amountCLP: toNumber(row.amountCLP),
+    sourceSectionLabel: String(row.sourceSectionLabel || ''),
+  };
+};
+
+const parsePnlMappedLine = (value: unknown): MonthlyPnlMappedLine => {
+  const row = (value && typeof value === 'object' ? value : {}) as GenericRow;
+  return {
+    targetKey: String(row.targetKey || ''),
+    targetLabel: String(row.targetLabel || ''),
+    sectionKey: String(row.sectionKey || 'SGA') as MonthlyPnlMappedLine['sectionKey'],
+    amountCLP: toNumber(row.amountCLP),
+    kind: row.kind === 'subtotal' ? 'subtotal' : 'detail',
+    sources: Array.isArray(row.sources) ? row.sources.map(parsePnlMappedSource) : [],
+    isManual: Boolean(row.isManual),
+    notes: toStringArray(row.notes),
+  };
+};
+
+const parseBalanceSourceRow = (value: unknown): MonthlyBalanceSourceRow => {
+  const row = (value && typeof value === 'object' ? value : {}) as GenericRow;
+  return {
+    lineOrder: toNumber(row.lineOrder),
+    accountCode: String(row.accountCode || ''),
+    accountName: String(row.accountName || ''),
+    amountCLP: toNumber(row.amountCLP),
+    sourceSectionLabel: String(row.sourceSectionLabel || ''),
+    isSubtotal: Boolean(row.isSubtotal),
+  };
+};
+
+const parseBalanceMappedSource = (value: unknown): MonthlyBalanceMappedSource => {
+  const row = (value && typeof value === 'object' ? value : {}) as GenericRow;
+  return {
+    lineOrder: toNumber(row.lineOrder),
+    accountCode: String(row.accountCode || ''),
+    accountName: String(row.accountName || ''),
+    amountCLP: toNumber(row.amountCLP),
+    sourceSectionLabel: String(row.sourceSectionLabel || ''),
+  };
+};
+
+const parseBalanceMappedLine = (value: unknown): MonthlyBalanceMappedLine => {
+  const row = (value && typeof value === 'object' ? value : {}) as GenericRow;
+  return {
+    targetKey: String(row.targetKey || ''),
+    targetLabel: String(row.targetLabel || ''),
+    sectionKey: String(row.sectionKey || 'ASSETS') as MonthlyBalanceMappedLine['sectionKey'],
+    amountCLP: toNumber(row.amountCLP),
+    kind: ['header', 'detail', 'subtotal', 'grand_total'].includes(String(row.kind))
+      ? (String(row.kind) as MonthlyBalanceMappedLine['kind'])
+      : 'detail',
+    level: toNumber(row.level),
+    parentKey: row.parentKey ? String(row.parentKey) : undefined,
+    sources: Array.isArray(row.sources) ? row.sources.map(parseBalanceMappedSource) : [],
+    notes: toStringArray(row.notes),
+  };
+};
+
+const parseCustomPnl = (value: unknown): MonthlyPnlCustomMappingResult | null => {
+  if (!value || typeof value !== 'object') return null;
+
+  const row = value as GenericRow;
+  const totals = (row.totals && typeof row.totals === 'object' ? row.totals : {}) as GenericRow;
+
+  return {
+    mappedLines: Array.isArray(row.mappedLines) ? row.mappedLines.map(parsePnlMappedLine) : [],
+    sourceRows: Array.isArray(row.sourceRows) ? row.sourceRows.map(parsePnlSourceRow) : [],
+    unmappedSourceLines: Array.isArray(row.unmappedSourceLines) ? row.unmappedSourceLines.map(parsePnlSourceRow) : [],
+    manualInputs: parseManualInputs(row.manualInputs),
+    totals: {
+      totalCostOfSalesCLP: toNumber(totals.totalCostOfSalesCLP),
+      totalSgaCLP: toNumber(totals.totalSgaCLP),
+      totalNonOperatingIncomeCLP: toNumber(totals.totalNonOperatingIncomeCLP),
+      totalNonOperatingExpensesCLP: toNumber(totals.totalNonOperatingExpensesCLP),
+    },
+    warnings: toStringArray(row.warnings),
+    errors: toStringArray(row.errors),
+  };
+};
+
+const parseCustomBalance = (value: unknown): MonthlyBalanceCustomMappingResult | null => {
+  if (!value || typeof value !== 'object') return null;
+
+  const row = value as GenericRow;
+  const totals = (row.totals && typeof row.totals === 'object' ? row.totals : {}) as GenericRow;
+
+  return {
+    mappedLines: Array.isArray(row.mappedLines) ? row.mappedLines.map(parseBalanceMappedLine) : [],
+    sourceRows: Array.isArray(row.sourceRows) ? row.sourceRows.map(parseBalanceSourceRow) : [],
+    unmappedSourceLines: Array.isArray(row.unmappedSourceLines) ? row.unmappedSourceLines.map(parseBalanceSourceRow) : [],
+    totals: {
+      totalAssetsCLP: toNumber(totals.totalAssetsCLP),
+      totalLiabilitiesCLP: toNumber(totals.totalLiabilitiesCLP),
+      totalEquityCLP: toNumber(totals.totalEquityCLP),
+      totalLiabilitiesAndEquityCLP: toNumber(totals.totalLiabilitiesAndEquityCLP),
+    },
+    warnings: toStringArray(row.warnings),
+    errors: toStringArray(row.errors),
+    balanceDifferenceCLP: toNumber(row.balanceDifferenceCLP),
+    sourceNetIncomeControlCLP: row.sourceNetIncomeControlCLP == null ? null : toNumber(row.sourceNetIncomeControlCLP),
+    netIncomeDifferenceCLP: row.netIncomeDifferenceCLP == null ? null : toNumber(row.netIncomeDifferenceCLP),
+  };
+};
 
 const parseSummary = (value: unknown): MonthlyAnalysisSummary => {
   if (!value || typeof value !== 'object') return emptySummary();
@@ -92,6 +248,7 @@ const parseSummary = (value: unknown): MonthlyAnalysisSummary => {
           adjustmentsQty: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.IMPLANTES as GenericRow | undefined)?.adjustmentsQty),
           closingQty: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.IMPLANTES as GenericRow | undefined)?.closingQty),
           netChangeQty: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.IMPLANTES as GenericRow | undefined)?.netChangeQty),
+          salesAmountCLP: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.IMPLANTES as GenericRow | undefined)?.salesAmountCLP),
           skuCount: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.IMPLANTES as GenericRow | undefined)?.skuCount),
         },
         ADITAMENTOS: {
@@ -102,6 +259,7 @@ const parseSummary = (value: unknown): MonthlyAnalysisSummary => {
           adjustmentsQty: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.ADITAMENTOS as GenericRow | undefined)?.adjustmentsQty),
           closingQty: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.ADITAMENTOS as GenericRow | undefined)?.closingQty),
           netChangeQty: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.ADITAMENTOS as GenericRow | undefined)?.netChangeQty),
+          salesAmountCLP: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.ADITAMENTOS as GenericRow | undefined)?.salesAmountCLP),
           skuCount: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.ADITAMENTOS as GenericRow | undefined)?.skuCount),
         },
         KITS: {
@@ -112,7 +270,30 @@ const parseSummary = (value: unknown): MonthlyAnalysisSummary => {
           adjustmentsQty: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.KITS as GenericRow | undefined)?.adjustmentsQty),
           closingQty: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.KITS as GenericRow | undefined)?.closingQty),
           netChangeQty: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.KITS as GenericRow | undefined)?.netChangeQty),
+          salesAmountCLP: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.KITS as GenericRow | undefined)?.salesAmountCLP),
           skuCount: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.KITS as GenericRow | undefined)?.skuCount),
+        },
+        MOTOR: {
+          family: 'MOTOR',
+          openingQty: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.MOTOR as GenericRow | undefined)?.openingQty),
+          entriesQty: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.MOTOR as GenericRow | undefined)?.entriesQty),
+          exitsQty: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.MOTOR as GenericRow | undefined)?.exitsQty),
+          adjustmentsQty: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.MOTOR as GenericRow | undefined)?.adjustmentsQty),
+          closingQty: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.MOTOR as GenericRow | undefined)?.closingQty),
+          netChangeQty: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.MOTOR as GenericRow | undefined)?.netChangeQty),
+          salesAmountCLP: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.MOTOR as GenericRow | undefined)?.salesAmountCLP),
+          skuCount: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.MOTOR as GenericRow | undefined)?.skuCount),
+        },
+        DESPACHO: {
+          family: 'DESPACHO',
+          openingQty: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.DESPACHO as GenericRow | undefined)?.openingQty),
+          entriesQty: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.DESPACHO as GenericRow | undefined)?.entriesQty),
+          exitsQty: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.DESPACHO as GenericRow | undefined)?.exitsQty),
+          adjustmentsQty: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.DESPACHO as GenericRow | undefined)?.adjustmentsQty),
+          closingQty: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.DESPACHO as GenericRow | undefined)?.closingQty),
+          netChangeQty: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.DESPACHO as GenericRow | undefined)?.netChangeQty),
+          salesAmountCLP: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.DESPACHO as GenericRow | undefined)?.salesAmountCLP),
+          skuCount: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.DESPACHO as GenericRow | undefined)?.skuCount),
         },
         SIN_CLASIFICAR: {
           family: 'SIN_CLASIFICAR',
@@ -122,6 +303,7 @@ const parseSummary = (value: unknown): MonthlyAnalysisSummary => {
           adjustmentsQty: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.SIN_CLASIFICAR as GenericRow | undefined)?.adjustmentsQty),
           closingQty: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.SIN_CLASIFICAR as GenericRow | undefined)?.closingQty),
           netChangeQty: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.SIN_CLASIFICAR as GenericRow | undefined)?.netChangeQty),
+          salesAmountCLP: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.SIN_CLASIFICAR as GenericRow | undefined)?.salesAmountCLP),
           skuCount: toNumber((((row.inventory as GenericRow | undefined)?.byFamily as GenericRow | undefined)?.SIN_CLASIFICAR as GenericRow | undefined)?.skuCount),
         },
       },
@@ -133,10 +315,14 @@ const parseSummary = (value: unknown): MonthlyAnalysisSummary => {
         adjustmentsQty: toNumber(((row.inventory as GenericRow | undefined)?.totals as GenericRow | undefined)?.adjustmentsQty),
         closingQty: toNumber(((row.inventory as GenericRow | undefined)?.totals as GenericRow | undefined)?.closingQty),
         netChangeQty: toNumber(((row.inventory as GenericRow | undefined)?.totals as GenericRow | undefined)?.netChangeQty),
+        salesAmountCLP: toNumber(((row.inventory as GenericRow | undefined)?.totals as GenericRow | undefined)?.salesAmountCLP),
         skuCount: toNumber(((row.inventory as GenericRow | undefined)?.totals as GenericRow | undefined)?.skuCount),
       },
       unmappedSkuCount: toNumber((row.inventory as GenericRow | undefined)?.unmappedSkuCount),
     },
+    manualInputs: parseManualInputs(row.manualInputs),
+    customBalance: parseCustomBalance(row.customBalance),
+    customPnl: parseCustomPnl(row.customPnl),
   };
 };
 
@@ -151,7 +337,7 @@ const parsePnlSection = (value: unknown): MonthlyPnlSection => {
 };
 
 const parseInventoryFamily = (value: unknown): MonthlyInventoryFamily => {
-  const validValues: MonthlyInventoryFamily[] = ['IMPLANTES', 'ADITAMENTOS', 'KITS', 'SIN_CLASIFICAR'];
+  const validValues: MonthlyInventoryFamily[] = ['IMPLANTES', 'ADITAMENTOS', 'KITS', 'MOTOR', 'DESPACHO', 'SIN_CLASIFICAR'];
   return validValues.includes(String(value) as MonthlyInventoryFamily) ? (String(value) as MonthlyInventoryFamily) : 'SIN_CLASIFICAR';
 };
 
@@ -290,7 +476,12 @@ export const upsertMonthlyClosure = async (payload: UpsertMonthlyClosurePayload)
     balance_file_name: payload.balanceFileName,
     pnl_file_name: payload.pnlFileName,
     inventory_file_name: payload.inventoryFileName,
-    summary: payload.summary,
+    summary: {
+      ...payload.summary,
+      manualInputs: payload.manualInputs ?? payload.summary.manualInputs ?? { adminSalaryManualCLP: null },
+      customBalance: payload.customBalance ?? payload.summary.customBalance ?? null,
+      customPnl: payload.customPnl ?? payload.summary.customPnl ?? null,
+    },
     updated_at: new Date().toISOString(),
   };
 

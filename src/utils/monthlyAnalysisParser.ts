@@ -1,6 +1,8 @@
 import * as XLSX from 'xlsx';
 import Papa from 'papaparse';
 import type { Product } from '../data/mockProducts';
+import { findImplantDefinition } from '../data/implantDefinitions';
+import { MONTHLY_BALANCE_SOURCE_NET_INCOME_CONTROL_CODE } from '../types/monthlyAnalysis';
 import type {
   MonthlyBalanceLine,
   MonthlyBalanceSection,
@@ -12,11 +14,17 @@ import type {
 } from '../types/monthlyAnalysis';
 
 type TabularRow = Record<string, unknown>;
+type SheetMatrixRow = unknown[];
 
 const normalize = (text: string): string => text
   .toLowerCase()
   .normalize('NFD')
   .replace(/[\u0300-\u036f]/g, '')
+  .trim();
+
+const normalizeLoose = (text: string): string => normalize(text)
+  .replace(/[^a-z0-9\s]/g, ' ')
+  .replace(/\s+/g, ' ')
   .trim();
 
 const numberRegex = /^-?\d+(?:[.,]\d+)?$/;
@@ -48,6 +56,12 @@ const parseNumber = (value: unknown): number => {
   const numeric = Number(normalized);
   return Number.isFinite(numeric) ? numeric : 0;
 };
+
+const formatCLP = (value: number): string => new Intl.NumberFormat('es-CL', {
+  style: 'currency',
+  currency: 'CLP',
+  maximumFractionDigits: 0,
+}).format(value);
 
 const isNumericLike = (value: unknown): boolean => {
   if (typeof value === 'number') return Number.isFinite(value);
@@ -147,14 +161,28 @@ const valueToPeriodKey = (value: unknown): string | null => {
 
 const resolveColumnValue = (row: TabularRow, aliases: string[]): unknown => {
   const normalizedAliases = aliases.map(normalize);
+  let bestMatch: { value: unknown; score: number } | null = null;
+
   for (const [key, value] of Object.entries(row)) {
     const normalizedKey = normalize(key);
-    if (normalizedAliases.some((alias) => normalizedKey === alias || normalizedKey.includes(alias))) {
-      return value;
+
+    for (const alias of normalizedAliases) {
+      let score = 0;
+
+      if (normalizedKey === alias) {
+        score = 1000 + alias.length;
+      } else if (normalizedKey.includes(alias)) {
+        score = alias.length;
+      }
+
+      if (!score) continue;
+      if (!bestMatch || score > bestMatch.score) {
+        bestMatch = { value, score };
+      }
     }
   }
 
-  return undefined;
+  return bestMatch?.value;
 };
 
 const resolveTextFallbacks = (row: TabularRow): string[] => (
@@ -162,6 +190,61 @@ const resolveTextFallbacks = (row: TabularRow): string[] => (
     .map((value) => String(value ?? '').trim())
     .filter((value) => value.length > 0 && !isNumericLike(value))
 );
+
+const collectHeaderHints = (rows: TabularRow[], maxRows = 3): string[] => {
+  const headers = new Set<string>();
+
+  for (const row of rows.slice(0, maxRows)) {
+    for (const key of Object.keys(row)) {
+      const normalizedKey = normalizeLoose(key);
+      if (normalizedKey) headers.add(normalizedKey);
+    }
+  }
+
+  return Array.from(headers);
+};
+
+const headersMatchAliases = (headers: string[], aliases: string[]): boolean => {
+  const normalizedAliases = aliases.map(normalizeLoose);
+  return headers.some((header) => normalizedAliases.some((alias) => header === alias || header.includes(alias)));
+};
+
+const detectInventoryFileShape = (rows: TabularRow[]): {
+  headers: string[];
+  looksLikeSalesReport: boolean;
+  looksLikeInventoryReport: boolean;
+} => {
+  const headers = collectHeaderHints(rows);
+
+  const looksLikeSalesReport = [
+    ['nombre doc', 'tipo documento', 'documento'],
+    ['numero del documento', 'n documento', 'factura'],
+    ['nombre del vendedor', 'vendedor', 'sales rep'],
+    ['codigo del cliente', 'cliente'],
+    ['cod producto', 'sku', 'codigo producto'],
+    ['precio unitario', 'precio'],
+    ['total detalle', 'monto neto', 'total'],
+    ['costo vigente', 'costo'],
+  ].filter((aliases) => headersMatchAliases(headers, aliases)).length >= 4;
+
+  const inventorySignalMatches = [
+    ['sku', 'codigo', 'cod producto'],
+    ['stock inicial', 'saldo inicial', 'opening'],
+    ['entradas', 'ingresos', 'entry'],
+    ['salidas', 'egresos', 'exit'],
+    ['ajustes', 'adjustment', 'regularizaciones'],
+    ['stock final', 'saldo final', 'closing'],
+    ['tipo movimiento', 'movement type'],
+  ].filter((aliases) => headersMatchAliases(headers, aliases)).length;
+
+  const looksLikeInventoryReport = inventorySignalMatches >= 2;
+
+  return {
+    headers,
+    looksLikeSalesReport,
+    looksLikeInventoryReport,
+  };
+};
 
 const resolveAmountValue = (
   row: TabularRow,
@@ -212,6 +295,32 @@ const readSheetRows = async (file: File): Promise<TabularRow[]> => {
   throw new Error('Formato no soportado. Usa .xlsx, .xls o .csv');
 };
 
+const readSheetRowsWithHeaderRow = async (file: File, headerRowIndex: number): Promise<TabularRow[]> => {
+  const extension = file.name.split('.').pop()?.toLowerCase();
+  if (extension !== 'xlsx' && extension !== 'xls') {
+    return readSheetRows(file);
+  }
+
+  const content = new Uint8Array(await file.arrayBuffer());
+  const workbook = XLSX.read(content, { type: 'array' });
+  const firstSheet = workbook.SheetNames[0];
+  const worksheet = workbook.Sheets[firstSheet];
+  return XLSX.utils.sheet_to_json(worksheet, { range: headerRowIndex, defval: '' }) as TabularRow[];
+};
+
+const readSheetMatrix = async (file: File): Promise<SheetMatrixRow[]> => {
+  const extension = file.name.split('.').pop()?.toLowerCase();
+  if (extension !== 'xlsx' && extension !== 'xls') {
+    throw new Error('Formato no soportado. Usa .xlsx o .xls');
+  }
+
+  const content = new Uint8Array(await file.arrayBuffer());
+  const workbook = XLSX.read(content, { type: 'array', cellDates: true });
+  const firstSheet = workbook.SheetNames[0];
+  const worksheet = workbook.Sheets[firstSheet];
+  return XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' }) as SheetMatrixRow[];
+};
+
 const collectDetectedPeriodKeys = (rows: TabularRow[]): string[] => {
   const periodKeys = new Set<string>();
   const periodAliases = ['periodo', 'period', 'mes', 'fecha', 'date', 'fecha documento', 'fecha contabilizacion'];
@@ -247,6 +356,95 @@ const evaluateDetectedPeriods = (
 
   warnings.push(`Se detectaron periodos mixtos en el archivo: ${detectedPeriodKeys.join(', ')}.`);
 };
+
+const extractPeriodKeysFromText = (value: string): string[] => {
+  const keys = new Set<string>();
+  const dateMatches = value.matchAll(/(\d{2})\/(\d{2})\/(20\d{2})/g);
+
+  for (const match of dateMatches) {
+    const [, day, month, year] = match;
+    if (!day || !month || !year) continue;
+    keys.add(`${year}-${month}`);
+  }
+
+  const isoMatches = value.matchAll(/(20\d{2})[-/](\d{1,2})/g);
+  for (const match of isoMatches) {
+    const [, year, month] = match;
+    if (!year || !month) continue;
+    keys.add(`${year}-${month.padStart(2, '0')}`);
+  }
+
+  return Array.from(keys);
+};
+
+const collectDetectedPeriodKeysFromMatrix = (rows: SheetMatrixRow[]): string[] => {
+  const detected = new Set<string>();
+
+  for (const row of rows.slice(0, 12)) {
+    for (const cell of row) {
+      if (typeof cell !== 'string') continue;
+      const normalizedCell = normalize(cell);
+      if (!normalizedCell.includes('period')) continue;
+      for (const periodKey of extractPeriodKeysFromText(cell)) {
+        detected.add(periodKey);
+      }
+    }
+  }
+
+  return Array.from(detected).sort();
+};
+
+const normalizeMatrixCell = (value: unknown): string => normalize(String(value ?? ''));
+
+const findBalanceWorksheetHeaderIndex = (rows: SheetMatrixRow[]): number => rows.findIndex((row) => {
+  const normalizedRow = row.map((cell) => normalizeMatrixCell(cell));
+  if (!normalizedRow.length) return false;
+
+  return normalizedRow[0] === 'cuenta'
+    && normalizedRow.some((cell) => cell.includes('activo'))
+    && normalizedRow.some((cell) => cell.includes('pasivo'));
+});
+
+const findHeaderCellIndex = (headerRow: SheetMatrixRow, aliases: string[]): number => {
+  const normalizedCells = headerRow.map((cell) => normalize(String(cell ?? '')));
+  const normalizedAliases = aliases.map((alias) => normalize(alias));
+
+  return normalizedCells.findIndex((cell) => normalizedAliases.some((alias) => cell === alias || cell.includes(alias)));
+};
+
+const resolveBalanceWorksheetColumnIndexes = (headerRow: SheetMatrixRow): {
+  activeIndex: number;
+  passiveIndex: number;
+  lossIndex: number;
+  profitIndex: number;
+} => ({
+  activeIndex: findHeaderCellIndex(headerRow, ['activo']),
+  passiveIndex: findHeaderCellIndex(headerRow, ['pasivo']),
+  lossIndex: findHeaderCellIndex(headerRow, ['perdida', 'pérdida']),
+  profitIndex: findHeaderCellIndex(headerRow, ['ganancia', 'utilidad']),
+});
+
+const inferBalanceSectionFromAccountCode = (accountCode: string): MonthlyBalanceSection => {
+  if (accountCode.startsWith('1.1.')) return 'ACTIVO_CORRIENTE';
+  if (accountCode.startsWith('1.2.') || accountCode.startsWith('1.3.') || accountCode.startsWith('1.4.')) {
+    return 'ACTIVO_NO_CORRIENTE';
+  }
+  if (accountCode.startsWith('2.1.')) return 'PASIVO_CORRIENTE';
+  if (accountCode.startsWith('2.2.') || accountCode.startsWith('2.3.')) return 'PASIVO_NO_CORRIENTE';
+  if (accountCode.startsWith('2.4.')) return 'PATRIMONIO';
+  return 'OTROS';
+};
+
+const getBalanceSectionLabel = (section: MonthlyBalanceSection): string => {
+  if (section === 'ACTIVO_CORRIENTE') return 'Activo Corriente';
+  if (section === 'ACTIVO_NO_CORRIENTE') return 'Activo No Corriente';
+  if (section === 'PASIVO_CORRIENTE') return 'Pasivo Corriente';
+  if (section === 'PASIVO_NO_CORRIENTE') return 'Pasivo No Corriente';
+  if (section === 'PATRIMONIO') return 'Patrimonio';
+  return 'Otros';
+};
+
+const isBalanceWorksheetAccountCode = (value: string): boolean => /^\d+(?:\.\d+)+$/.test(value.trim());
 
 const isSubtotalName = (value: string): boolean => {
   const normalized = normalize(value);
@@ -298,9 +496,6 @@ const inferBalanceSection = (sourceSection: string, accountName: string): Monthl
 const inferPnlSection = (sourceSection: string, accountName: string): MonthlyPnlSection => {
   const raw = normalize(`${sourceSection} ${accountName}`);
 
-  if (raw.includes('venta') || raw.includes('ingreso operacional') || raw.includes('revenue') || raw.includes('ingresos')) {
-    return 'INGRESOS';
-  }
   if (raw.includes('costo de venta') || raw.includes('costo ventas') || raw.includes('cost of sales')) {
     return 'COSTO_VENTAS';
   }
@@ -325,37 +520,258 @@ const inferPnlSection = (sourceSection: string, accountName: string): MonthlyPnl
   if (raw.includes('financiero') || raw.includes('impuesto') || raw.includes('otros ingresos') || raw.includes('otros egresos')) {
     return 'OTROS_INGRESOS_EGRESOS';
   }
+  if (raw.includes('venta') || raw.includes('ingreso operacional') || raw.includes('revenue') || raw.includes('ingresos')) {
+    return 'INGRESOS';
+  }
 
   return 'OTROS';
 };
 
-const familyFromCategory = (category: string): MonthlyInventoryFamily => {
-  const normalized = normalize(category);
-  if (normalized.includes('implante')) return 'IMPLANTES';
-  if (normalized.includes('aditamento') || normalized.includes('ti-base') || normalized.includes('abutment')) return 'ADITAMENTOS';
-  if (normalized.includes('kit')) return 'KITS';
-  return 'SIN_CLASIFICAR';
+const inferInventoryFamily = (productName: string, category: string): MonthlyInventoryFamily => {
+  const implantDefinition = findImplantDefinition(productName);
+  const normalizedName = normalize(productName);
+  const normalizedCategory = normalize(category);
+
+  if (normalizedCategory.includes('despacho') || normalizedName.includes('despacho')) {
+    return 'DESPACHO';
+  }
+
+  if (
+    normalizedCategory.includes('implante')
+    || implantDefinition
+  ) {
+    return 'IMPLANTES';
+  }
+
+  if (normalizedCategory.includes('kit') || normalizedName.includes('kit')) {
+    return 'KITS';
+  }
+
+  if (
+    normalizedCategory.includes('motor')
+    || normalizedName.includes('coxo')
+    || normalizedName.includes('coxxo')
+    || normalizedName.includes('motor')
+  ) {
+    return 'MOTOR';
+  }
+
+  return 'ADITAMENTOS';
 };
 
-const buildCatalogIndex = (products: Product[]): Map<string, { family: MonthlyInventoryFamily; name: string }> => {
-  const index = new Map<string, { family: MonthlyInventoryFamily; name: string }>();
-  for (const product of products) {
-    const sku = String(product.sku || '').trim().toUpperCase();
-    if (!sku) continue;
-    index.set(sku, {
-      family: familyFromCategory(product.category),
-      name: product.name,
-    });
+const isPnlAccountCode = (value: string): boolean => /^\d+(?:\.\d+)+$/.test(value.trim());
+
+const parseYearValue = (value: string): number | null => {
+  const match = normalize(value).match(/20\d{2}/);
+  return match ? Number(match[0]) : null;
+};
+
+const findPnlHeaderRowIndex = (rows: SheetMatrixRow[]): number => rows.findIndex((row) => {
+  const normalizedCells = row.map((cell) => normalize(String(cell ?? '')));
+  const hasCuenta = normalizedCells.some((cell) => cell === 'cuenta');
+  const hasDescription = normalizedCells.some((cell) => cell.startsWith('descrip'));
+  const hasTargetYear = normalizedCells.some((cell) => /20\d{2}/.test(cell));
+  return hasCuenta && hasDescription && hasTargetYear;
+});
+
+const resolvePnlColumnIndexes = (
+  headerRow: SheetMatrixRow,
+  selectedPeriodKey: string,
+): {
+  codeIndex: number;
+  nameIndex: number;
+  amountIndex: number;
+} => {
+  const normalizedCells = headerRow.map((cell) => normalize(String(cell ?? '')));
+  const selectedYear = Number(selectedPeriodKey.slice(0, 4));
+  const codeIndex = normalizedCells.findIndex((cell) => cell === 'cuenta');
+  const nameIndex = normalizedCells.findIndex((cell) => cell.startsWith('descrip'));
+  const yearlyCandidates = normalizedCells
+    .map((cell, index) => ({ index, year: parseYearValue(cell), cell }))
+    .filter((entry) => entry.year !== null);
+  const exactYearMatch = yearlyCandidates.find((entry) => entry.year === selectedYear);
+  const amountIndex = exactYearMatch?.index
+    ?? yearlyCandidates.sort((left, right) => (left.year ?? 0) - (right.year ?? 0)).at(-1)?.index
+    ?? normalizedCells.findIndex((cell) => cell.includes('resultado') || cell.includes('monto'));
+
+  return {
+    codeIndex,
+    nameIndex,
+    amountIndex: amountIndex >= 0 ? amountIndex : 3,
+  };
+};
+
+export const parsePnlWorksheetRows = (
+  rows: SheetMatrixRow[],
+  selectedPeriodKey: string,
+  fileName = '',
+): MonthlyParseResult<MonthlyPnlLine> => {
+  const warnings: string[] = [];
+  const errors: string[] = [];
+  const detectedPeriodKeys = collectDetectedPeriodKeysFromMatrix(rows);
+  const parsedRows: MonthlyPnlLine[] = [];
+
+  if (!rows.length) {
+    errors.push('El archivo de estado de resultados está vacío.');
   }
-  return index;
+
+  const headerRowIndex = findPnlHeaderRowIndex(rows);
+  if (headerRowIndex === -1) {
+    errors.push('No se encontró la cabecera esperada del estado de resultados personalizado.');
+    return {
+      fileName,
+      rows: parsedRows,
+      warnings,
+      errors,
+      totalRows: rows.length,
+      validRows: parsedRows.length,
+      detectedPeriodKeys,
+    };
+  }
+
+  evaluateDetectedPeriods(selectedPeriodKey, detectedPeriodKeys, errors, warnings);
+
+  const { codeIndex, nameIndex, amountIndex } = resolvePnlColumnIndexes(rows[headerRowIndex] ?? [], selectedPeriodKey);
+  if (codeIndex === -1 || nameIndex === -1 || amountIndex === -1) {
+    errors.push('No se pudieron resolver las columnas Cuenta, Descripción y monto del ER.');
+    return {
+      fileName,
+      rows: parsedRows,
+      warnings,
+      errors,
+      totalRows: rows.length,
+      validRows: parsedRows.length,
+      detectedPeriodKeys,
+    };
+  }
+
+  let currentSectionLabel = '';
+
+  for (let index = headerRowIndex + 1; index < rows.length; index += 1) {
+    const row = rows[index] ?? [];
+    const codeCell = String(row[codeIndex] ?? '').trim();
+    const nameCell = String(row[nameIndex] ?? '').trim();
+    const amountCell = row[amountIndex];
+    const hasAmount = amountCell !== '' && amountCell !== null && amountCell !== undefined;
+
+    if (!codeCell && !nameCell && !hasAmount) continue;
+
+    if (codeCell && !nameCell && !hasAmount && !isPnlAccountCode(codeCell)) {
+      currentSectionLabel = codeCell;
+      continue;
+    }
+
+    if (isPnlAccountCode(codeCell)) {
+      if (!nameCell) continue;
+
+      parsedRows.push({
+        lineOrder: index + 1,
+        accountCode: codeCell,
+        accountName: nameCell,
+        section: inferPnlSection(currentSectionLabel, nameCell),
+        subsection: currentSectionLabel,
+        amountCLP: parseNumber(amountCell),
+        sourcePeriodKey: detectedPeriodKeys[0] ?? selectedPeriodKey,
+        isSubtotal: false,
+      });
+      continue;
+    }
+
+    if (!codeCell && nameCell && hasAmount) {
+      parsedRows.push({
+        lineOrder: index + 1,
+        accountCode: '',
+        accountName: nameCell,
+        section: inferPnlSection(currentSectionLabel || nameCell, nameCell),
+        subsection: currentSectionLabel,
+        amountCLP: parseNumber(amountCell),
+        sourcePeriodKey: detectedPeriodKeys[0] ?? selectedPeriodKey,
+        isSubtotal: true,
+      });
+    }
+  }
+
+  if (!parsedRows.length) {
+    errors.push('No se detectaron líneas válidas en el estado de resultados personalizado.');
+  }
+
+  return {
+    fileName,
+    rows: parsedRows,
+    warnings,
+    errors,
+    totalRows: rows.length,
+    validRows: parsedRows.length,
+    detectedPeriodKeys,
+  };
+};
+
+interface CatalogEntry {
+  family: MonthlyInventoryFamily;
+  name: string;
+  category: string;
+  normalizedName: string;
+}
+
+interface CatalogLookup {
+  exactNameIndex: Map<string, CatalogEntry>;
+  entries: CatalogEntry[];
+}
+
+const buildCatalogLookup = (products: Product[]): CatalogLookup => {
+  const exactNameIndex = new Map<string, CatalogEntry>();
+  const entries: CatalogEntry[] = [];
+
+  for (const product of products) {
+    const normalizedName = normalizeLoose(product.name);
+    if (!normalizedName) continue;
+
+    const entry: CatalogEntry = {
+      family: inferInventoryFamily(product.name, product.category),
+      name: product.name,
+      category: product.category,
+      normalizedName,
+    };
+
+    if (!exactNameIndex.has(normalizedName)) {
+      exactNameIndex.set(normalizedName, entry);
+    }
+
+    entries.push(entry);
+  }
+
+  entries.sort((left, right) => right.normalizedName.length - left.normalizedName.length);
+
+  return {
+    exactNameIndex,
+    entries,
+  };
+};
+
+const resolveCatalogMatch = (
+  productName: string,
+  catalogLookup: CatalogLookup,
+): CatalogEntry | null => {
+  const normalizedProductName = normalizeLoose(productName);
+  if (!normalizedProductName) return null;
+
+  const exactMatch = catalogLookup.exactNameIndex.get(normalizedProductName);
+  if (exactMatch) return exactMatch;
+
+  return catalogLookup.entries.find((entry) => (
+    normalizedProductName.includes(entry.normalizedName)
+    || entry.normalizedName.includes(normalizedProductName)
+  )) ?? null;
 };
 
 const sortInventoryByFamily = (family: MonthlyInventoryFamily): number => {
   return {
     IMPLANTES: 0,
-    ADITAMENTOS: 1,
-    KITS: 2,
-    SIN_CLASIFICAR: 3,
+    KITS: 1,
+    MOTOR: 2,
+    ADITAMENTOS: 3,
+    DESPACHO: 4,
+    SIN_CLASIFICAR: 5,
   }[family];
 };
 
@@ -400,6 +816,111 @@ export const parseBalanceRows = (
 
   if (!parsedRows.length) {
     errors.push('No se detectaron líneas válidas en el balance.');
+  }
+
+  return {
+    fileName,
+    rows: parsedRows,
+    warnings,
+    errors,
+    totalRows: rows.length,
+    validRows: parsedRows.length,
+    detectedPeriodKeys,
+  };
+};
+
+export const parseBalanceWorksheetRows = (
+  rows: SheetMatrixRow[],
+  selectedPeriodKey: string,
+  fileName = '',
+): MonthlyParseResult<MonthlyBalanceLine> => {
+  const warnings: string[] = [];
+  const errors: string[] = [];
+  const detectedPeriodKeys = collectDetectedPeriodKeysFromMatrix(rows);
+  const parsedRows: MonthlyBalanceLine[] = [];
+
+  if (!rows.length) {
+    errors.push('El archivo de balance está vacío.');
+  }
+
+  evaluateDetectedPeriods(selectedPeriodKey, detectedPeriodKeys, errors, warnings);
+
+  const headerIndex = findBalanceWorksheetHeaderIndex(rows);
+  if (headerIndex === -1) {
+    errors.push('No se encontró la cabecera esperada del balance exportado.');
+    return {
+      fileName,
+      rows: [],
+      warnings,
+      errors,
+      totalRows: rows.length,
+      validRows: 0,
+      detectedPeriodKeys,
+    };
+  }
+
+  const { activeIndex, passiveIndex, lossIndex, profitIndex } = resolveBalanceWorksheetColumnIndexes(rows[headerIndex] ?? []);
+  if (activeIndex === -1 || passiveIndex === -1) {
+    errors.push('No se pudieron resolver las columnas Activo/Pasivo del balance exportado.');
+    return {
+      fileName,
+      rows: [],
+      warnings,
+      errors,
+      totalRows: rows.length,
+      validRows: 0,
+      detectedPeriodKeys,
+    };
+  }
+
+  for (let index = headerIndex + 1; index < rows.length; index += 1) {
+    const row = rows[index];
+    const rawCode = String(row[0] ?? '').trim();
+    const rawName = String(row[1] ?? '').trim();
+    const normalizedCode = normalize(rawCode);
+
+    if (!rawCode && !rawName) continue;
+
+    if (normalizedCode === 'resultado') {
+      parsedRows.push({
+        lineOrder: index + 1,
+        accountCode: MONTHLY_BALANCE_SOURCE_NET_INCOME_CONTROL_CODE,
+        accountName: 'Resultado',
+        section: 'OTROS',
+        subsection: 'Control Balance',
+        amountCLP: parseNumber(row[lossIndex]) - parseNumber(row[profitIndex]),
+        sourcePeriodKey: selectedPeriodKey,
+        isSubtotal: true,
+      });
+      continue;
+    }
+
+    if (normalizedCode === 'total' || normalizedCode === 'sumas parciales' || normalizedCode === 'suma total') {
+      continue;
+    }
+
+    if (!isBalanceWorksheetAccountCode(rawCode)) continue;
+    if (!rawCode.startsWith('1.') && !rawCode.startsWith('2.')) continue;
+
+    const section = inferBalanceSectionFromAccountCode(rawCode);
+    const amountCLP = rawCode.startsWith('1.')
+      ? parseNumber(row[activeIndex]) - parseNumber(row[passiveIndex])
+      : parseNumber(row[passiveIndex]) - parseNumber(row[activeIndex]);
+
+    parsedRows.push({
+      lineOrder: index + 1,
+      accountCode: rawCode,
+      accountName: rawName,
+      section,
+      subsection: getBalanceSectionLabel(section),
+      amountCLP,
+      sourcePeriodKey: selectedPeriodKey,
+      isSubtotal: false,
+    });
+  }
+
+  if (!parsedRows.filter((row) => row.accountCode !== MONTHLY_BALANCE_SOURCE_NET_INCOME_CONTROL_CODE).length) {
+    errors.push('No se detectaron líneas válidas en el balance exportado.');
   }
 
   return {
@@ -475,6 +996,92 @@ const resolveMovementKind = (movementType: string): 'entry' | 'exit' | 'adjustme
   return 'unknown';
 };
 
+const sortInventoryRows = (rows: MonthlyInventoryMovement[]): MonthlyInventoryMovement[] => rows.sort((left, right) => {
+  const familyDiff = sortInventoryByFamily(left.family) - sortInventoryByFamily(right.family);
+  if (familyDiff !== 0) return familyDiff;
+  return left.sku.localeCompare(right.sku, 'es');
+});
+
+const parseSalesRowsAsInventory = (
+  rows: TabularRow[],
+  selectedPeriodKey: string,
+  catalogLookup: CatalogLookup,
+  warnings: string[],
+): MonthlyInventoryMovement[] => {
+  const aggregated = new Map<string, MonthlyInventoryMovement>();
+  let dispatchRowCount = 0;
+  let dispatchAmountCLP = 0;
+
+  warnings.push('Se detectó el mismo formato comercial usado en Análisis Diario; se usarán las cantidades vendidas como salidas. Este reporte no incluye stock inicial ni stock final.');
+
+  for (let index = 0; index < rows.length; index += 1) {
+    const row = rows[index];
+    const rawSku = String(resolveColumnValue(row, ['sku', 'cod. producto', 'cod producto', 'codigo producto', 'codigo articulo', 'item code']) ?? '').trim();
+    const description = String(resolveColumnValue(row, ['desc. producto', 'desc producto', 'descripcion producto', 'producto', 'item description', 'product description', 'nombre producto']) ?? '').trim();
+    const quantity = resolveAmountValue(row, ['cantidad', 'qty', 'quantity', 'unidades'], false);
+    const totalAmount = resolveAmountValue(row, ['total detalle', 'monto neto', 'monto', 'amount', 'valor', 'total'], false);
+
+    if (!rawSku && !description && !quantity.found && !totalAmount.found) continue;
+
+    const normalizedSku = normalize(rawSku);
+    const normalizedDescription = normalize(description);
+    const isDispatch = normalizedSku === 'despacho'
+      || normalizedDescription.includes('servicio despacho')
+      || normalizedDescription.includes('despacho');
+
+    if (isDispatch) {
+      dispatchRowCount += 1;
+      dispatchAmountCLP += totalAmount.found ? totalAmount.value : 0;
+    }
+
+    if (!quantity.found || quantity.value === 0) continue;
+
+    const sku = rawSku ? rawSku.toUpperCase() : `SIN-SKU-${index + 1}`;
+    const catalogMatch = resolveCatalogMatch(description, catalogLookup);
+    const rawProductName = description || catalogMatch?.name || sku;
+    const implantDefinition = findImplantDefinition(rawProductName);
+    const productName = implantDefinition?.name ?? rawProductName;
+    const category = catalogMatch?.category || '';
+    const family = isDispatch ? 'DESPACHO' : inferInventoryFamily(productName, category);
+
+    if (!rawSku) {
+      warnings.push(`Se encontró una fila sin SKU explícito; se usó el identificador ${sku}.`);
+    }
+
+    const current = aggregated.get(sku);
+    const isUnclassified = !catalogMatch && family !== 'DESPACHO';
+    if (current) {
+      aggregated.set(sku, {
+        ...current,
+        exitsQty: current.exitsQty + quantity.value,
+        totalAmountCLP: (current.totalAmountCLP ?? 0) + (totalAmount.found ? totalAmount.value : 0),
+        isUnclassified: current.isUnclassified || isUnclassified,
+      });
+      continue;
+    }
+
+    aggregated.set(sku, {
+      sku,
+      productName,
+      family,
+      openingQty: 0,
+      entriesQty: 0,
+      exitsQty: quantity.value,
+      adjustmentsQty: 0,
+      closingQty: 0,
+      totalAmountCLP: totalAmount.found ? totalAmount.value : undefined,
+      sourcePeriodKey: valueToPeriodKey(resolveColumnValue(row, ['periodo', 'period', 'mes', 'fecha', 'date'])) ?? selectedPeriodKey,
+      isUnclassified,
+    });
+  }
+
+  if (dispatchRowCount > 0) {
+    warnings.push(`Se detectaron ${dispatchRowCount} líneas de SERVICIO DESPACHO por ${formatCLP(dispatchAmountCLP)}; se mostrarán aparte del resto de productos.`);
+  }
+
+  return sortInventoryRows(Array.from(aggregated.values()));
+};
+
 export const parseInventoryRows = (
   rows: TabularRow[],
   selectedPeriodKey: string,
@@ -484,18 +1091,45 @@ export const parseInventoryRows = (
   const warnings: string[] = [];
   const errors: string[] = [];
   const detectedPeriodKeys = collectDetectedPeriodKeys(rows);
-  const catalogIndex = buildCatalogIndex(products);
+  const catalogLookup = buildCatalogLookup(products);
   const aggregated = new Map<string, MonthlyInventoryMovement>();
+  const inventoryFileShape = detectInventoryFileShape(rows);
 
   if (!rows.length) {
     errors.push('El archivo de movimientos de inventario está vacío.');
   }
 
   if (!products.length) {
-    warnings.push('El catálogo de productos está vacío; la clasificación por SKU puede quedar incompleta.');
+    warnings.push('El catálogo de productos está vacío; la clasificación por nombre puede quedar incompleta.');
   }
 
   evaluateDetectedPeriods(selectedPeriodKey, detectedPeriodKeys, errors, warnings);
+
+  if (inventoryFileShape.looksLikeSalesReport && !inventoryFileShape.looksLikeInventoryReport) {
+    const parsedRows = parseSalesRowsAsInventory(rows, selectedPeriodKey, catalogLookup, warnings);
+    const unmappedSkus = parsedRows.filter((row) => row.isUnclassified).map((row) => row.sku);
+
+    if (unmappedSkus.length) {
+      warnings.push(`SKUs sin clasificación en catálogo: ${unmappedSkus.join(', ')}.`);
+    }
+
+    if (!parsedRows.length) {
+      errors.push('No se detectaron ventas válidas para convertirlas en salidas mensuales. Revisa que el archivo tenga SKU/Cod. Producto, descripción y cantidad.');
+      if (inventoryFileShape.headers.length) {
+        warnings.push(`Columnas detectadas: ${inventoryFileShape.headers.slice(0, 6).join(', ')}${inventoryFileShape.headers.length > 6 ? ', ...' : ''}.`);
+      }
+    }
+
+    return {
+      fileName,
+      rows: parsedRows,
+      warnings,
+      errors,
+      totalRows: rows.length,
+      validRows: parsedRows.length,
+      detectedPeriodKeys,
+    };
+  }
 
   for (let index = 0; index < rows.length; index += 1) {
     const row = rows[index];
@@ -532,15 +1166,19 @@ export const parseInventoryRows = (
       closingQty = openingQty + entriesQty - exitsQty + adjustmentsQty;
     }
 
-    const catalogMatch = catalogIndex.get(sku);
-    const family = catalogMatch?.family ?? 'SIN_CLASIFICAR';
-    const productName = productNameRaw || catalogMatch?.name || sku;
+    const catalogMatch = resolveCatalogMatch(productNameRaw, catalogLookup);
+    const rawProductName = productNameRaw || catalogMatch?.name || sku;
+    const implantDefinition = findImplantDefinition(rawProductName);
+    const productName = implantDefinition?.name ?? rawProductName;
+    const category = catalogMatch?.category || '';
+    const family = inferInventoryFamily(productName, category);
 
     if (!rawSku) {
       warnings.push(`Se encontró una fila sin SKU explícito; se usó el identificador ${sku}.`);
     }
 
     const current = aggregated.get(sku);
+    const isUnclassified = !catalogMatch && family !== 'DESPACHO';
     if (current) {
       aggregated.set(sku, {
         ...current,
@@ -550,7 +1188,7 @@ export const parseInventoryRows = (
         adjustmentsQty: current.adjustmentsQty + adjustmentsQty,
         closingQty: current.closingQty + closingQty,
         totalAmountCLP: (current.totalAmountCLP ?? 0) + (totalAmount.found ? totalAmount.value : 0),
-        isUnclassified: current.isUnclassified || family === 'SIN_CLASIFICAR',
+        isUnclassified: current.isUnclassified || isUnclassified,
       });
       continue;
     }
@@ -566,15 +1204,11 @@ export const parseInventoryRows = (
       closingQty,
       totalAmountCLP: totalAmount.found ? totalAmount.value : undefined,
       sourcePeriodKey: valueToPeriodKey(resolveColumnValue(row, ['periodo', 'period', 'mes', 'fecha'])) ?? selectedPeriodKey,
-      isUnclassified: family === 'SIN_CLASIFICAR',
+      isUnclassified,
     });
   }
 
-  const parsedRows = Array.from(aggregated.values()).sort((left, right) => {
-    const familyDiff = sortInventoryByFamily(left.family) - sortInventoryByFamily(right.family);
-    if (familyDiff !== 0) return familyDiff;
-    return left.sku.localeCompare(right.sku, 'es');
-  });
+  const parsedRows = sortInventoryRows(Array.from(aggregated.values()));
 
   const unmappedSkus = parsedRows.filter((row) => row.isUnclassified).map((row) => row.sku);
   if (unmappedSkus.length) {
@@ -582,7 +1216,15 @@ export const parseInventoryRows = (
   }
 
   if (!parsedRows.length) {
-    errors.push('No se detectaron movimientos válidos de inventario.');
+    if (inventoryFileShape.looksLikeSalesReport && !inventoryFileShape.looksLikeInventoryReport) {
+      errors.push('El archivo parece ser un reporte comercial o de ventas, no un movimiento de inventario. Para este módulo sube un archivo con columnas como SKU, Stock Inicial, Entradas, Salidas, Ajustes o Stock Final.');
+    } else {
+      errors.push('No se detectaron movimientos válidos de inventario. Verifica que el archivo tenga columnas como SKU, Stock Inicial, Entradas, Salidas, Ajustes o Stock Final.');
+    }
+
+    if (inventoryFileShape.headers.length) {
+      warnings.push(`Columnas detectadas: ${inventoryFileShape.headers.slice(0, 6).join(', ')}${inventoryFileShape.headers.length > 6 ? ', ...' : ''}.`);
+    }
   }
 
   return {
@@ -597,11 +1239,35 @@ export const parseInventoryRows = (
 };
 
 export const parseMonthlyBalanceFile = async (file: File, selectedPeriodKey: string): Promise<MonthlyParseResult<MonthlyBalanceLine>> => {
+  const extension = file.name.split('.').pop()?.toLowerCase();
+  if (extension === 'xlsx' || extension === 'xls') {
+    const matrix = await readSheetMatrix(file);
+    const specializedResult = parseBalanceWorksheetRows(matrix, selectedPeriodKey, file.name);
+    if (!specializedResult.errors.some((error) => error.includes('cabecera esperada'))) {
+      return specializedResult;
+    }
+
+    const headerRowIndex = findBalanceWorksheetHeaderIndex(matrix);
+    if (headerRowIndex !== -1) {
+      const rows = await readSheetRowsWithHeaderRow(file, headerRowIndex);
+      return parseBalanceRows(rows, selectedPeriodKey, file.name);
+    }
+  }
+
   const rows = await readSheetRows(file);
   return parseBalanceRows(rows, selectedPeriodKey, file.name);
 };
 
 export const parseMonthlyPnlFile = async (file: File, selectedPeriodKey: string): Promise<MonthlyParseResult<MonthlyPnlLine>> => {
+  const extension = file.name.split('.').pop()?.toLowerCase();
+  if (extension === 'xlsx' || extension === 'xls') {
+    const matrix = await readSheetMatrix(file);
+    const specializedResult = parsePnlWorksheetRows(matrix, selectedPeriodKey, file.name);
+    if (!specializedResult.errors.some((error) => error.includes('cabecera esperada'))) {
+      return specializedResult;
+    }
+  }
+
   const rows = await readSheetRows(file);
   return parsePnlRows(rows, selectedPeriodKey, file.name);
 };

@@ -12,21 +12,27 @@ import InventoryModule from './components/InventoryModule';
 import CRMModule from './components/CRMModule';
 import CotizadorModule from './components/CotizadorModule';
 import MonthlyAnalysisModule from './components/MonthlyAnalysisModule';
+import CommissionClosureModule from './components/CommissionClosureModule';
 import {
   createProductRecord,
+  deleteImportSnapshotRecord,
   deleteProductRecord,
   deleteSimulationRecord,
+  fetchImportSnapshotRecords,
   fetchProductsList,
   fetchSimulationRecords,
   getDataBackendLabel,
   replaceProductsCatalog,
+  saveImportSnapshotRecord,
   saveSimulationRecord,
+  type SavedImportSnapshotRecord,
   type SavedSimulationRecord,
   type SimulationItemPayload,
   updateProductCategoryRecord,
 } from './lib/appDataRepository';
 import html2canvas from 'html2canvas';
 import logoMegaGen from './assets/MegaGen.jpg';
+import { convertImportAmountToCLP } from './utils/importCosting';
 import { calculateQuote } from './utils/quotePricingEngine';
 import type { LinePricingMode, QuoteLineDraft, QuotePricingConfig } from './types/quotation';
 import { useCotizadorState } from './hooks/useCotizadorState';
@@ -84,7 +90,7 @@ const readStoredJSON = <T,>(key: string): T | null => {
 
 
 
-type ModuleKey = 'cotizador' | 'monthlyAnalysis' | 'analysis' | 'imports' | 'inventory' | 'crm' | 'clientes' | 'facturacion';
+type ModuleKey = 'cotizador' | 'monthlyAnalysis' | 'analysis' | 'imports' | 'inventory' | 'crm' | 'commissionsMegagen' | 'commissions3dental' | 'clientes' | 'facturacion';
 
 interface ImportItemCalculated extends ImportItemRaw {
   baseTotalForeign: number;
@@ -97,20 +103,7 @@ interface ImportItemCalculated extends ImportItemRaw {
   suggestedIvaUnitCLP: number;
 }
 
-interface ImportCalculationSnapshot {
-  id: string;
-  name: string;
-  createdAt: string;
-  sourceFile: string;
-  currency: 'USD' | 'EUR';
-  importUsdRate: number;
-  euroRate: number;
-  shippingCost: number;
-  shippingCurrency: 'CLP' | 'USD' | 'EUR';
-  customsCostCLP: number;
-  targetGrossMarginPercent: number;
-  items: ImportItemRaw[];
-}
+type ImportCalculationSnapshot = SavedImportSnapshotRecord;
 
 const createEmptyImportItem = (): ImportItemRaw => ({
   sku: '',
@@ -182,6 +175,9 @@ const App: React.FC = () => {
   const [targetGrossMarginPercentImport, setTargetGrossMarginPercentImport] = useState<number>(() => Number(localStorage.getItem(IMPORT_MARGIN_STORAGE_KEY)) || 50);
   const [importSectionTab, setImportSectionTab] = useState<'calculator' | 'saved'>('calculator');
   const [importSnapshots, setImportSnapshots] = useState<ImportCalculationSnapshot[]>(() => readStoredJSON<ImportCalculationSnapshot[]>(IMPORT_SNAPSHOTS_STORAGE_KEY) || []);
+  const [isLoadingImportSnapshots, setIsLoadingImportSnapshots] = useState(false);
+  const [importSnapshotsError, setImportSnapshotsError] = useState('');
+  const [isSavingImportSnapshot, setIsSavingImportSnapshot] = useState(false);
   const [importSearchTerm, setImportSearchTerm] = useState('');
   const [showSaveImportModal, setShowSaveImportModal] = useState(false);
   const [importSaveName, setImportSaveName] = useState('');
@@ -251,6 +247,12 @@ const App: React.FC = () => {
   useEffect(() => {
     fetchProducts();
   }, []);
+
+  useEffect(() => {
+    if (activeModule === 'imports' && importSectionTab === 'saved') {
+      fetchImportSnapshots();
+    }
+  }, [activeModule, importSectionTab]);
 
   // Fetch quotations when switching to history tab
   useEffect(() => {
@@ -488,6 +490,20 @@ const App: React.FC = () => {
       alert('Error al cargar cotizaciones: ' + (error as Error).message);
     } finally {
       setIsLoadingQuotations(false);
+    }
+  };
+
+  const fetchImportSnapshots = async () => {
+    setIsLoadingImportSnapshots(true);
+    setImportSnapshotsError('');
+    try {
+      const data = await fetchImportSnapshotRecords();
+      setImportSnapshots(data || []);
+    } catch (error) {
+      console.error('Error fetching import snapshots:', error);
+      setImportSnapshotsError(`No se pudieron cargar los cálculos permanentes desde ${getDataBackendLabel()}.`);
+    } finally {
+      setIsLoadingImportSnapshots(false);
     }
   };
 
@@ -1119,6 +1135,12 @@ const App: React.FC = () => {
     const exportEuroRate = euroRate;
     const exportShippingCost = shippingCostCLP;
     const exportShippingCurrency = shippingCurrency;
+    const exportShippingCostInCLP = convertImportAmountToCLP(
+      exportShippingCost,
+      exportShippingCurrency,
+      exportImportUsdRate,
+      exportEuroRate,
+    );
     const exportCustomsCost = customsCostCLP;
     const exportMargin = targetGrossMarginPercentImport;
     const exportSourceFile = importSourceFile;
@@ -1136,7 +1158,7 @@ const App: React.FC = () => {
       ['EUR (CLP)', Number(exportEuroRate.toFixed(4))],
       ['Moneda flete', exportShippingCurrency],
       ['Gasto envio original', Number(exportShippingCost.toFixed(4))],
-      ['Gasto envio convertido CLP', ''],
+      ['Gasto envio convertido CLP', Math.round(exportShippingCostInCLP)],
       ['Gasto aduana (CLP)', Math.round(exportCustomsCost)],
       ['Margen bruto objetivo (%)', Number(exportMargin.toFixed(2))],
       [''],
@@ -1179,11 +1201,6 @@ const App: React.FC = () => {
     ];
 
     const worksheet = XLSX.utils.aoa_to_sheet([...summaryRows, ...dataRows, totalRowData]);
-
-    worksheet.B7 = {
-      t: 'n',
-      f: '=IF(B5="USD",B6*B3,IF(B5="EUR",B6*B4,B6))'
-    };
 
     for (let i = 0; i < exportItems.length; i += 1) {
       const row = dataStartRow + i;
@@ -1226,6 +1243,12 @@ const App: React.FC = () => {
     const exportEuroRate = snapshot.euroRate;
     const exportShippingCost = snapshot.shippingCost;
     const exportShippingCurrency = snapshot.shippingCurrency;
+    const exportShippingCostInCLP = convertImportAmountToCLP(
+      exportShippingCost,
+      exportShippingCurrency,
+      exportImportUsdRate,
+      exportEuroRate,
+    );
     const exportCustomsCost = snapshot.customsCostCLP;
     const exportMargin = snapshot.targetGrossMarginPercent;
     const exportSourceFile = snapshot.sourceFile;
@@ -1243,7 +1266,7 @@ const App: React.FC = () => {
       ['EUR (CLP)', Number(exportEuroRate.toFixed(4))],
       ['Moneda flete', exportShippingCurrency],
       ['Gasto envio original', Number(exportShippingCost.toFixed(4))],
-      ['Gasto envio convertido CLP', ''],
+      ['Gasto envio convertido CLP', Math.round(exportShippingCostInCLP)],
       ['Gasto aduana (CLP)', Math.round(exportCustomsCost)],
       ['Margen bruto objetivo (%)', Number(exportMargin.toFixed(2))],
       [''],
@@ -1287,11 +1310,6 @@ const App: React.FC = () => {
 
     const worksheet = XLSX.utils.aoa_to_sheet([...summaryRows, ...dataRows, totalRowData]);
 
-    worksheet.B7 = {
-      t: 'n',
-      f: '=IF(B5="USD",B6*B3,IF(B5="EUR",B6*B4,B6))'
-    };
-
     for (let i = 0; i < exportItems.length; i += 1) {
       const row = dataStartRow + i;
       worksheet[`F${row}`] = { t: 'n', f: `=C${row}*E${row}` };
@@ -1330,31 +1348,40 @@ const App: React.FC = () => {
     setShowSaveImportModal(true);
   };
 
-  const saveImportCalculationSnapshot = () => {
+  const saveImportCalculationSnapshot = async () => {
     const name = importSaveName.trim();
     if (!name) {
       alert('Ingresa un nombre para guardar.');
       return;
     }
 
-    const snapshot: ImportCalculationSnapshot = {
-      id: `${Date.now()}`,
-      name,
-      createdAt: new Date().toISOString(),
-      sourceFile: importSourceFile,
-      currency: importCurrency,
-      importUsdRate,
-      euroRate,
-      shippingCost: shippingCostCLP,
-      shippingCurrency,
-      customsCostCLP,
-      targetGrossMarginPercent: targetGrossMarginPercentImport,
-      items: activeImportItems,
-    };
+    setIsSavingImportSnapshot(true);
+    try {
+      const snapshot = await saveImportSnapshotRecord({
+        name,
+        sourceFile: importSourceFile,
+        currency: importCurrency,
+        importUsdRate,
+        euroRate,
+        shippingCost: shippingCostCLP,
+        shippingCurrency,
+        customsCostCLP,
+        targetGrossMarginPercent: targetGrossMarginPercentImport,
+        items: activeImportItems,
+      });
 
-    setImportSnapshots((prev) => [snapshot, ...prev]);
-    setShowSaveImportModal(false);
-    setImportSaveName('');
+      setImportSnapshots((prev) => [snapshot, ...prev.filter((existing) => existing.id !== snapshot.id)]);
+      setShowSaveImportModal(false);
+      setImportSaveName('');
+      setImportSectionTab('saved');
+      setImportSnapshotsError('');
+      alert(`Cálculo de importación guardado permanentemente en ${getDataBackendLabel()}.`);
+    } catch (error) {
+      console.error('Error saving import snapshot:', error);
+      alert('Error al guardar el cálculo de importación: ' + (error as Error).message);
+    } finally {
+      setIsSavingImportSnapshot(false);
+    }
   };
 
   const loadImportSnapshot = (snapshot: ImportCalculationSnapshot) => {
@@ -1370,8 +1397,16 @@ const App: React.FC = () => {
     setImportSectionTab('calculator');
   };
 
-  const deleteImportSnapshot = (snapshotId: string) => {
-    setImportSnapshots((prev) => prev.filter((snapshot) => snapshot.id !== snapshotId));
+  const deleteImportSnapshot = async (snapshotId: string) => {
+    if (!confirm('¿Eliminar este cálculo de importación guardado permanentemente?')) return;
+
+    try {
+      await deleteImportSnapshotRecord(snapshotId);
+      setImportSnapshots((prev) => prev.filter((snapshot) => snapshot.id !== snapshotId));
+    } catch (error) {
+      console.error('Error deleting import snapshot:', error);
+      alert('Error al eliminar el cálculo de importación: ' + (error as Error).message);
+    }
   };
 
   const formatCLP = (value: number) => {
@@ -1419,11 +1454,10 @@ const App: React.FC = () => {
   }, [dailySalesSummary, exchangeRate]);
 
   const importFxRate = importCurrency === 'USD' ? importUsdRate : euroRate;
-  const shippingCostInCLP = useMemo(() => {
-    if (shippingCurrency === 'USD') return shippingCostCLP * importUsdRate;
-    if (shippingCurrency === 'EUR') return shippingCostCLP * euroRate;
-    return shippingCostCLP;
-  }, [shippingCostCLP, shippingCurrency, importUsdRate, euroRate]);
+  const shippingCostInCLP = useMemo(
+    () => convertImportAmountToCLP(shippingCostCLP, shippingCurrency, importUsdRate, euroRate),
+    [shippingCostCLP, shippingCurrency, importUsdRate, euroRate],
+  );
 
   const activeImportItems = useMemo(
     () => importItems.filter(isImportItemReady),
@@ -1433,7 +1467,6 @@ const App: React.FC = () => {
 
   const importCalculatedItems = useMemo<ImportItemCalculated[]>(() => {
     if (!activeImportItems.length || importFxRate <= 0) return [];
-
     const baseRows = activeImportItems.map((item) => {
       const baseTotalForeign = item.quantity * item.unitCost;
       const baseTotalCLP = baseTotalForeign * importFxRate;
@@ -1609,6 +1642,20 @@ const App: React.FC = () => {
         name: 'CRM Comercial',
         description: 'Carga única de ventas para completar CRM automático.',
         icon: <BriefcaseBusiness size={18} />,
+        isReady: true
+      },
+      {
+        key: 'commissionsMegagen',
+        name: 'Comisiones MegaGen',
+        description: 'Cierre mensual de comisiones sobre ventas cobradas MegaGen.',
+        icon: <ReceiptText size={18} />,
+        isReady: true
+      },
+      {
+        key: 'commissions3dental',
+        name: 'Comisiones 3Dental',
+        description: 'Cierre mensual de comisiones sobre ventas cobradas 3Dental.',
+        icon: <LineChart size={18} />,
         isReady: true
       },
       {
@@ -2127,7 +2174,17 @@ const App: React.FC = () => {
                 </div>
               </div>
 
-              {filteredImportSnapshots.length > 0 ? (
+              {importSnapshotsError && (
+                <div style={{ padding: '0.85rem 1rem', borderRadius: '12px', background: 'rgba(245, 158, 11, 0.12)', color: '#92400e', border: '1px solid rgba(245, 158, 11, 0.25)' }}>
+                  {importSnapshotsError}
+                </div>
+              )}
+
+              {isLoadingImportSnapshots ? (
+                <div style={{ padding: '1rem', border: '1px dashed var(--border)', borderRadius: '12px', background: 'var(--surface)' }}>
+                  Cargando cálculos guardados...
+                </div>
+              ) : filteredImportSnapshots.length > 0 ? (
                 <div style={{ display: 'grid', gap: '0.75rem' }}>
                   {filteredImportSnapshots.map((snapshot) => (
                     <div key={snapshot.id} className="finance-card" style={{ padding: '0.9rem' }}>
@@ -2202,8 +2259,8 @@ const App: React.FC = () => {
                   <button className="btn" onClick={() => setShowSaveImportModal(false)}>
                     Cancelar
                   </button>
-                  <button className="btn btn-primary" onClick={saveImportCalculationSnapshot}>
-                    Guardar
+                  <button className="btn btn-primary" onClick={saveImportCalculationSnapshot} disabled={isSavingImportSnapshot}>
+                    {isSavingImportSnapshot ? 'Guardando...' : 'Guardar'}
                   </button>
                 </div>
               </div>
@@ -2214,6 +2271,20 @@ const App: React.FC = () => {
         <InventoryModule />
       ) : activeModule === 'crm' ? (
         <CRMModule />
+      ) : activeModule === 'commissionsMegagen' ? (
+        <CommissionClosureModule
+          companyKey="megagen"
+          companyLabel="MegaGen"
+          requiresProductClass={false}
+          defaultClassConfig={['MEGAGEN']}
+        />
+      ) : activeModule === 'commissions3dental' ? (
+        <CommissionClosureModule
+          companyKey="3dental"
+          companyLabel="3Dental"
+          requiresProductClass
+          defaultClassConfig={['IMPLANTES', '3DENTAL']}
+        />
       ) : activeModule === 'monthlyAnalysis' ? (
         <MonthlyAnalysisModule products={products} />
       ) : activeModule === 'analysis' ? (

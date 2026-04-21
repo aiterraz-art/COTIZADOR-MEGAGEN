@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Product } from '../data/mockProducts';
-import { parseBalanceRows, parseInventoryRows, parsePnlRows } from './monthlyAnalysisParser';
+import { MONTHLY_BALANCE_SOURCE_NET_INCOME_CONTROL_CODE } from '../types/monthlyAnalysis';
+import { parseBalanceRows, parseBalanceWorksheetRows, parseInventoryRows, parsePnlRows, parsePnlWorksheetRows } from './monthlyAnalysisParser';
 
 const products: Product[] = [
   {
@@ -16,6 +17,19 @@ const products: Product[] = [
     name: 'Aditamento Y',
     category: 'Aditamentos',
     costUSD: 8,
+  },
+  {
+    id: 'kit-name-001',
+    name: 'Llave Dinamometrica',
+    category: 'Kits',
+    costUSD: 14,
+  },
+  {
+    id: 'other-001',
+    sku: 'BM10605',
+    name: 'Bone Matrix I',
+    category: 'General',
+    costUSD: 20,
   },
 ];
 
@@ -51,6 +65,45 @@ describe('monthlyAnalysisParser', () => {
     expect(result.rows[0]?.section).toBe('ACTIVO_CORRIENTE');
     expect(result.rows[1]?.section).toBe('PASIVO_CORRIENTE');
     expect(result.rows[2]?.section).toBe('PATRIMONIO');
+  });
+
+  it('parsea el layout exportado del balance y captura Resultado como control', () => {
+    const result = parseBalanceWorksheetRows([
+      ['MEGAGEN IMPLANT CHILE SPA', 'Fecha :19/03/2026', '', '', '', '', '', '', '', ''],
+      ['Balance General', '', '', '', '', '', '', '', '', ''],
+      ['Periodo del 01/01/2026 al 28/02/2026', '', '', '', '', '', '', '', '', ''],
+      ['Cuenta', 'Descripción', 'Debe $', 'Haber $', 'Deudor $', 'Acreedor $', 'Activo $', 'Pasivo $', 'Pérdida $', 'Ganancia $'],
+      ['1.1.1010.20.07', 'BCO_BCI - 32832061', 10, 5, 5, 0, 5, 0, 0, 0],
+      ['1.1.1040.10.07', 'WEBPAY', 0, 2, 0, 2, 0, 2, 0, 0],
+      ['1.1.1080.50.01', 'IMPORTACIONES EN TRANSITO', 0, 0, 0, 0, 0, 0, 0, 0],
+      ['2.1.1070.20.02', 'PROVEEDORES EXTRANJEROS', 1, 4, 0, 3, 0, 3, 0, 0],
+      ['2.1.1070.20.03', 'FACTURAS POR RECIBIR', 7, 0, 7, 0, 7, 0, 0, 0],
+      ['2.4.1500.30.01', 'PERDIDAS ACUMULADAS', 4, 0, 4, 0, 4, 0, 0, 0],
+      ['3.1.1010.10.01', 'VENTAS', 0, 100, 0, 100, 0, 0, 0, 100],
+      ['Resultado', '', '', '', '', '', '', '', 25, 10],
+      ['Suma Total', '', '', '', '', '', '', '', '', ''],
+    ], '2026-02');
+
+    expect(result.errors).toEqual([]);
+    expect(result.detectedPeriodKeys).toEqual(['2026-01', '2026-02']);
+    expect(result.rows.map((row) => row.accountCode)).toEqual([
+      '1.1.1010.20.07',
+      '1.1.1040.10.07',
+      '1.1.1080.50.01',
+      '2.1.1070.20.02',
+      '2.1.1070.20.03',
+      '2.4.1500.30.01',
+      MONTHLY_BALANCE_SOURCE_NET_INCOME_CONTROL_CODE,
+    ]);
+    expect(result.rows[0]?.amountCLP).toBe(5);
+    expect(result.rows[1]?.amountCLP).toBe(-2);
+    expect(result.rows[2]?.amountCLP).toBe(0);
+    expect(result.rows[3]?.amountCLP).toBe(3);
+    expect(result.rows[4]?.amountCLP).toBe(-7);
+    expect(result.rows[5]?.amountCLP).toBe(-4);
+    expect(result.rows[5]?.section).toBe('PATRIMONIO');
+    expect(result.rows[6]?.amountCLP).toBe(15);
+    expect(result.rows[6]?.isSubtotal).toBe(true);
   });
 
   it('parsea ER completo y detecta resultados explícitos', () => {
@@ -91,7 +144,76 @@ describe('monthlyAnalysisParser', () => {
     expect(result.rows.at(-1)?.section).toBe('RESULTADOS');
   });
 
-  it('clasifica inventario por SKU, agrega movimientos y conserva no mapeados', () => {
+  it('parsea el layout exportado del ER personalizado con cabecera corrida y subtotales', () => {
+    const result = parsePnlWorksheetRows([
+      ['MEGAGEN IMPLANT CHILE SPA', 'Fecha :19/03/2026', '', '', ''],
+      ['ESTADO DE RESULTADO PERSONALIZADO', '', '', '', ''],
+      ['Período del 01/02/2026 al 28/02/2026', '', '', '', ''],
+      ['', '', '', '', ''],
+      ['Cuenta', 'Descripción', 'Año 2025', 'Año 2026', 'Diferencia $'],
+      ['INGRESO DE EXPLOTACION', '', '', '', ''],
+      ['3.1.1010.10.01', 'VENTAS', 0, 58457090, 58457090],
+      ['', 'INGRESO DE EXPLOTACION', 0, 58457090, 58457090],
+      ['COSTOS DE EXPLOTACION', '', '', '', ''],
+      ['', 'COSTOS DE EXPLOTACION', 0, -33258073, -33258073],
+      ['GTOS. DE ADMINIS. Y VENTAS', '', '', '', ''],
+      ['4.5.1040.10.01', 'REMUNERACIONES', 0, 22915886, 22915886],
+      ['4.5.1030.10.24', 'GTOS. BANCARIOS', 0, 37589, 37589],
+      ['', 'GTOS. DE ADMINIS. Y VENTAS', 0, -36843186, -36843186],
+      ['OTROS INGRESOS', '', '', '', ''],
+      ['3.5.1070.10.01', 'DIFERENCIA DE CAMBIO', 0, -1770908, -1770908],
+      ['', 'OTROS INGRESOS', 0, -1770908, -1770908],
+    ], '2026-02');
+
+    expect(result.errors).toEqual([]);
+    expect(result.detectedPeriodKeys).toEqual(['2026-02']);
+    expect(result.validRows).toBe(8);
+    expect(result.rows[0]?.accountCode).toBe('3.1.1010.10.01');
+    expect(result.rows[0]?.subsection).toBe('INGRESO DE EXPLOTACION');
+    expect(result.rows[1]?.isSubtotal).toBe(true);
+    expect(result.rows[2]?.accountName).toBe('COSTOS DE EXPLOTACION');
+    expect(result.rows[2]?.isSubtotal).toBe(true);
+    expect(result.rows[3]?.section).toBe('GASTOS_OPERACIONALES');
+    expect(result.rows.at(-1)?.accountName).toBe('OTROS INGRESOS');
+    expect(result.rows.at(-1)?.isSubtotal).toBe(true);
+  });
+
+  it('usa el año del periodo seleccionado en el ER y no depende de 2026', () => {
+    const result = parsePnlWorksheetRows([
+      ['EMPRESA', '', '', '', ''],
+      ['ESTADO DE RESULTADO PERSONALIZADO', '', '', '', ''],
+      ['Período del 01/03/2027 al 31/03/2027', '', '', '', ''],
+      ['Cuenta', 'Descripción', 'Año 2026', 'Año 2027', 'Diferencia $'],
+      ['3.1.1010.10.01', 'VENTAS', 100, 250, 150],
+      ['4.1.1010.10.01', 'COSTO DE VENTA', -40, -90, -50],
+      ['', 'UTILIDAD BRUTA', 60, 160, 100],
+    ], '2027-03');
+
+    expect(result.errors).toEqual([]);
+    expect(result.validRows).toBe(3);
+    expect(result.rows[0]?.amountCLP).toBe(250);
+    expect(result.rows[1]?.amountCLP).toBe(-90);
+    expect(result.rows[2]?.amountCLP).toBe(160);
+  });
+
+  it('resuelve columnas movidas en el balance exportado por nombre de encabezado', () => {
+    const result = parseBalanceWorksheetRows([
+      ['Empresa', '', '', '', '', '', '', '', '', ''],
+      ['Balance General', '', '', '', '', '', '', '', '', ''],
+      ['Cuenta', 'Descripción', 'Debe $', 'Haber $', 'Deudor $', 'Acreedor $', 'Pérdida $', 'Activo $', 'Ganancia $', 'Pasivo $'],
+      ['1.1.1010.20.07', 'BCO_BCI - 32832061', 10, 5, 5, 0, 0, 5, 0, 0],
+      ['2.1.1070.20.02', 'PROVEEDORES EXTRANJEROS', 1, 4, 0, 3, 0, 0, 0, 3],
+      ['Resultado', '', '', '', '', '', 25, 0, 10, 0],
+    ], '2026-02');
+
+    expect(result.errors).toEqual([]);
+    expect(result.validRows).toBe(3);
+    expect(result.rows[0]?.amountCLP).toBe(5);
+    expect(result.rows[1]?.amountCLP).toBe(3);
+    expect(result.rows[2]?.amountCLP).toBe(15);
+  });
+
+  it('clasifica inventario por nombre, agrega movimientos y conserva no mapeados', () => {
     const result = parseInventoryRows([
       {
         SKU: 'IMP-001',
@@ -119,7 +241,7 @@ describe('monthlyAnalysisParser', () => {
       },
       {
         SKU: 'KIT-404',
-        Nombre: 'Kit sin mapa',
+        Nombre: 'Llave Dinamométrica',
         'Stock Inicial': 3,
         Entradas: 0,
         Salidas: 1,
@@ -127,15 +249,158 @@ describe('monthlyAnalysisParser', () => {
         'Stock Final': 2,
         Periodo: '2026-02',
       },
+      {
+        SKU: 'COX-001',
+        Nombre: 'Coxo Surgical Motor',
+        'Stock Inicial': 1,
+        Entradas: 1,
+        Salidas: 0,
+        Ajustes: 0,
+        'Stock Final': 2,
+        Periodo: '2026-02',
+      },
     ], '2026-02', products);
 
     expect(result.errors).toEqual([]);
-    expect(result.validRows).toBe(3);
+    expect(result.validRows).toBe(4);
     expect(result.rows.find((row) => row.sku === 'IMP-001')?.family).toBe('IMPLANTES');
     expect(result.rows.find((row) => row.sku === 'AD-001')?.family).toBe('ADITAMENTOS');
     expect(result.rows.find((row) => row.sku === 'AD-001')?.entriesQty).toBe(4);
     expect(result.rows.find((row) => row.sku === 'AD-001')?.exitsQty).toBe(2);
-    expect(result.rows.find((row) => row.sku === 'KIT-404')?.family).toBe('SIN_CLASIFICAR');
-    expect(result.warnings.some((warning) => warning.includes('KIT-404'))).toBe(true);
+    expect(result.rows.find((row) => row.sku === 'KIT-404')?.family).toBe('KITS');
+    expect(result.rows.find((row) => row.sku === 'COX-001')?.family).toBe('MOTOR');
+  });
+
+  it('usa el nombre del producto para clasificar ventas aunque el SKU no exista en catalogo', () => {
+    const result = parseInventoryRows([
+      {
+        'Nombre Doc': '33 Factura Electronica',
+        Fecha: '2026-02-04',
+        'Cod. Producto': 'ZZ-999',
+        'Desc. Producto': 'Llave Dinamométrica',
+        Cantidad: 2,
+        'Precio Unitario': 25000,
+        'Total Detalle': 50000,
+        'Costo Vigente': 12000,
+      },
+    ], '2026-02', products);
+
+    expect(result.errors).toEqual([]);
+    expect(result.validRows).toBe(1);
+    expect(result.rows[0]?.sku).toBe('ZZ-999');
+    expect(result.rows[0]?.productName).toBe('Llave Dinamométrica');
+    expect(result.rows[0]?.family).toBe('KITS');
+  });
+
+  it('mantiene como aditamentos los artículos generales del catálogo sin marcarlos como faltantes', () => {
+    const result = parseInventoryRows([
+      {
+        'Nombre Doc': '33 Factura Electronica',
+        Fecha: '2026-02-04',
+        'Cod. Producto': 'BM10605',
+        'Desc. Producto': 'Bone Matrix I',
+        Cantidad: 3,
+        'Precio Unitario': 25000,
+        'Total Detalle': 75000,
+      },
+    ], '2026-02', products);
+
+    expect(result.errors).toEqual([]);
+    expect(result.validRows).toBe(1);
+    expect(result.rows[0]?.family).toBe('ADITAMENTOS');
+    expect(result.rows[0]?.isUnclassified).toBe(false);
+  });
+
+  it('adapta el reporte comercial diario como salidas mensuales por SKU', () => {
+    const result = parseInventoryRows([
+      {
+        'Nombre Doc': '33 Factura Electronica',
+        'Nmero del Documento': 1175,
+        'Nombre del Vendedor': 'YESSIKA ARRIECHE',
+        'Código del Cliente': '78.409.120-1',
+        'Nombre del Cliente': 'CLINICA ODONTOLOGICA PRODENTAL LTDA',
+        Fecha: '2026-02-04',
+        'Cod. Producto': 'HA4050',
+        'Desc. Producto': 'Healing Abutment [AO]',
+        Cantidad: 5,
+        'Precio Unitario': 9880,
+        'Total Detalle': 49400,
+        'Costo Vigente': 4810,
+      },
+    ], '2026-02', products);
+
+    expect(result.errors).toEqual([]);
+    expect(result.validRows).toBe(1);
+    expect(result.rows[0]?.sku).toBe('HA4050');
+    expect(result.rows[0]?.exitsQty).toBe(5);
+    expect(result.rows[0]?.closingQty).toBe(0);
+    expect(result.rows[0]?.totalAmountCLP).toBe(49400);
+    expect(result.rows[0]?.family).toBe('ADITAMENTOS');
+    expect(result.warnings.some((warning) => warning.includes('cantidades vendidas como salidas'))).toBe(true);
+  });
+
+  it('separa las líneas de despacho del reporte comercial sin excluirlas', () => {
+    const result = parseInventoryRows([
+      {
+        'Nombre Doc': '33 Factura Electronica',
+        'Nmero del Documento': 1175,
+        'Nombre del Vendedor': 'YESSIKA ARRIECHE',
+        'Código del Cliente': '78.409.120-1',
+        Fecha: '2026-02-04',
+        'Cod. Producto': 'HA4050',
+        'Desc. Producto': 'Healing Abutment [AO]',
+        Cantidad: 5,
+        'Precio Unitario': 9880,
+        'Total Detalle': 49400,
+      },
+      {
+        'Nombre Doc': '33 Factura Electronica',
+        'Nmero del Documento': 1176,
+        'Nombre del Vendedor': 'YESSIKA ARRIECHE',
+        'Código del Cliente': '78.409.120-1',
+        Fecha: '2026-02-04',
+        'Cod. Producto': 'DESPACHO',
+        'Desc. Producto': 'SERVICIO DESPACHO',
+        Cantidad: 1,
+        'Precio Unitario': 9000,
+        'Total Detalle': 9000,
+      },
+    ], '2026-02', products);
+
+    expect(result.errors).toEqual([]);
+    expect(result.validRows).toBe(2);
+    expect(result.rows.find((row) => row.sku === 'HA4050')?.totalAmountCLP).toBe(49400);
+    expect(result.rows.find((row) => row.sku === 'DESPACHO')?.family).toBe('DESPACHO');
+    expect(result.rows.find((row) => row.sku === 'DESPACHO')?.totalAmountCLP).toBe(9000);
+    expect(result.warnings.some((warning) => warning.includes('SERVICIO DESPACHO'))).toBe(true);
+    expect(result.warnings.some((warning) => warning.includes('$9.000'))).toBe(true);
+  });
+
+  it('resta devoluciones del reporte comercial cuando la cantidad viene negativa', () => {
+    const result = parseInventoryRows([
+      {
+        'Nombre Doc': '33 Factura Electronica',
+        Fecha: '2026-02-04',
+        'Cod. Producto': 'IF3508C',
+        'Desc. Producto': 'AnyOne Internal Fixture [AO]',
+        Cantidad: 15,
+        'Total Detalle': 1071435,
+        'Costo Vigente': 23060,
+      },
+      {
+        'Nombre Doc': '61 Nota de Credito',
+        Fecha: '2026-02-06',
+        'Cod. Producto': 'IF3508C',
+        'Desc. Producto': 'AnyOne Internal Fixture [AO]',
+        Cantidad: -6,
+        'Total Detalle': -428574,
+        'Costo Vigente': 23060,
+      },
+    ], '2026-02', products);
+
+    expect(result.errors).toEqual([]);
+    expect(result.validRows).toBe(1);
+    expect(result.rows[0]?.exitsQty).toBe(9);
+    expect(result.rows[0]?.totalAmountCLP).toBe(642861);
   });
 });
