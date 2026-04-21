@@ -392,6 +392,25 @@ const findBalanceWorksheetHeaderIndex = (rows: SheetMatrixRow[]): number => rows
     && normalizedRow.some((cell) => cell.includes('pasivo'));
 });
 
+const findHeaderCellIndex = (headerRow: SheetMatrixRow, aliases: string[]): number => {
+  const normalizedCells = headerRow.map((cell) => normalize(String(cell ?? '')));
+  const normalizedAliases = aliases.map((alias) => normalize(alias));
+
+  return normalizedCells.findIndex((cell) => normalizedAliases.some((alias) => cell === alias || cell.includes(alias)));
+};
+
+const resolveBalanceWorksheetColumnIndexes = (headerRow: SheetMatrixRow): {
+  activeIndex: number;
+  passiveIndex: number;
+  lossIndex: number;
+  profitIndex: number;
+} => ({
+  activeIndex: findHeaderCellIndex(headerRow, ['activo']),
+  passiveIndex: findHeaderCellIndex(headerRow, ['pasivo']),
+  lossIndex: findHeaderCellIndex(headerRow, ['perdida', 'pérdida']),
+  profitIndex: findHeaderCellIndex(headerRow, ['ganancia', 'utilidad']),
+});
+
 const inferBalanceSectionFromAccountCode = (accountCode: string): MonthlyBalanceSection => {
   if (accountCode.startsWith('1.1.')) return 'ACTIVO_CORRIENTE';
   if (accountCode.startsWith('1.2.') || accountCode.startsWith('1.3.') || accountCode.startsWith('1.4.')) {
@@ -529,23 +548,38 @@ const inferInventoryFamily = (productName: string, category: string): MonthlyInv
 
 const isPnlAccountCode = (value: string): boolean => /^\d+(?:\.\d+)+$/.test(value.trim());
 
+const parseYearValue = (value: string): number | null => {
+  const match = normalize(value).match(/20\d{2}/);
+  return match ? Number(match[0]) : null;
+};
+
 const findPnlHeaderRowIndex = (rows: SheetMatrixRow[]): number => rows.findIndex((row) => {
   const normalizedCells = row.map((cell) => normalize(String(cell ?? '')));
   const hasCuenta = normalizedCells.some((cell) => cell === 'cuenta');
   const hasDescription = normalizedCells.some((cell) => cell.startsWith('descrip'));
-  const hasTargetYear = normalizedCells.some((cell) => cell.includes('2026'));
+  const hasTargetYear = normalizedCells.some((cell) => /20\d{2}/.test(cell));
   return hasCuenta && hasDescription && hasTargetYear;
 });
 
-const resolvePnlColumnIndexes = (headerRow: SheetMatrixRow): {
+const resolvePnlColumnIndexes = (
+  headerRow: SheetMatrixRow,
+  selectedPeriodKey: string,
+): {
   codeIndex: number;
   nameIndex: number;
   amountIndex: number;
 } => {
   const normalizedCells = headerRow.map((cell) => normalize(String(cell ?? '')));
+  const selectedYear = Number(selectedPeriodKey.slice(0, 4));
   const codeIndex = normalizedCells.findIndex((cell) => cell === 'cuenta');
   const nameIndex = normalizedCells.findIndex((cell) => cell.startsWith('descrip'));
-  const amountIndex = normalizedCells.findIndex((cell) => cell.includes('2026'));
+  const yearlyCandidates = normalizedCells
+    .map((cell, index) => ({ index, year: parseYearValue(cell), cell }))
+    .filter((entry) => entry.year !== null);
+  const exactYearMatch = yearlyCandidates.find((entry) => entry.year === selectedYear);
+  const amountIndex = exactYearMatch?.index
+    ?? yearlyCandidates.sort((left, right) => (left.year ?? 0) - (right.year ?? 0)).at(-1)?.index
+    ?? normalizedCells.findIndex((cell) => cell.includes('resultado') || cell.includes('monto'));
 
   return {
     codeIndex,
@@ -584,9 +618,9 @@ export const parsePnlWorksheetRows = (
 
   evaluateDetectedPeriods(selectedPeriodKey, detectedPeriodKeys, errors, warnings);
 
-  const { codeIndex, nameIndex, amountIndex } = resolvePnlColumnIndexes(rows[headerRowIndex] ?? []);
+  const { codeIndex, nameIndex, amountIndex } = resolvePnlColumnIndexes(rows[headerRowIndex] ?? [], selectedPeriodKey);
   if (codeIndex === -1 || nameIndex === -1 || amountIndex === -1) {
-    errors.push('No se pudieron resolver las columnas Cuenta, Descripción y Año 2026 del ER.');
+    errors.push('No se pudieron resolver las columnas Cuenta, Descripción y monto del ER.');
     return {
       fileName,
       rows: parsedRows,
@@ -812,6 +846,20 @@ export const parseBalanceWorksheetRows = (
     };
   }
 
+  const { activeIndex, passiveIndex, lossIndex, profitIndex } = resolveBalanceWorksheetColumnIndexes(rows[headerIndex] ?? []);
+  if (activeIndex === -1 || passiveIndex === -1) {
+    errors.push('No se pudieron resolver las columnas Activo/Pasivo del balance exportado.');
+    return {
+      fileName,
+      rows: [],
+      warnings,
+      errors,
+      totalRows: rows.length,
+      validRows: 0,
+      detectedPeriodKeys,
+    };
+  }
+
   for (let index = headerIndex + 1; index < rows.length; index += 1) {
     const row = rows[index];
     const rawCode = String(row[0] ?? '').trim();
@@ -827,7 +875,7 @@ export const parseBalanceWorksheetRows = (
         accountName: 'Resultado',
         section: 'OTROS',
         subsection: 'Control Balance',
-        amountCLP: parseNumber(row[8]) - parseNumber(row[9]),
+        amountCLP: parseNumber(row[lossIndex]) - parseNumber(row[profitIndex]),
         sourcePeriodKey: selectedPeriodKey,
         isSubtotal: true,
       });
@@ -843,8 +891,8 @@ export const parseBalanceWorksheetRows = (
 
     const section = inferBalanceSectionFromAccountCode(rawCode);
     const amountCLP = rawCode.startsWith('1.')
-      ? parseNumber(row[6]) - parseNumber(row[7])
-      : parseNumber(row[7]) - parseNumber(row[6]);
+      ? parseNumber(row[activeIndex]) - parseNumber(row[passiveIndex])
+      : parseNumber(row[passiveIndex]) - parseNumber(row[activeIndex]);
 
     parsedRows.push({
       lineOrder: index + 1,

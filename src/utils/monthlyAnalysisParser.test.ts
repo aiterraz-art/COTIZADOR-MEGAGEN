@@ -178,6 +178,41 @@ describe('monthlyAnalysisParser', () => {
     expect(result.rows.at(-1)?.isSubtotal).toBe(true);
   });
 
+  it('usa el año del periodo seleccionado en el ER y no depende de 2026', () => {
+    const result = parsePnlWorksheetRows([
+      ['EMPRESA', '', '', '', ''],
+      ['ESTADO DE RESULTADO PERSONALIZADO', '', '', '', ''],
+      ['Período del 01/03/2027 al 31/03/2027', '', '', '', ''],
+      ['Cuenta', 'Descripción', 'Año 2026', 'Año 2027', 'Diferencia $'],
+      ['3.1.1010.10.01', 'VENTAS', 100, 250, 150],
+      ['4.1.1010.10.01', 'COSTO DE VENTA', -40, -90, -50],
+      ['', 'UTILIDAD BRUTA', 60, 160, 100],
+    ], '2027-03');
+
+    expect(result.errors).toEqual([]);
+    expect(result.validRows).toBe(3);
+    expect(result.rows[0]?.amountCLP).toBe(250);
+    expect(result.rows[1]?.amountCLP).toBe(-90);
+    expect(result.rows[2]?.amountCLP).toBe(160);
+  });
+
+  it('resuelve columnas movidas en el balance exportado por nombre de encabezado', () => {
+    const result = parseBalanceWorksheetRows([
+      ['Empresa', '', '', '', '', '', '', '', '', ''],
+      ['Balance General', '', '', '', '', '', '', '', '', ''],
+      ['Cuenta', 'Descripción', 'Debe $', 'Haber $', 'Deudor $', 'Acreedor $', 'Pérdida $', 'Activo $', 'Ganancia $', 'Pasivo $'],
+      ['1.1.1010.20.07', 'BCO_BCI - 32832061', 10, 5, 5, 0, 0, 5, 0, 0],
+      ['2.1.1070.20.02', 'PROVEEDORES EXTRANJEROS', 1, 4, 0, 3, 0, 0, 0, 3],
+      ['Resultado', '', '', '', '', '', 25, 0, 10, 0],
+    ], '2026-02');
+
+    expect(result.errors).toEqual([]);
+    expect(result.validRows).toBe(3);
+    expect(result.rows[0]?.amountCLP).toBe(5);
+    expect(result.rows[1]?.amountCLP).toBe(3);
+    expect(result.rows[2]?.amountCLP).toBe(15);
+  });
+
   it('clasifica inventario por nombre, agrega movimientos y conserva no mapeados', () => {
     const result = parseInventoryRows([
       {
