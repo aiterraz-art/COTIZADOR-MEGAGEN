@@ -543,6 +543,11 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
   const totalAssetsLine = displayBalanceLineIndex.get('total_assets') ?? null;
   const totalLiabilitiesAndEquityLine = displayBalanceLineIndex.get('total_liabilities_and_equity') ?? null;
   const balanceNetIncomeLine = displayBalanceLineIndex.get('net_income') ?? null;
+  const hasPnlLoadedForBalanceControl = Boolean(displayPnlLines.length && displayCustomPnl);
+  const balanceControlNetIncomeLabel = hasPnlLoadedForBalanceControl ? 'Net Income ER' : 'Net Income usado';
+  const balanceControlNetIncomeValue = hasPnlLoadedForBalanceControl
+    ? (balanceNetIncomeLine?.amountCLP ?? 0)
+    : (displayCustomBalance?.sourceNetIncomeControlCLP ?? balanceNetIncomeLine?.amountCLP ?? 0);
   const displayBalanceInlineWarnings = useMemo(() => (
     displayCustomBalance?.warnings.filter((warning) => (
       !warning.startsWith('Hay cuentas nuevas en el Balance')
@@ -1432,8 +1437,8 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
                         })}
                       </div>
                       <div>
-                        <div className="text-muted" style={{ fontSize: '0.74rem', marginBottom: '0.35rem' }}>Net Income ER</div>
-                        {renderCopyableCurrencyButton('balance-er-net-income', balanceNetIncomeLine?.amountCLP ?? 0, {
+                        <div className="text-muted" style={{ fontSize: '0.74rem', marginBottom: '0.35rem' }}>{balanceControlNetIncomeLabel}</div>
+                        {renderCopyableCurrencyButton('balance-er-net-income', balanceControlNetIncomeValue, {
                           minWidth: '180px',
                         })}
                       </div>
@@ -1458,6 +1463,8 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
                     >
                       {displayCustomBalance.sourceNetIncomeControlCLP === null || displayCustomBalance.sourceNetIncomeControlCLP === undefined
                         ? 'El archivo de balance no trajo una fila Resultado utilizable para control.'
+                        : !hasPnlLoadedForBalanceControl
+                          ? 'No hay ER cargado. Se usa el Resultado del balance como Net Income para mantener el control visible.'
                         : displayCustomBalance.netIncomeDifferenceCLP === 0
                           ? 'El Resultado del balance coincide con el Net Income del ER.'
                           : 'El Resultado del balance no coincide con el Net Income del ER.'}
