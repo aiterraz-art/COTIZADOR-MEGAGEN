@@ -118,6 +118,26 @@ describe('monthlyBalanceCustomEngine', () => {
     ]);
   });
 
+  it('usa la linea Resultado del balance cuando no existe ER cargado', () => {
+    const result = buildMonthlyBalanceCustomMapping([
+      makeBalanceLine({ accountCode: '1.1.1010.20.07', accountName: 'BCO_BCI - 32832061', amountCLP: 500 }),
+      makeBalanceLine({ accountCode: '2.4.1000.10.01', accountName: 'CAPITAL', amountCLP: 700, section: 'PATRIMONIO' }),
+      makeBalanceLine({
+        accountCode: MONTHLY_BALANCE_SOURCE_NET_INCOME_CONTROL_CODE,
+        accountName: 'Resultado',
+        amountCLP: -200,
+        section: 'OTROS',
+        isSubtotal: true,
+      }),
+    ]);
+
+    expect(result.mappedLines.find((line) => line.targetKey === 'net_income')?.amountCLP).toBe(-200);
+    expect(result.sourceNetIncomeControlCLP).toBe(-200);
+    expect(result.netIncomeDifferenceCLP).toBe(0);
+    expect(result.balanceDifferenceCLP).toBe(0);
+    expect(result.warnings).toEqual([]);
+  });
+
   it('ignora cuentas técnicas esperadas, avisa si traen saldo y compara Resultado contra ER', () => {
     const result = buildMonthlyBalanceCustomMapping([
       makeBalanceLine({ accountCode: '1.1.1080.10.02', accountName: 'CONTRACUENTA DE APERTURA', amountCLP: 91 }),

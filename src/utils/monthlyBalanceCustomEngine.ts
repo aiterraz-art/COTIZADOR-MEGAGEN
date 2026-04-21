@@ -56,6 +56,7 @@ const normalizeTargetAmount = (
 const resolveNetIncomeCLP = (
   customPnl: MonthlyPnlCustomMappingResult | null | undefined,
   fallbackNetIncomeCLP: number | null | undefined,
+  sourceNetIncomeControlCLP: number | null | undefined,
 ): { value: number; warnings: string[] } => {
   if (customPnl && !customPnl.errors.length) {
     const netIncomeLine = customPnl.mappedLines.find((line) => line.targetKey === 'net_profit_loss');
@@ -70,6 +71,13 @@ const resolveNetIncomeCLP = (
   if (typeof fallbackNetIncomeCLP === 'number' && Number.isFinite(fallbackNetIncomeCLP)) {
     return {
       value: -fallbackNetIncomeCLP,
+      warnings: [],
+    };
+  }
+
+  if (typeof sourceNetIncomeControlCLP === 'number' && Number.isFinite(sourceNetIncomeControlCLP)) {
+    return {
+      value: sourceNetIncomeControlCLP,
       warnings: [],
     };
   }
@@ -168,7 +176,11 @@ export const buildMonthlyBalanceCustomMapping = (
     warnings.push('Hay cuentas nuevas en el Balance que aún no tienen regla de tratamiento.');
   }
 
-  const resolvedNetIncome = resolveNetIncomeCLP(options?.customPnl, options?.fallbackNetIncomeCLP);
+  const resolvedNetIncome = resolveNetIncomeCLP(
+    options?.customPnl,
+    options?.fallbackNetIncomeCLP,
+    sourceNetIncomeControlRow?.amountCLP ?? null,
+  );
   warnings.push(...resolvedNetIncome.warnings);
 
   const totals = recalculateComputedLines(mappedLineIndex, resolvedNetIncome.value);
