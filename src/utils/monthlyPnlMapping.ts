@@ -3,6 +3,7 @@ import type { MonthlyPnlSourceRow } from '../types/monthlyAnalysis';
 export interface MonthlyPnlSourceAccountMapping {
   sourceCode?: string;
   sourceName: string;
+  sourceSectionLabel?: string;
   sourceKind: 'detail' | 'subtotal';
   targetKey: string;
 }
@@ -17,12 +18,14 @@ const normalize = (text: string): string => text
 const buildMatchKey = (
   sourceCode: string,
   sourceName: string,
+  sourceSectionLabel: string,
   sourceKind: MonthlyPnlSourceAccountMapping['sourceKind'],
-): string => `${sourceKind}::${normalize(sourceCode)}::${normalize(sourceName)}`;
+): string => `${sourceKind}::${normalize(sourceCode)}::${normalize(sourceName)}::${normalize(sourceSectionLabel)}`;
 
 export const MONTHLY_PNL_SOURCE_ACCOUNT_MAPPINGS: MonthlyPnlSourceAccountMapping[] = [
   { sourceCode: '3.1.1010.10.01', sourceName: 'VENTAS', sourceKind: 'detail', targetKey: 'revenue_merchandise' },
   { sourceName: 'COSTOS DE EXPLOTACION', sourceKind: 'subtotal', targetKey: 'cost_of_merchandise_sold' },
+  { sourceName: 'GASTO FINANCIERO', sourceSectionLabel: 'GASTO FINANCIERO', sourceKind: 'subtotal', targetKey: 'interest_expense' },
   { sourceCode: '4.5.1040.10.01', sourceName: 'REMUNERACIONES', sourceKind: 'detail', targetKey: 'salaries_split' },
   { sourceCode: '4.5.1040.10.02', sourceName: 'APORTE PATRONAL', sourceKind: 'detail', targetKey: 'employee_benefits' },
   { sourceCode: '4.5.1040.10.03', sourceName: 'ASIGNACION COLACION', sourceKind: 'detail', targetKey: 'employee_benefits' },
@@ -65,7 +68,7 @@ export const MONTHLY_PNL_SOURCE_ACCOUNT_MAPPINGS: MonthlyPnlSourceAccountMapping
 
 const sourceMappingIndex = new Map<string, MonthlyPnlSourceAccountMapping>(
   MONTHLY_PNL_SOURCE_ACCOUNT_MAPPINGS.map((mapping) => [
-    buildMatchKey(mapping.sourceCode ?? '', mapping.sourceName, mapping.sourceKind),
+    buildMatchKey(mapping.sourceCode ?? '', mapping.sourceName, mapping.sourceSectionLabel ?? '', mapping.sourceKind),
     mapping,
   ]),
 );
@@ -74,5 +77,7 @@ export const findMonthlyPnlSourceMapping = (
   row: MonthlyPnlSourceRow,
 ): MonthlyPnlSourceAccountMapping | null => {
   const kind: MonthlyPnlSourceAccountMapping['sourceKind'] = row.isSubtotal ? 'subtotal' : 'detail';
-  return sourceMappingIndex.get(buildMatchKey(row.accountCode, row.accountName, kind)) ?? null;
+  return sourceMappingIndex.get(buildMatchKey(row.accountCode, row.accountName, row.sourceSectionLabel, kind))
+    ?? sourceMappingIndex.get(buildMatchKey(row.accountCode, row.accountName, '', kind))
+    ?? null;
 };

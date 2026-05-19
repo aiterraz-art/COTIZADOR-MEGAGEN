@@ -137,4 +137,33 @@ describe('monthlyPnlCustomEngine', () => {
     expect(result.mappedLines.find((line) => line.targetKey === 'operating_income_loss')?.amountCLP).toBe(600_000);
     expect(result.mappedLines.find((line) => line.targetKey === 'profit_before_income_tax')?.amountCLP).toBe(550_000);
   });
+
+  it('considera el subtotal GASTO FINANCIERO como interest expense no operacional', () => {
+    const result = buildMonthlyPnlCustomMapping([
+      makeLine({ lineOrder: 1, accountCode: '3.1.1010.10.01', accountName: 'VENTAS', section: 'INGRESOS', amountCLP: 1_000_000 }),
+      makeLine({ lineOrder: 2, accountCode: '', accountName: 'GASTO FINANCIERO', section: 'OTROS_INGRESOS_EGRESOS', subsection: 'GASTO FINANCIERO', amountCLP: -6_384, isSubtotal: true }),
+    ], {
+      adminSalaryManualCLP: 0,
+    });
+
+    expect(result.errors).toEqual([]);
+    expect(result.unmappedSourceLines).toEqual([]);
+    expect(result.mappedLines.find((line) => line.targetKey === 'interest_expense')?.amountCLP).toBe(6_384);
+    expect(result.totals.totalNonOperatingExpensesCLP).toBe(6_384);
+    expect(result.mappedLines.find((line) => line.targetKey === 'net_profit_loss')?.amountCLP).toBe(993_616);
+  });
+
+  it('no duplica el subtotal GASTO FINANCIERO cuando reaparece dentro de RESULTADO NO OPERACIONAL', () => {
+    const result = buildMonthlyPnlCustomMapping([
+      makeLine({ lineOrder: 1, accountCode: '', accountName: 'GASTO FINANCIERO', section: 'OTROS_INGRESOS_EGRESOS', subsection: 'GASTO FINANCIERO', amountCLP: -6_384, isSubtotal: true }),
+      makeLine({ lineOrder: 2, accountCode: '', accountName: 'GASTO FINANCIERO', section: 'RESULTADOS', subsection: 'RESULTADO NO OPERACIONAL', amountCLP: -6_384, isSubtotal: true }),
+    ], {
+      adminSalaryManualCLP: 0,
+    });
+
+    expect(result.errors).toEqual([]);
+    expect(result.unmappedSourceLines).toEqual([]);
+    expect(result.mappedLines.find((line) => line.targetKey === 'interest_expense')?.amountCLP).toBe(6_384);
+    expect(result.totals.totalNonOperatingExpensesCLP).toBe(6_384);
+  });
 });
