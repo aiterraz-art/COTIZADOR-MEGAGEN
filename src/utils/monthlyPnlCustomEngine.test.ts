@@ -84,6 +84,34 @@ describe('monthlyPnlCustomEngine', () => {
     expect(result.mappedLines.find((line) => line.targetKey === 'loss_fx_transactions')?.amountCLP).toBe(19_056_179);
   });
 
+  it('mapea las nuevas cuentas notariales, informes comerciales y castigo de existencias', () => {
+    const result = buildMonthlyPnlCustomMapping([
+      makeLine({ lineOrder: 1, accountCode: '4.5.1030.10.19', accountName: 'GTOS. NOTARIALES', subsection: 'GTOS. DE ADMINIS. Y VENTAS', amountCLP: 7_000 }),
+      makeLine({ lineOrder: 2, accountCode: '4.5.1030.10.31', accountName: 'GTOS. INFORMES COMERCIALES', subsection: 'GTOS. DE ADMINIS. Y VENTAS', amountCLP: 14_706 }),
+      makeLine({ lineOrder: 3, accountCode: '4.5.1050.10.04', accountName: 'CASTIGO DE EXISTENCIAS', subsection: 'GTOS. DE ADMINIS. Y VENTAS', amountCLP: 786_139 }),
+    ], {
+      adminSalaryManualCLP: 0,
+    });
+
+    expect(result.errors).toEqual([]);
+    expect(result.unmappedSourceLines).toEqual([]);
+    expect(result.mappedLines.find((line) => line.targetKey === 'professional_fee')?.amountCLP).toBe(7_000);
+    expect(result.mappedLines.find((line) => line.targetKey === 'commercial_credit_report_fees')?.amountCLP).toBe(14_706);
+    expect(result.mappedLines.find((line) => line.targetKey === 'inventory_write_off')?.amountCLP).toBe(786_139);
+  });
+
+  it('mapea ropa de trabajo y epp como gasto administrativo general', () => {
+    const result = buildMonthlyPnlCustomMapping([
+      makeLine({ lineOrder: 1, accountCode: '4.5.1030.10.27', accountName: 'ROPA DE TRABAJO Y EPP', subsection: 'GTOS. DE ADMINIS. Y VENTAS', amountCLP: 117_500 }),
+    ], {
+      adminSalaryManualCLP: 0,
+    });
+
+    expect(result.errors).toEqual([]);
+    expect(result.unmappedSourceLines).toEqual([]);
+    expect(result.mappedLines.find((line) => line.targetKey === 'other_sga_expense')?.amountCLP).toBe(117_500);
+  });
+
   it('valida que Salaries (Admin, GM) no exceda REMUNERACIONES', () => {
     const result = buildMonthlyPnlCustomMapping([
       makeLine({ lineOrder: 1, accountCode: '4.5.1040.10.01', accountName: 'REMUNERACIONES', subsection: 'GTOS. DE ADMINIS. Y VENTAS', amountCLP: 2_000_000 }),
