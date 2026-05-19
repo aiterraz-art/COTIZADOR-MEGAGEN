@@ -182,4 +182,27 @@ describe('monthlyBalanceCustomEngine', () => {
     expect(result.mappedLines.find((line) => line.targetKey === 'credit_cards')?.amountCLP).toBe(125);
     expect(result.unmappedSourceLines).toHaveLength(0);
   });
+
+  it('mapea equipos electronicos y su depreciacion dentro de computer and equipment', () => {
+    const result = buildMonthlyBalanceCustomMapping([
+      makeBalanceLine({
+        accountCode: '1.2.1210.30.06',
+        accountName: 'EQUIPOS ELECTRONICOS',
+        amountCLP: 773_077,
+        section: 'ACTIVO_NO_CORRIENTE',
+      }),
+      makeBalanceLine({
+        accountCode: '1.2.1210.70.06',
+        accountName: 'D.A EQUIPOS ELECTRONICOS',
+        amountCLP: -32_231,
+        section: 'ACTIVO_NO_CORRIENTE',
+      }),
+    ], {
+      customPnl: makeCustomPnl(0),
+    });
+
+    expect(result.mappedLines.find((line) => line.targetKey === 'computer_equipment_other')?.amountCLP).toBe(773_077);
+    expect(result.mappedLines.find((line) => line.targetKey === 'accumulated_depreciation_me')?.amountCLP).toBe(-32_231);
+    expect(result.unmappedSourceLines).toHaveLength(0);
+  });
 });
