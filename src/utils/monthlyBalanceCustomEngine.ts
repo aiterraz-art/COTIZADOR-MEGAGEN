@@ -62,7 +62,7 @@ const resolveNetIncomeCLP = (
     const netIncomeLine = customPnl.mappedLines.find((line) => line.targetKey === 'net_profit_loss');
     if (netIncomeLine) {
       return {
-        value: -netIncomeLine.amountCLP,
+        value: netIncomeLine.amountCLP,
         warnings: [],
       };
     }
@@ -70,7 +70,7 @@ const resolveNetIncomeCLP = (
 
   if (typeof fallbackNetIncomeCLP === 'number' && Number.isFinite(fallbackNetIncomeCLP)) {
     return {
-      value: -fallbackNetIncomeCLP,
+      value: fallbackNetIncomeCLP,
       warnings: [],
     };
   }
