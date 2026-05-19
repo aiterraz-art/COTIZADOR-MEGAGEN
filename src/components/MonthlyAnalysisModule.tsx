@@ -420,11 +420,13 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
   }, [draft.pnl]);
 
   const draftCustomPnl = useMemo<MonthlyPnlCustomMappingResult | null>(() => (
-    draft.pnl ? buildMonthlyPnlCustomMapping(draft.pnl.rows, draft.manualInputs) : null
+    draft.pnl && !draft.pnl.errors.length
+      ? buildMonthlyPnlCustomMapping(draft.pnl.rows, draft.manualInputs)
+      : null
   ), [draft.manualInputs, draft.pnl]);
 
   const draftCustomBalance = useMemo<MonthlyBalanceCustomMappingResult | null>(() => (
-    draft.balance
+    draft.balance && !draft.balance.errors.length
       ? buildMonthlyBalanceCustomMapping(draft.balance.rows, {
         customPnl: draftCustomPnl,
       })
