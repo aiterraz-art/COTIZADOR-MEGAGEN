@@ -106,6 +106,21 @@ describe('monthlyAnalysisParser', () => {
     expect(result.rows[6]?.isSubtotal).toBe(true);
   });
 
+  it('captura Resultado aunque la cabecera Pérdida venga con texto corrupto', () => {
+    const result = parseBalanceWorksheetRows([
+      ['MEGAGEN IMPLANT CHILE SPA', 'Fecha :19/05/2026', '', '', '', '', '', '', '', ''],
+      ['Balance General', '', '', '', '', '', '', '', '', ''],
+      ['Periodo del 01/04/2026 al 30/04/2026', '', '', '', '', '', '', '', '', ''],
+      ['Cuenta', 'Descripci󮼯td>', 'Debe $', 'Haber $', 'Deudor $', 'Acreedor $', 'Activo $', 'Pasivo $', 'P鲤ida $', 'Ganancia $'],
+      ['1.1.1010.20.07', 'BCO_BCI - 32832061', 10, 5, 5, 0, 5, 0, 0, 0],
+      ['Resultado', '', 11788749, '', '', '', '', '', 11788749, ''],
+    ], '2026-04');
+
+    expect(result.errors).toEqual([]);
+    expect(result.rows.at(-1)?.accountCode).toBe(MONTHLY_BALANCE_SOURCE_NET_INCOME_CONTROL_CODE);
+    expect(result.rows.at(-1)?.amountCLP).toBe(11788749);
+  });
+
   it('parsea ER completo y detecta resultados explícitos', () => {
     const result = parsePnlRows([
       {

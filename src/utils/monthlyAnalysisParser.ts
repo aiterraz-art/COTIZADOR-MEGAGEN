@@ -417,12 +417,35 @@ const resolveBalanceWorksheetColumnIndexes = (headerRow: SheetMatrixRow): {
   passiveIndex: number;
   lossIndex: number;
   profitIndex: number;
-} => ({
-  activeIndex: findHeaderCellIndex(headerRow, ['activo']),
-  passiveIndex: findHeaderCellIndex(headerRow, ['pasivo']),
-  lossIndex: findHeaderCellIndex(headerRow, ['perdida', 'pérdida']),
-  profitIndex: findHeaderCellIndex(headerRow, ['ganancia', 'utilidad']),
-});
+} => {
+  const activeIndex = findHeaderCellIndex(headerRow, ['activo']);
+  const passiveIndex = findHeaderCellIndex(headerRow, ['pasivo']);
+  let lossIndex = findHeaderCellIndex(headerRow, ['perdida', 'pérdida']);
+  let profitIndex = findHeaderCellIndex(headerRow, ['ganancia', 'utilidad']);
+
+  // Some exported workbooks corrupt the "Pérdida" header text, but keep the
+  // same column order after Activo/Pasivo. In that case, infer the trailing
+  // result columns from their relative position instead of dropping Resultado.
+  if (activeIndex !== -1 && passiveIndex !== -1) {
+    const inferredLossIndex = Math.max(activeIndex, passiveIndex) + 1;
+    const inferredProfitIndex = inferredLossIndex + 1;
+
+    if (lossIndex === -1 && inferredLossIndex < headerRow.length) {
+      lossIndex = inferredLossIndex;
+    }
+
+    if (profitIndex === -1 && inferredProfitIndex < headerRow.length) {
+      profitIndex = inferredProfitIndex;
+    }
+  }
+
+  return {
+    activeIndex,
+    passiveIndex,
+    lossIndex,
+    profitIndex,
+  };
+};
 
 const inferBalanceSectionFromAccountCode = (accountCode: string): MonthlyBalanceSection => {
   if (accountCode.startsWith('1.1.')) return 'ACTIVO_CORRIENTE';
