@@ -53,8 +53,8 @@ import {
 import { MONTHLY_BALANCE_TARGET_SECTIONS } from '../data/monthlyBalanceDefinitions';
 import { MONTHLY_PNL_TARGET_SECTIONS } from '../data/monthlyPnlDefinitions';
 
-type MonthlyTab = 'summary' | 'balance' | 'pnl' | 'inventory';
-type UploadKind = 'balance' | 'pnl' | 'inventory';
+type MonthlyTab = 'summary' | 'balance' | 'pnl' | 'inventory' | 'monthlyCheck';
+type UploadKind = 'balance' | 'pnl' | 'inventory' | 'balance_month' | 'pnl_month';
 const MONTHLY_ANALYSIS_STORAGE_KEY = 'megagen.monthlyAnalysis.viewState';
 const MONTHLY_ANALYSIS_STORAGE_VERSION = 5;
 
@@ -67,6 +67,9 @@ interface MonthlyDraftState {
   pnl: MonthlyParseResult<MonthlyPnlLine> | null;
   inventory: MonthlyParseResult<MonthlyInventoryMovement> | null;
   manualInputs: MonthlyManualInputs;
+  monthlyCheckBalance: MonthlyParseResult<MonthlyBalanceLine> | null;
+  monthlyCheckPnl: MonthlyParseResult<MonthlyPnlLine> | null;
+  monthlyCheckManualInputs: MonthlyManualInputs;
 }
 
 interface QuickCopyMetric {
@@ -89,6 +92,11 @@ const initialDraftState = (): MonthlyDraftState => ({
   pnl: null,
   inventory: null,
   manualInputs: {
+    adminSalaryManualCLP: null,
+  },
+  monthlyCheckBalance: null,
+  monthlyCheckPnl: null,
+  monthlyCheckManualInputs: {
     adminSalaryManualCLP: null,
   },
 });
@@ -148,7 +156,9 @@ const normalizeMetricLabel = (value: string): string => value
 const hasDraftContent = (draft: MonthlyDraftState): boolean => Boolean(
   draft.balance
   || draft.pnl
-  || draft.inventory,
+  || draft.inventory
+  || draft.monthlyCheckBalance
+  || draft.monthlyCheckPnl,
 );
 
 const readStoredMonthlyAnalysisState = (): PersistedMonthlyAnalysisState | null => {
@@ -164,13 +174,22 @@ const readStoredMonthlyAnalysisState = (): PersistedMonthlyAnalysisState | null 
     return {
       version: MONTHLY_ANALYSIS_STORAGE_VERSION,
       periodKey: typeof parsed.periodKey === 'string' && parsed.periodKey ? parsed.periodKey : currentMonth(),
-      activeTab: parsed.activeTab === 'balance' || parsed.activeTab === 'pnl' || parsed.activeTab === 'inventory' ? parsed.activeTab : 'summary',
+      activeTab: parsed.activeTab === 'balance'
+        || parsed.activeTab === 'pnl'
+        || parsed.activeTab === 'inventory'
+        || parsed.activeTab === 'monthlyCheck'
+        ? parsed.activeTab
+        : 'summary',
       draft: {
         ...initialDraft,
         ...parsedDraft,
         manualInputs: {
           ...initialDraft.manualInputs,
           ...(parsedDraft?.manualInputs ?? {}),
+        },
+        monthlyCheckManualInputs: {
+          ...initialDraft.monthlyCheckManualInputs,
+          ...(parsedDraft?.monthlyCheckManualInputs ?? {}),
         },
       },
       selectedClosurePeriodKey: typeof parsed.selectedClosurePeriodKey === 'string' && parsed.selectedClosurePeriodKey
@@ -293,6 +312,8 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
   const balanceInputRef = useRef<HTMLInputElement>(null);
   const pnlInputRef = useRef<HTMLInputElement>(null);
   const inventoryInputRef = useRef<HTMLInputElement>(null);
+  const monthlyCheckBalanceInputRef = useRef<HTMLInputElement>(null);
+  const monthlyCheckPnlInputRef = useRef<HTMLInputElement>(null);
 
   const [periodKey, setPeriodKey] = useState<string>(() => persistedState?.periodKey ?? currentMonth());
   const [activeTab, setActiveTab] = useState<MonthlyTab>(() => persistedState?.activeTab ?? 'summary');
@@ -433,6 +454,20 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
       : null
   ), [draft.balance, draftCustomPnl]);
 
+  const draftMonthlyCheckCustomPnl = useMemo<MonthlyPnlCustomMappingResult | null>(() => (
+    draft.monthlyCheckPnl && !draft.monthlyCheckPnl.errors.length
+      ? buildMonthlyPnlCustomMapping(draft.monthlyCheckPnl.rows, draft.monthlyCheckManualInputs)
+      : null
+  ), [draft.monthlyCheckManualInputs, draft.monthlyCheckPnl]);
+
+  const draftMonthlyCheckCustomBalance = useMemo<MonthlyBalanceCustomMappingResult | null>(() => (
+    draft.monthlyCheckBalance && !draft.monthlyCheckBalance.errors.length
+      ? buildMonthlyBalanceCustomMapping(draft.monthlyCheckBalance.rows, {
+        customPnl: draftMonthlyCheckCustomPnl,
+      })
+      : null
+  ), [draft.monthlyCheckBalance, draftMonthlyCheckCustomPnl]);
+
   const selectedCustomPnl = useMemo<MonthlyPnlCustomMappingResult | null>(() => {
     if (!selectedClosure) return null;
     if (!selectedClosure.pnlLines.length) return null;
@@ -501,6 +536,32 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
     return errors;
   }, [draft.balance, draft.pnl, draftCustomPnl]);
 
+  const monthlyCheckMessages = useMemo(() => {
+    const combined = combineMessages(draft.monthlyCheckBalance, draft.monthlyCheckPnl);
+    return {
+      warnings: [...combined.warnings, ...(draftMonthlyCheckCustomPnl?.warnings ?? []), ...(draftMonthlyCheckCustomBalance?.warnings ?? [])],
+      errors: combined.errors,
+    };
+  }, [draft.monthlyCheckBalance, draft.monthlyCheckPnl, draftMonthlyCheckCustomBalance, draftMonthlyCheckCustomPnl]);
+
+  const monthlyCheckValidationErrors = useMemo(() => {
+    const errors: string[] = [];
+
+    if (draft.monthlyCheckBalance && !hasMinimumBalanceStructure(draft.monthlyCheckBalance.rows)) {
+      errors.push('El balance mensual no contiene líneas suficientes para activos y pasivos/patrimonio.');
+    }
+
+    if (draft.monthlyCheckPnl && !hasMinimumPnlStructure(draft.monthlyCheckPnl.rows)) {
+      errors.push('El ER mensual no contiene líneas suficientes de ingresos y costos/gastos.');
+    }
+
+    if (draftMonthlyCheckCustomPnl?.errors.length) {
+      errors.push(...draftMonthlyCheckCustomPnl.errors);
+    }
+
+    return errors;
+  }, [draft.monthlyCheckBalance, draft.monthlyCheckPnl, draftMonthlyCheckCustomPnl]);
+
   const canSaveDraft = Boolean(
     draft.balance
     && draft.pnl
@@ -511,6 +572,7 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
   );
 
   const displayPnlLines = draft.pnl?.rows ?? selectedClosure?.pnlLines ?? [];
+  const displayMonthlyCheckPnlLines = draft.monthlyCheckPnl?.rows ?? [];
   const displayInventoryMovements = useMemo(
     () => draft.inventory?.rows ?? selectedClosure?.inventoryMovements ?? [],
     [draft.inventory, selectedClosure?.inventoryMovements],
@@ -567,6 +629,31 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
     .reduce((acc, line) => acc + Math.abs(line.amountCLP), 0), [displayPnlLines]);
   const netProfitDifferenceCLP = sourceNetProfitLine && appNetProfitLine
     ? appNetProfitLine.amountCLP - sourceNetProfitLine.amountCLP
+    : null;
+  const displayMonthlyCheckBalanceLineIndex = useMemo(() => new Map(
+    draftMonthlyCheckCustomBalance?.mappedLines.map((line) => [line.targetKey, line]) ?? [],
+  ), [draftMonthlyCheckCustomBalance]);
+  const displayMonthlyCheckPnlLineIndex = useMemo(() => new Map(
+    draftMonthlyCheckCustomPnl?.mappedLines.map((line) => [line.targetKey, line]) ?? [],
+  ), [draftMonthlyCheckCustomPnl]);
+  const monthlyCheckTotalAssetsLine = displayMonthlyCheckBalanceLineIndex.get('total_assets') ?? null;
+  const monthlyCheckTotalLiabilitiesAndEquityLine = displayMonthlyCheckBalanceLineIndex.get('total_liabilities_and_equity') ?? null;
+  const monthlyCheckNetIncomeLine = displayMonthlyCheckBalanceLineIndex.get('net_income') ?? null;
+  const monthlyCheckHasPnlLoadedForBalanceControl = Boolean(displayMonthlyCheckPnlLines.length && draftMonthlyCheckCustomPnl);
+  const monthlyCheckBalanceControlNetIncomeLabel = monthlyCheckHasPnlLoadedForBalanceControl ? 'Net Income ER mes' : 'Net Income usado';
+  const monthlyCheckBalanceControlNetIncomeValue = monthlyCheckHasPnlLoadedForBalanceControl
+    ? (monthlyCheckNetIncomeLine?.amountCLP ?? 0)
+    : (draftMonthlyCheckCustomBalance?.sourceNetIncomeControlCLP ?? monthlyCheckNetIncomeLine?.amountCLP ?? 0);
+  const monthlyCheckSourceNetProfitLine = useMemo(() => displayMonthlyCheckPnlLines.find((line) => {
+    const normalizedName = normalizeMetricLabel(line.accountName);
+    return normalizedName === 'resultado ejercicio' || normalizedName === 'resultado del ej antes de imp';
+  }) ?? null, [displayMonthlyCheckPnlLines]);
+  const monthlyCheckAppNetProfitLine = displayMonthlyCheckPnlLineIndex.get('net_profit_loss') ?? null;
+  const monthlyCheckTotalSalariesSourceCLP = useMemo(() => displayMonthlyCheckPnlLines
+    .filter((line) => line.accountCode === '4.5.1040.10.01' && normalizeMetricLabel(line.accountName) === 'remuneraciones')
+    .reduce((acc, line) => acc + Math.abs(line.amountCLP), 0), [displayMonthlyCheckPnlLines]);
+  const monthlyCheckNetProfitDifferenceCLP = monthlyCheckSourceNetProfitLine && monthlyCheckAppNetProfitLine
+    ? monthlyCheckAppNetProfitLine.amountCLP - monthlyCheckSourceNetProfitLine.amountCLP
     : null;
   const previewPeriodKey = displayPeriodKey ?? (draft.inventory ? periodKey : null);
 
@@ -769,6 +856,17 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
       ...prev,
       manualInputs: {
         ...prev.manualInputs,
+        adminSalaryManualCLP: trimmedValue ? Number(trimmedValue.replace(/[^\d-]/g, '')) : null,
+      },
+    }));
+  };
+
+  const handleMonthlyCheckAdminSalaryInputChange = (value: string): void => {
+    const trimmedValue = value.trim();
+    setDraft((prev) => ({
+      ...prev,
+      monthlyCheckManualInputs: {
+        ...prev.monthlyCheckManualInputs,
         adminSalaryManualCLP: trimmedValue ? Number(trimmedValue.replace(/[^\d-]/g, '')) : null,
       },
     }));
@@ -984,10 +1082,24 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
         return;
       }
 
+      if (kind === 'balance_month') {
+        const result = await parseMonthlyBalanceFile(file, periodKey);
+        setDraft((prev) => ({ ...prev, monthlyCheckBalance: result }));
+        setActiveTab('monthlyCheck');
+        return;
+      }
+
       if (kind === 'pnl') {
         const result = await parseMonthlyPnlFile(file, periodKey);
         setDraft((prev) => ({ ...prev, pnl: result }));
         setActiveTab('pnl');
+        return;
+      }
+
+      if (kind === 'pnl_month') {
+        const result = await parseMonthlyPnlFile(file, periodKey);
+        setDraft((prev) => ({ ...prev, monthlyCheckPnl: result }));
+        setActiveTab('monthlyCheck');
         return;
       }
 
@@ -1125,7 +1237,7 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
             <Database size={22} /> Análisis Mensual
           </h2>
           <p className="text-muted" style={{ fontSize: '0.84rem' }}>
-            Carga balance, estado de resultados y movimientos de inventario para generar el cierre mensual con historial.
+            Carga balance y ER acumulados para el cierre, más balance y ER del mes para la comprobación mensual.
           </p>
         </div>
 
@@ -1202,9 +1314,11 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
       <div style={{ display: 'grid', gridTemplateColumns: '2fr minmax(260px, 0.95fr)', gap: '1rem', alignItems: 'start' }}>
         <div style={{ display: 'grid', gap: '1rem' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '0.85rem' }}>
-            {renderUploadCard('balance', 'Balance', 'Archivo mensual del balance general.', draft.balance, balanceInputRef)}
-            {renderUploadCard('pnl', 'Estado de Resultados', 'Archivo mensual del ER completo.', draft.pnl, pnlInputRef)}
+            {renderUploadCard('balance', 'Balance acumulado', 'Archivo acumulado del balance general para el cierre.', draft.balance, balanceInputRef)}
+            {renderUploadCard('pnl', 'ER acumulado', 'Archivo acumulado del estado de resultados para el cierre.', draft.pnl, pnlInputRef)}
             {renderUploadCard('inventory', 'Ventas por Producto', 'Usa el mismo formato comercial del análisis diario para consolidar ventas por SKU y familia.', draft.inventory, inventoryInputRef)}
+            {renderUploadCard('balance_month', 'Balance del mes', 'Archivo solo del mes para comprobación de cuadre y resultado.', draft.monthlyCheckBalance, monthlyCheckBalanceInputRef)}
+            {renderUploadCard('pnl_month', 'ER del mes', 'Archivo solo del mes para comprobación contra el balance mensual.', draft.monthlyCheckPnl, monthlyCheckPnlInputRef)}
           </div>
 
           <div className="finance-card" style={{ padding: '1rem' }}>
@@ -1214,6 +1328,7 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
                 ['balance', 'Balance'],
                 ['pnl', 'Estado de Resultados'],
                 ['inventory', 'Ventas'],
+                ['monthlyCheck', 'Comprobación mensual'],
               ].map(([tabKey, label]) => (
                 <button
                   key={tabKey}
@@ -1864,6 +1979,264 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
               ) : (
                 <div style={{ padding: '1rem', border: '1px dashed var(--border)', borderRadius: '12px', background: 'var(--surface)' }}>
                   No hay líneas de estado de resultados disponibles.
+                </div>
+              )
+            ) : null}
+
+            {activeTab === 'monthlyCheck' ? (
+              draftMonthlyCheckCustomBalance || draftMonthlyCheckCustomPnl || draft.monthlyCheckBalance || draft.monthlyCheckPnl ? (
+                <div style={{ display: 'grid', gap: '1rem' }}>
+                  <div style={{
+                    padding: '0.9rem',
+                    borderRadius: '12px',
+                    border: '1px solid rgba(0,167,233,0.22)',
+                    background: 'rgba(0,167,233,0.05)',
+                    fontSize: '0.82rem',
+                  }}>
+                    Esta pestaña usa archivos solo del mes para comprobación. No reemplaza el cierre acumulado guardado.
+                  </div>
+
+                  {monthlyCheckMessages.warnings.length || monthlyCheckValidationErrors.length ? (
+                    <div style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.32)', borderRadius: '12px', padding: '0.8rem' }}>
+                      {monthlyCheckMessages.warnings.length ? (
+                        <div style={{ marginBottom: monthlyCheckValidationErrors.length ? '0.4rem' : 0, color: '#92400e', fontSize: '0.8rem' }}>
+                          {monthlyCheckMessages.warnings.map((warning) => <div key={`month-warning-${warning}`}>{warning}</div>)}
+                        </div>
+                      ) : null}
+                      {monthlyCheckValidationErrors.length ? (
+                        <div style={{ color: 'var(--error)', fontSize: '0.8rem' }}>
+                          {monthlyCheckValidationErrors.map((message) => <div key={`month-error-${message}`}>{message}</div>)}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  {draftMonthlyCheckCustomPnl && displayMonthlyCheckPnlLines.length ? (
+                    <>
+                      <div className="finance-card" style={{ padding: '1rem' }}>
+                        <h3 style={{ fontSize: '1rem', marginBottom: '0.75rem' }}>Reparto Manual de REMUNERACIONES del mes</h3>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 320px))', gap: '0.75rem' }}>
+                          <label style={{ fontSize: '0.8rem' }}>
+                            Salaries (Admin, GM)
+                            <input
+                              type="number"
+                              className="input-field"
+                              value={draft.monthlyCheckManualInputs.adminSalaryManualCLP ?? ''}
+                              disabled={!draft.monthlyCheckPnl}
+                              placeholder="Ingresa el monto CLP del mes"
+                              onChange={(event) => handleMonthlyCheckAdminSalaryInputChange(event.target.value)}
+                            />
+                          </label>
+                          <div style={{ fontSize: '0.8rem' }}>
+                            <div className="text-muted" style={{ marginBottom: '0.35rem' }}>Total Salaries Fuente</div>
+                            {renderCopyableCurrencyButton('monthly-check-total-salaries-source', monthlyCheckTotalSalariesSourceCLP, {
+                              minWidth: '180px',
+                            })}
+                          </div>
+                          <div className="text-muted" style={{ fontSize: '0.76rem', gridColumn: '1 / -1' }}>
+                            Este reparto aplica solo a la comprobación mensual y no afecta el cierre acumulado.
+                          </div>
+                        </div>
+                      </div>
+
+                      {monthlyCheckSourceNetProfitLine && monthlyCheckAppNetProfitLine ? (
+                        <div className="finance-card" style={{ padding: '1rem' }}>
+                          <h3 style={{ fontSize: '1rem', marginBottom: '0.75rem' }}>Control Neto Mes Fuente vs App</h3>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.75rem' }}>
+                            <div>
+                              <div className="text-muted" style={{ fontSize: '0.74rem', marginBottom: '0.35rem' }}>Fuente: {monthlyCheckSourceNetProfitLine.accountName}</div>
+                              {renderCopyableCurrencyButton('monthly-check-source-net-profit', monthlyCheckSourceNetProfitLine.amountCLP, {
+                                minWidth: '180px',
+                              })}
+                            </div>
+                            <div>
+                              <div className="text-muted" style={{ fontSize: '0.74rem', marginBottom: '0.35rem' }}>App: Net profit(loss)</div>
+                              {renderCopyableCurrencyButton('monthly-check-app-net-profit', monthlyCheckAppNetProfitLine.amountCLP, {
+                                minWidth: '180px',
+                              })}
+                            </div>
+                            <div>
+                              <div className="text-muted" style={{ fontSize: '0.74rem', marginBottom: '0.35rem' }}>Diferencia</div>
+                              {renderCopyableCurrencyButton('monthly-check-net-profit-difference', monthlyCheckNetProfitDifferenceCLP ?? 0, {
+                                minWidth: '180px',
+                              })}
+                            </div>
+                          </div>
+                          <div
+                            style={{
+                              marginTop: '0.75rem',
+                              fontSize: '0.8rem',
+                              color: monthlyCheckNetProfitDifferenceCLP === 0 ? 'var(--success)' : 'var(--warning)',
+                            }}
+                          >
+                            {monthlyCheckNetProfitDifferenceCLP === 0
+                              ? 'El neto mensual de la app coincide con el neto mensual del archivo fuente.'
+                              : 'El neto mensual de la app no coincide con el archivo fuente.'}
+                          </div>
+                        </div>
+                      ) : null}
+                    </>
+                  ) : null}
+
+                  {draftMonthlyCheckCustomBalance ? (
+                    <>
+                      <div className="finance-card" style={{ padding: '1rem' }}>
+                        <h3 style={{ fontSize: '1rem', marginBottom: '0.75rem' }}>Control de Cuadre del Mes</h3>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.75rem' }}>
+                          <div>
+                            <div className="text-muted" style={{ fontSize: '0.74rem', marginBottom: '0.35rem' }}>TOTAL ASSETS</div>
+                            {renderCopyableCurrencyButton('monthly-check-total-assets', monthlyCheckTotalAssetsLine?.amountCLP ?? 0, {
+                              minWidth: '180px',
+                            })}
+                          </div>
+                          <div>
+                            <div className="text-muted" style={{ fontSize: '0.74rem', marginBottom: '0.35rem' }}>TOTAL LIABILITIES AND EQUITY</div>
+                            {renderCopyableCurrencyButton('monthly-check-total-liabilities-equity', monthlyCheckTotalLiabilitiesAndEquityLine?.amountCLP ?? 0, {
+                              minWidth: '180px',
+                            })}
+                          </div>
+                          <div>
+                            <div className="text-muted" style={{ fontSize: '0.74rem', marginBottom: '0.35rem' }}>Diferencia</div>
+                            {renderCopyableCurrencyButton('monthly-check-balance-difference', draftMonthlyCheckCustomBalance.balanceDifferenceCLP, {
+                              minWidth: '180px',
+                            })}
+                          </div>
+                        </div>
+                        <div
+                          style={{
+                            marginTop: '0.75rem',
+                            fontSize: '0.8rem',
+                            color: draftMonthlyCheckCustomBalance.balanceDifferenceCLP === 0 ? 'var(--success)' : 'var(--warning)',
+                            fontWeight: 600,
+                          }}
+                        >
+                          {draftMonthlyCheckCustomBalance.balanceDifferenceCLP === 0
+                            ? 'El balance mensual cuadra correctamente.'
+                            : 'El balance mensual no cuadra.'}
+                        </div>
+                      </div>
+
+                      <div className="finance-card" style={{ padding: '1rem' }}>
+                        <h3 style={{ fontSize: '1rem', marginBottom: '0.75rem' }}>Control de Resultado del Mes</h3>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.75rem' }}>
+                          <div>
+                            <div className="text-muted" style={{ fontSize: '0.74rem', marginBottom: '0.35rem' }}>Resultado Fuente Balance</div>
+                            {draftMonthlyCheckCustomBalance.sourceNetIncomeControlCLP === null || draftMonthlyCheckCustomBalance.sourceNetIncomeControlCLP === undefined ? (
+                              <span className="text-muted">No detectado</span>
+                            ) : renderCopyableCurrencyButton('monthly-check-source-net-income', draftMonthlyCheckCustomBalance.sourceNetIncomeControlCLP, {
+                              minWidth: '180px',
+                            })}
+                          </div>
+                          <div>
+                            <div className="text-muted" style={{ fontSize: '0.74rem', marginBottom: '0.35rem' }}>{monthlyCheckBalanceControlNetIncomeLabel}</div>
+                            {renderCopyableCurrencyButton('monthly-check-er-net-income', monthlyCheckBalanceControlNetIncomeValue, {
+                              minWidth: '180px',
+                            })}
+                          </div>
+                          <div>
+                            <div className="text-muted" style={{ fontSize: '0.74rem', marginBottom: '0.35rem' }}>Diferencia</div>
+                            {draftMonthlyCheckCustomBalance.netIncomeDifferenceCLP === null || draftMonthlyCheckCustomBalance.netIncomeDifferenceCLP === undefined ? (
+                              <span className="text-muted">N/D</span>
+                            ) : renderCopyableCurrencyButton('monthly-check-net-income-difference', draftMonthlyCheckCustomBalance.netIncomeDifferenceCLP, {
+                              minWidth: '180px',
+                            })}
+                          </div>
+                        </div>
+                        <div
+                          style={{
+                            marginTop: '0.75rem',
+                            fontSize: '0.8rem',
+                            color: draftMonthlyCheckCustomBalance.netIncomeDifferenceCLP === null || draftMonthlyCheckCustomBalance.netIncomeDifferenceCLP === 0
+                              ? 'var(--success)'
+                              : 'var(--warning)',
+                            fontWeight: 600,
+                          }}
+                        >
+                          {draftMonthlyCheckCustomBalance.sourceNetIncomeControlCLP === null || draftMonthlyCheckCustomBalance.sourceNetIncomeControlCLP === undefined
+                            ? 'El balance mensual no trajo una fila Resultado utilizable para control.'
+                            : !monthlyCheckHasPnlLoadedForBalanceControl
+                              ? 'No hay ER mensual cargado. Se usa el Resultado del balance mensual como Net Income.'
+                              : draftMonthlyCheckCustomBalance.netIncomeDifferenceCLP === 0
+                                ? 'El Resultado del balance mensual coincide con el Net Income del ER mensual.'
+                                : 'El Resultado del balance mensual no coincide con el Net Income del ER mensual.'}
+                        </div>
+                      </div>
+                    </>
+                  ) : null}
+
+                  {draftMonthlyCheckCustomPnl?.unmappedSourceLines.length ? (
+                    <div className="finance-card" style={{ padding: '1rem', border: '1px solid rgba(239,68,68,0.24)', background: 'rgba(239,68,68,0.05)' }}>
+                      <h3 style={{ fontSize: '1rem', marginBottom: '0.75rem', color: 'var(--error)' }}>Cuentas nuevas / sin tratar en ER mes</h3>
+                      <div className="table-container">
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>#</th>
+                              <th>Código</th>
+                              <th>Descripción</th>
+                              <th>Sección fuente</th>
+                              <th style={{ textAlign: 'right' }}>Monto CLP</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {draftMonthlyCheckCustomPnl.unmappedSourceLines.map((line) => (
+                              <tr key={`monthly-pnl-unmapped-${line.lineOrder}-${line.accountCode}-${line.accountName}`}>
+                                <td>{line.lineOrder}</td>
+                                <td>{line.accountCode || '-'}</td>
+                                <td style={{ fontWeight: 700 }}>{line.accountName}</td>
+                                <td>{line.sourceSectionLabel || '-'}</td>
+                                <td style={{ textAlign: 'right' }}>
+                                  {renderCopyableCurrencyButton(`monthly-pnl-unmapped-${line.lineOrder}`, line.amountCLP, {
+                                    subtle: true,
+                                    minWidth: '160px',
+                                  })}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {draftMonthlyCheckCustomBalance?.unmappedSourceLines.length ? (
+                    <div className="finance-card" style={{ padding: '1rem', borderColor: 'rgba(245,158,11,0.28)', background: 'rgba(245,158,11,0.06)' }}>
+                      <h3 style={{ fontSize: '1rem', marginBottom: '0.75rem', color: 'var(--warning)' }}>Cuentas nuevas / sin tratar en Balance mes</h3>
+                      <div className="table-container">
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>#</th>
+                              <th>Código</th>
+                              <th>Descripción</th>
+                              <th>Sección fuente</th>
+                              <th style={{ textAlign: 'right' }}>Monto CLP</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {draftMonthlyCheckCustomBalance.unmappedSourceLines.map((line) => (
+                              <tr key={`monthly-balance-unmapped-${line.lineOrder}-${line.accountCode}-${line.accountName}`}>
+                                <td>{line.lineOrder}</td>
+                                <td>{line.accountCode || '-'}</td>
+                                <td>{line.accountName}</td>
+                                <td>{line.sourceSectionLabel || '-'}</td>
+                                <td style={{ textAlign: 'right' }}>
+                                  {renderCopyableCurrencyButton(`monthly-balance-unmapped-${line.lineOrder}`, line.amountCLP, {
+                                    subtle: true,
+                                    minWidth: '150px',
+                                  })}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              ) : (
+                <div style={{ padding: '1rem', border: '1px dashed var(--border)', borderRadius: '12px', background: 'var(--surface)' }}>
+                  Carga `Balance del mes` y `ER del mes` para revisar el cuadre y el resultado mensual sin afectar el cierre acumulado.
                 </div>
               )
             ) : null}
