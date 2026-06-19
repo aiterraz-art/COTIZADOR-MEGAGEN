@@ -55,6 +55,7 @@ import { MONTHLY_PNL_TARGET_SECTIONS } from '../data/monthlyPnlDefinitions';
 
 type MonthlyTab = 'summary' | 'balance' | 'pnl' | 'inventory' | 'monthlyCheck';
 type UploadKind = 'balance' | 'pnl' | 'inventory' | 'balance_month' | 'pnl_month';
+type FinancialViewMode = 'accumulated' | 'monthly';
 const MONTHLY_ANALYSIS_STORAGE_KEY = 'megagen.monthlyAnalysis.viewState';
 const MONTHLY_ANALYSIS_STORAGE_VERSION = 5;
 
@@ -327,6 +328,8 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
   const [errorMessage, setErrorMessage] = useState('');
   const [infoMessage, setInfoMessage] = useState('');
   const [copiedMetricKey, setCopiedMetricKey] = useState('');
+  const [balanceViewMode, setBalanceViewMode] = useState<FinancialViewMode>('accumulated');
+  const [pnlViewMode, setPnlViewMode] = useState<FinancialViewMode>('accumulated');
   const [inventorySearch, setInventorySearch] = useState('');
   const [familyFilter, setFamilyFilter] = useState<'ALL' | MonthlyInventoryFamily>('ALL');
   const [isHistoryWindowOpen, setIsHistoryWindowOpen] = useState(false);
@@ -598,12 +601,6 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
   const displayPnlLineIndex = useMemo(() => new Map(
     displayCustomPnl?.mappedLines.map((line) => [line.targetKey, line]) ?? [],
   ), [displayCustomPnl]);
-  const displayPnlSectionTotalIndex = useMemo(() => new Map(
-    MONTHLY_PNL_TARGET_SECTIONS.map((section) => [
-      section.key,
-      section.accounts.reduce((acc, account) => acc + (displayPnlLineIndex.get(account.key)?.amountCLP ?? 0), 0),
-    ]),
-  ), [displayPnlLineIndex]);
   const totalAssetsLine = displayBalanceLineIndex.get('total_assets') ?? null;
   const totalLiabilitiesAndEquityLine = displayBalanceLineIndex.get('total_liabilities_and_equity') ?? null;
   const balanceNetIncomeLine = displayBalanceLineIndex.get('net_income') ?? null;
@@ -655,6 +652,60 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
   const monthlyCheckNetProfitDifferenceCLP = monthlyCheckSourceNetProfitLine && monthlyCheckAppNetProfitLine
     ? monthlyCheckAppNetProfitLine.amountCLP - monthlyCheckSourceNetProfitLine.amountCLP
     : null;
+  const activeBalanceCustom = balanceViewMode === 'monthly'
+    ? draftMonthlyCheckCustomBalance
+    : displayCustomBalance;
+  const activeBalanceLineIndex = balanceViewMode === 'monthly'
+    ? displayMonthlyCheckBalanceLineIndex
+    : displayBalanceLineIndex;
+  const activeBalanceTraceabilityRows = balanceViewMode === 'monthly'
+    ? []
+    : displayBalanceTraceabilityRows;
+  const activeBalanceTotalAssetsLine = balanceViewMode === 'monthly'
+    ? monthlyCheckTotalAssetsLine
+    : totalAssetsLine;
+  const activeBalanceTotalLiabilitiesAndEquityLine = balanceViewMode === 'monthly'
+    ? monthlyCheckTotalLiabilitiesAndEquityLine
+    : totalLiabilitiesAndEquityLine;
+  const activeBalanceControlNetIncomeLabel = balanceViewMode === 'monthly'
+    ? monthlyCheckBalanceControlNetIncomeLabel
+    : balanceControlNetIncomeLabel;
+  const activeBalanceControlNetIncomeValue = balanceViewMode === 'monthly'
+    ? monthlyCheckBalanceControlNetIncomeValue
+    : balanceControlNetIncomeValue;
+  const activeBalanceHasPnlLoadedForControl = balanceViewMode === 'monthly'
+    ? monthlyCheckHasPnlLoadedForBalanceControl
+    : hasPnlLoadedForBalanceControl;
+  const activePnlCustom = pnlViewMode === 'monthly'
+    ? draftMonthlyCheckCustomPnl
+    : displayCustomPnl;
+  const activePnlLines = pnlViewMode === 'monthly'
+    ? displayMonthlyCheckPnlLines
+    : displayPnlLines;
+  const activePnlLineIndex = pnlViewMode === 'monthly'
+    ? displayMonthlyCheckPnlLineIndex
+    : displayPnlLineIndex;
+  const activePnlManualInputs = pnlViewMode === 'monthly'
+    ? draft.monthlyCheckManualInputs
+    : displayManualInputs;
+  const activePnlTotalSalariesSourceCLP = pnlViewMode === 'monthly'
+    ? monthlyCheckTotalSalariesSourceCLP
+    : totalSalariesSourceCLP;
+  const activePnlSourceNetProfitLine = pnlViewMode === 'monthly'
+    ? monthlyCheckSourceNetProfitLine
+    : sourceNetProfitLine;
+  const activePnlAppNetProfitLine = pnlViewMode === 'monthly'
+    ? monthlyCheckAppNetProfitLine
+    : appNetProfitLine;
+  const activePnlNetProfitDifferenceCLP = pnlViewMode === 'monthly'
+    ? monthlyCheckNetProfitDifferenceCLP
+    : netProfitDifferenceCLP;
+  const activePnlSectionTotalIndex = useMemo(() => new Map(
+    MONTHLY_PNL_TARGET_SECTIONS.map((section) => [
+      section.key,
+      section.accounts.reduce((acc, account) => acc + (activePnlLineIndex.get(account.key)?.amountCLP ?? 0), 0),
+    ]),
+  ), [activePnlLineIndex]);
   const previewPeriodKey = displayPeriodKey ?? (draft.inventory ? periodKey : null);
 
   const inventorySummaryPreview = useMemo<MonthlyAnalysisSummary['inventory'] | null>(() => {
@@ -1488,9 +1539,30 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
             ) : null}
 
             {activeTab === 'balance' ? (
-              displayCustomBalance ? (
+              activeBalanceCustom ? (
                 <div style={{ display: 'grid', gap: '1rem' }}>
-                  {displayBalanceInlineWarnings.length ? (
+                  <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                    {[
+                      ['accumulated', 'Acumulado'],
+                      ['monthly', 'Mensual'],
+                    ].map(([mode, label]) => (
+                      <button
+                        key={`balance-mode-${mode}`}
+                        className="btn"
+                        style={{
+                          background: balanceViewMode === mode ? 'var(--accent)' : 'var(--surface)',
+                          color: balanceViewMode === mode ? '#fff' : 'var(--text)',
+                          border: '1px solid var(--border)',
+                          padding: '0.45rem 0.8rem',
+                        }}
+                        onClick={() => setBalanceViewMode(mode as FinancialViewMode)}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {balanceViewMode === 'accumulated' && displayBalanceInlineWarnings.length ? (
                     <div style={{
                       padding: '0.9rem',
                       borderRadius: '12px',
@@ -1507,23 +1579,23 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
                   ) : null}
 
                   <div className="finance-card" style={{ padding: '1rem' }}>
-                    <h3 style={{ fontSize: '1rem', marginBottom: '0.75rem' }}>Control de Cuadre</h3>
+                    <h3 style={{ fontSize: '1rem', marginBottom: '0.75rem' }}>Control de Cuadre {balanceViewMode === 'monthly' ? 'del Mes' : ''}</h3>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.75rem' }}>
                       <div>
                         <div className="text-muted" style={{ fontSize: '0.74rem', marginBottom: '0.35rem' }}>TOTAL ASSETS</div>
-                        {renderCopyableCurrencyButton('balance-total-assets', totalAssetsLine?.amountCLP ?? 0, {
+                        {renderCopyableCurrencyButton(`balance-total-assets-${balanceViewMode}`, activeBalanceTotalAssetsLine?.amountCLP ?? 0, {
                           minWidth: '180px',
                         })}
                       </div>
                       <div>
                         <div className="text-muted" style={{ fontSize: '0.74rem', marginBottom: '0.35rem' }}>TOTAL LIABILITIES AND EQUITY</div>
-                        {renderCopyableCurrencyButton('balance-total-liabilities-equity', totalLiabilitiesAndEquityLine?.amountCLP ?? 0, {
+                        {renderCopyableCurrencyButton(`balance-total-liabilities-equity-${balanceViewMode}`, activeBalanceTotalLiabilitiesAndEquityLine?.amountCLP ?? 0, {
                           minWidth: '180px',
                         })}
                       </div>
                       <div>
                         <div className="text-muted" style={{ fontSize: '0.74rem', marginBottom: '0.35rem' }}>Diferencia</div>
-                        {renderCopyableCurrencyButton('balance-difference', displayCustomBalance.balanceDifferenceCLP, {
+                        {renderCopyableCurrencyButton(`balance-difference-${balanceViewMode}`, activeBalanceCustom.balanceDifferenceCLP, {
                           minWidth: '180px',
                         })}
                       </div>
@@ -1532,38 +1604,38 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
                       style={{
                         marginTop: '0.75rem',
                         fontSize: '0.8rem',
-                        color: displayCustomBalance.balanceDifferenceCLP === 0 ? 'var(--success)' : 'var(--warning)',
+                        color: activeBalanceCustom.balanceDifferenceCLP === 0 ? 'var(--success)' : 'var(--warning)',
                         fontWeight: 600,
                       }}
                     >
-                      {displayCustomBalance.balanceDifferenceCLP === 0
-                        ? 'El balance cuadra correctamente.'
-                        : 'El balance no cuadra. La diferencia se muestra arriba como advertencia visual.'}
+                      {activeBalanceCustom.balanceDifferenceCLP === 0
+                        ? `El balance ${balanceViewMode === 'monthly' ? 'mensual ' : ''}cuadra correctamente.`
+                        : `El balance ${balanceViewMode === 'monthly' ? 'mensual ' : ''}no cuadra. La diferencia se muestra arriba como advertencia visual.`}
                     </div>
                   </div>
 
                   <div className="finance-card" style={{ padding: '1rem' }}>
-                    <h3 style={{ fontSize: '1rem', marginBottom: '0.75rem' }}>Control de Resultado</h3>
+                    <h3 style={{ fontSize: '1rem', marginBottom: '0.75rem' }}>Control de Resultado {balanceViewMode === 'monthly' ? 'del Mes' : ''}</h3>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.75rem' }}>
                       <div>
                         <div className="text-muted" style={{ fontSize: '0.74rem', marginBottom: '0.35rem' }}>Resultado Fuente Balance</div>
-                        {displayCustomBalance.sourceNetIncomeControlCLP === null || displayCustomBalance.sourceNetIncomeControlCLP === undefined ? (
+                        {activeBalanceCustom.sourceNetIncomeControlCLP === null || activeBalanceCustom.sourceNetIncomeControlCLP === undefined ? (
                           <span className="text-muted">No detectado</span>
-                        ) : renderCopyableCurrencyButton('balance-source-net-income', displayCustomBalance.sourceNetIncomeControlCLP, {
+                        ) : renderCopyableCurrencyButton(`balance-source-net-income-${balanceViewMode}`, activeBalanceCustom.sourceNetIncomeControlCLP, {
                           minWidth: '180px',
                         })}
                       </div>
                       <div>
-                        <div className="text-muted" style={{ fontSize: '0.74rem', marginBottom: '0.35rem' }}>{balanceControlNetIncomeLabel}</div>
-                        {renderCopyableCurrencyButton('balance-er-net-income', balanceControlNetIncomeValue, {
+                        <div className="text-muted" style={{ fontSize: '0.74rem', marginBottom: '0.35rem' }}>{activeBalanceControlNetIncomeLabel}</div>
+                        {renderCopyableCurrencyButton(`balance-er-net-income-${balanceViewMode}`, activeBalanceControlNetIncomeValue, {
                           minWidth: '180px',
                         })}
                       </div>
                       <div>
                         <div className="text-muted" style={{ fontSize: '0.74rem', marginBottom: '0.35rem' }}>Diferencia</div>
-                        {displayCustomBalance.netIncomeDifferenceCLP === null || displayCustomBalance.netIncomeDifferenceCLP === undefined ? (
+                        {activeBalanceCustom.netIncomeDifferenceCLP === null || activeBalanceCustom.netIncomeDifferenceCLP === undefined ? (
                           <span className="text-muted">N/D</span>
-                        ) : renderCopyableCurrencyButton('balance-net-income-difference', displayCustomBalance.netIncomeDifferenceCLP, {
+                        ) : renderCopyableCurrencyButton(`balance-net-income-difference-${balanceViewMode}`, activeBalanceCustom.netIncomeDifferenceCLP, {
                           minWidth: '180px',
                         })}
                       </div>
@@ -1572,24 +1644,24 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
                       style={{
                         marginTop: '0.75rem',
                         fontSize: '0.8rem',
-                        color: displayCustomBalance.netIncomeDifferenceCLP === null || displayCustomBalance.netIncomeDifferenceCLP === 0
+                        color: activeBalanceCustom.netIncomeDifferenceCLP === null || activeBalanceCustom.netIncomeDifferenceCLP === 0
                           ? 'var(--success)'
                           : 'var(--warning)',
                         fontWeight: 600,
                       }}
                     >
-                      {displayCustomBalance.sourceNetIncomeControlCLP === null || displayCustomBalance.sourceNetIncomeControlCLP === undefined
-                        ? 'El archivo de balance no trajo una fila Resultado utilizable para control.'
-                        : !hasPnlLoadedForBalanceControl
-                          ? 'No hay ER cargado. Se usa el Resultado del balance como Net Income para mantener el control visible.'
-                        : displayCustomBalance.netIncomeDifferenceCLP === 0
-                          ? 'El Resultado del balance coincide con el Net Income del ER.'
-                          : 'El Resultado del balance no coincide con el Net Income del ER.'}
+                      {activeBalanceCustom.sourceNetIncomeControlCLP === null || activeBalanceCustom.sourceNetIncomeControlCLP === undefined
+                        ? `El archivo de balance ${balanceViewMode === 'monthly' ? 'mensual ' : ''}no trajo una fila Resultado utilizable para control.`
+                        : !activeBalanceHasPnlLoadedForControl
+                          ? `No hay ER ${balanceViewMode === 'monthly' ? 'mensual ' : ''}cargado. Se usa el Resultado del balance como Net Income para mantener el control visible.`
+                          : activeBalanceCustom.netIncomeDifferenceCLP === 0
+                            ? `El Resultado del balance ${balanceViewMode === 'monthly' ? 'mensual ' : ''}coincide con el Net Income del ER.`
+                            : `El Resultado del balance ${balanceViewMode === 'monthly' ? 'mensual ' : ''}no coincide con el Net Income del ER.`}
                     </div>
                   </div>
 
                   <div className="finance-card" style={{ padding: '1rem' }}>
-                    <h3 style={{ fontSize: '1rem', marginBottom: '0.75rem' }}>Balance Objetivo</h3>
+                    <h3 style={{ fontSize: '1rem', marginBottom: '0.75rem' }}>Balance Objetivo {balanceViewMode === 'monthly' ? 'Mensual' : 'Acumulado'}</h3>
                     <div className="table-container">
                       <table>
                         <thead>
@@ -1608,7 +1680,7 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
                                 </td>
                               </tr>
                               {section.rows.map((row) => {
-                                const line = displayBalanceLineIndex.get(row.key);
+                                const line = activeBalanceLineIndex.get(row.key);
                                 const amountCLP = line?.amountCLP ?? 0;
                                 const originLabel = row.kind === 'header'
                                   ? 'Encabezado'
@@ -1646,7 +1718,7 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
                                       {row.kind === 'header' ? (
                                         <span className="text-muted">-</span>
                                       ) : (
-                                        renderCopyableCurrencyButton(`balance-target-${row.key}`, amountCLP, {
+                                        renderCopyableCurrencyButton(`balance-target-${balanceViewMode}-${row.key}`, amountCLP, {
                                           subtle: true,
                                           minWidth: '160px',
                                           fontWeight,
@@ -1663,9 +1735,9 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
                     </div>
                   </div>
 
-                  {displayCustomBalance.unmappedSourceLines.length ? (
+                  {activeBalanceCustom.unmappedSourceLines.length ? (
                     <div className="finance-card" style={{ padding: '1rem', borderColor: 'rgba(245,158,11,0.28)', background: 'rgba(245,158,11,0.06)' }}>
-                      <h3 style={{ fontSize: '1rem', marginBottom: '0.75rem', color: 'var(--warning)' }}>Cuentas nuevas / sin tratar</h3>
+                      <h3 style={{ fontSize: '1rem', marginBottom: '0.75rem', color: 'var(--warning)' }}>Cuentas nuevas / sin tratar {balanceViewMode === 'monthly' ? 'del mes' : ''}</h3>
                       <div className="table-container">
                         <table>
                           <thead>
@@ -1678,14 +1750,14 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
                             </tr>
                           </thead>
                           <tbody>
-                            {displayCustomBalance.unmappedSourceLines.map((line) => (
+                            {activeBalanceCustom.unmappedSourceLines.map((line) => (
                               <tr key={`balance-unmapped-${line.lineOrder}-${line.accountCode}-${line.accountName}`}>
                                 <td>{line.lineOrder}</td>
                                 <td>{line.accountCode || '-'}</td>
                                 <td>{line.accountName}</td>
                                 <td>{line.sourceSectionLabel || '-'}</td>
                                 <td style={{ textAlign: 'right' }}>
-                                  {renderCopyableCurrencyButton(`balance-unmapped-${line.lineOrder}`, line.amountCLP, {
+                                  {renderCopyableCurrencyButton(`balance-unmapped-${balanceViewMode}-${line.lineOrder}`, line.amountCLP, {
                                     subtle: true,
                                     minWidth: '150px',
                                   })}
@@ -1700,7 +1772,7 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
 
                   <div className="finance-card" style={{ padding: '1rem' }}>
                     <h3 style={{ fontSize: '1rem', marginBottom: '0.75rem' }}>Trazabilidad Fuente</h3>
-                    {displayBalanceTraceabilityRows.length ? (
+                    {activeBalanceTraceabilityRows.length ? (
                       <div className="table-container">
                         <table>
                           <thead>
@@ -1714,7 +1786,7 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
                             </tr>
                           </thead>
                           <tbody>
-                            {displayBalanceTraceabilityRows.map((row) => (
+                            {activeBalanceTraceabilityRows.map((row) => (
                               <tr key={`balance-trace-${row.targetKey}-${row.lineOrder}-${row.accountCode}-${row.accountName}`}>
                                 <td>{row.lineOrder}</td>
                                 <td>{row.accountCode || '-'}</td>
@@ -1722,7 +1794,7 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
                                 <td>{row.sourceSectionLabel || '-'}</td>
                                 <td>{row.targetLabel}</td>
                                 <td style={{ textAlign: 'right' }}>
-                                  {renderCopyableCurrencyButton(`balance-trace-${row.targetKey}-${row.lineOrder}`, row.amountCLP, {
+                                  {renderCopyableCurrencyButton(`balance-trace-${balanceViewMode}-${row.targetKey}-${row.lineOrder}`, row.amountCLP, {
                                     subtle: true,
                                     minWidth: '150px',
                                   })}
@@ -1734,7 +1806,9 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
                       </div>
                     ) : (
                       <div style={{ padding: '1rem', border: '1px dashed var(--border)', borderRadius: '12px', background: 'var(--surface)' }}>
-                        No hay cuentas fuente mapeadas todavía. Cuando conectemos el archivo fuente del balance, aquí verás la trazabilidad completa.
+                        {balanceViewMode === 'monthly'
+                          ? 'La trazabilidad detallada sigue disponible en la comprobación mensual. Aquí se prioriza la visualización y copia del balance mensual.'
+                          : 'No hay cuentas fuente mapeadas todavía. Cuando conectemos el archivo fuente del balance, aquí verás la trazabilidad completa.'}
                       </div>
                     )}
                   </div>
@@ -1747,53 +1821,82 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
             ) : null}
 
             {activeTab === 'pnl' ? (
-              displayCustomPnl && displayPnlLines.length ? (
+              activePnlCustom && activePnlLines.length ? (
                 <div style={{ display: 'grid', gap: '1rem' }}>
+                  <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                    {[
+                      ['accumulated', 'Acumulado'],
+                      ['monthly', 'Mensual'],
+                    ].map(([mode, label]) => (
+                      <button
+                        key={`pnl-mode-${mode}`}
+                        className="btn"
+                        style={{
+                          background: pnlViewMode === mode ? 'var(--accent)' : 'var(--surface)',
+                          color: pnlViewMode === mode ? '#fff' : 'var(--text)',
+                          border: '1px solid var(--border)',
+                          padding: '0.45rem 0.8rem',
+                        }}
+                        onClick={() => setPnlViewMode(mode as FinancialViewMode)}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+
                   <div className="finance-card" style={{ padding: '1rem' }}>
-                    <h3 style={{ fontSize: '1rem', marginBottom: '0.75rem' }}>Reparto Manual de REMUNERACIONES</h3>
+                    <h3 style={{ fontSize: '1rem', marginBottom: '0.75rem' }}>Reparto Manual de REMUNERACIONES {pnlViewMode === 'monthly' ? 'del Mes' : ''}</h3>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 320px))', gap: '0.75rem' }}>
                       <label style={{ fontSize: '0.8rem' }}>
                         Salaries (Admin, GM)
                         <input
                           type="number"
                           className="input-field"
-                          value={displayManualInputs.adminSalaryManualCLP ?? ''}
-                          disabled={!draft.pnl}
-                          placeholder="Ingresa el monto CLP"
-                          onChange={(event) => handleAdminSalaryInputChange(event.target.value)}
+                          value={activePnlManualInputs.adminSalaryManualCLP ?? ''}
+                          disabled={pnlViewMode === 'monthly' ? !draft.monthlyCheckPnl : !draft.pnl}
+                          placeholder={`Ingresa el monto CLP ${pnlViewMode === 'monthly' ? 'del mes' : ''}`}
+                          onChange={(event) => {
+                            if (pnlViewMode === 'monthly') {
+                              handleMonthlyCheckAdminSalaryInputChange(event.target.value);
+                              return;
+                            }
+                            handleAdminSalaryInputChange(event.target.value);
+                          }}
                         />
                       </label>
                       <div style={{ fontSize: '0.8rem' }}>
                         <div className="text-muted" style={{ marginBottom: '0.35rem' }}>Total Salaries Fuente</div>
-                        {renderCopyableCurrencyButton('pnl-total-salaries-source', totalSalariesSourceCLP, {
+                        {renderCopyableCurrencyButton(`pnl-total-salaries-source-${pnlViewMode}`, activePnlTotalSalariesSourceCLP, {
                           minWidth: '180px',
                         })}
                       </div>
                       <div className="text-muted" style={{ fontSize: '0.76rem', gridColumn: '1 / -1' }}>
-                        El resto de REMUNERACIONES se asignará a Salaries (Sales Rep). El total mostrado es solo visual y no agrega ninguna suma adicional.
+                        {pnlViewMode === 'monthly'
+                          ? 'Este reparto aplica solo al ER mensual y no altera el acumulado.'
+                          : 'El resto de REMUNERACIONES se asignará a Salaries (Sales Rep). El total mostrado es solo visual y no agrega ninguna suma adicional.'}
                       </div>
                     </div>
                   </div>
 
-                  {sourceNetProfitLine && appNetProfitLine ? (
+                  {activePnlSourceNetProfitLine && activePnlAppNetProfitLine ? (
                     <div className="finance-card" style={{ padding: '1rem' }}>
-                      <h3 style={{ fontSize: '1rem', marginBottom: '0.75rem' }}>Control de Neto Fuente vs App</h3>
+                      <h3 style={{ fontSize: '1rem', marginBottom: '0.75rem' }}>Control de Neto {pnlViewMode === 'monthly' ? 'Mensual ' : ''}Fuente vs App</h3>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.75rem' }}>
                         <div>
-                          <div className="text-muted" style={{ fontSize: '0.74rem', marginBottom: '0.35rem' }}>Fuente: {sourceNetProfitLine.accountName}</div>
-                          {renderCopyableCurrencyButton('pnl-source-net-profit', sourceNetProfitLine.amountCLP, {
+                          <div className="text-muted" style={{ fontSize: '0.74rem', marginBottom: '0.35rem' }}>Fuente: {activePnlSourceNetProfitLine.accountName}</div>
+                          {renderCopyableCurrencyButton(`pnl-source-net-profit-${pnlViewMode}`, activePnlSourceNetProfitLine.amountCLP, {
                             minWidth: '180px',
                           })}
                         </div>
                         <div>
                           <div className="text-muted" style={{ fontSize: '0.74rem', marginBottom: '0.35rem' }}>App: Net profit(loss)</div>
-                          {renderCopyableCurrencyButton('pnl-app-net-profit', appNetProfitLine.amountCLP, {
+                          {renderCopyableCurrencyButton(`pnl-app-net-profit-${pnlViewMode}`, activePnlAppNetProfitLine.amountCLP, {
                             minWidth: '180px',
                           })}
                         </div>
                         <div>
                           <div className="text-muted" style={{ fontSize: '0.74rem', marginBottom: '0.35rem' }}>Diferencia</div>
-                          {renderCopyableCurrencyButton('pnl-net-profit-difference', netProfitDifferenceCLP ?? 0, {
+                          {renderCopyableCurrencyButton(`pnl-net-profit-difference-${pnlViewMode}`, activePnlNetProfitDifferenceCLP ?? 0, {
                             minWidth: '180px',
                           })}
                         </div>
@@ -1802,26 +1905,26 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
                         style={{
                           marginTop: '0.75rem',
                           fontSize: '0.8rem',
-                          color: netProfitDifferenceCLP === 0 ? 'var(--success)' : 'var(--warning)',
+                          color: activePnlNetProfitDifferenceCLP === 0 ? 'var(--success)' : 'var(--warning)',
                         }}
                       >
-                        {netProfitDifferenceCLP === 0
-                          ? 'El neto de la app coincide con el neto del archivo fuente.'
-                          : 'El neto de la app no coincide con el archivo fuente.'}
+                        {activePnlNetProfitDifferenceCLP === 0
+                          ? `El neto ${pnlViewMode === 'monthly' ? 'mensual ' : ''}de la app coincide con el neto del archivo fuente.`
+                          : `El neto ${pnlViewMode === 'monthly' ? 'mensual ' : ''}de la app no coincide con el archivo fuente.`}
                       </div>
                     </div>
                   ) : null}
 
-                  {displayCustomPnl.errors.length ? (
+                  {activePnlCustom.errors.length ? (
                     <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.32)', borderRadius: '12px', padding: '0.85rem', color: 'var(--error)' }}>
-                      {displayCustomPnl.errors.map((message) => (
+                      {activePnlCustom.errors.map((message) => (
                         <div key={message}>{message}</div>
                       ))}
                     </div>
                   ) : null}
 
                   <div className="finance-card" style={{ padding: '1rem' }}>
-                    <h3 style={{ fontSize: '1rem', marginBottom: '0.75rem' }}>Estado de Resultados Objetivo</h3>
+                    <h3 style={{ fontSize: '1rem', marginBottom: '0.75rem' }}>Estado de Resultados Objetivo {pnlViewMode === 'monthly' ? 'Mensual' : 'Acumulado'}</h3>
                     <div className="table-container">
                       <table>
                         <thead>
@@ -1840,7 +1943,7 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
                                 </td>
                               </tr>
                               {section.accounts.map((account) => {
-                                const line = displayPnlLineIndex.get(account.key);
+                                const line = activePnlLineIndex.get(account.key);
                                 const originLabel = line?.isManual
                                   ? 'Manual'
                                   : line?.sources.length
@@ -1866,7 +1969,7 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
                                         : null}
                                     </td>
                                     <td style={{ textAlign: 'right' }}>
-                                      {renderCopyableCurrencyButton(`pnl-target-${account.key}`, line?.amountCLP ?? 0, {
+                                      {renderCopyableCurrencyButton(`pnl-target-${pnlViewMode}-${account.key}`, line?.amountCLP ?? 0, {
                                         fontWeight: account.kind === 'subtotal' ? 800 : 600,
                                         subtle: true,
                                         minWidth: '160px',
@@ -1883,7 +1986,7 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
                                   Sección
                                 </td>
                                 <td style={{ textAlign: 'right', background: 'rgba(2,132,199,0.08)' }}>
-                                  {renderCopyableCurrencyButton(`pnl-section-total-${section.key}`, displayPnlSectionTotalIndex.get(section.key) ?? 0, {
+                                  {renderCopyableCurrencyButton(`pnl-section-total-${pnlViewMode}-${section.key}`, activePnlSectionTotalIndex.get(section.key) ?? 0, {
                                     fontWeight: 800,
                                     subtle: true,
                                     minWidth: '160px',
@@ -1897,9 +2000,9 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
                     </div>
                   </div>
 
-                  {displayCustomPnl.unmappedSourceLines.length ? (
+                  {activePnlCustom.unmappedSourceLines.length ? (
                     <div className="finance-card" style={{ padding: '1rem', border: '1px solid rgba(239,68,68,0.24)', background: 'rgba(239,68,68,0.05)' }}>
-                      <h3 style={{ fontSize: '1rem', marginBottom: '0.75rem', color: 'var(--error)' }}>Cuentas nuevas / sin tratar</h3>
+                      <h3 style={{ fontSize: '1rem', marginBottom: '0.75rem', color: 'var(--error)' }}>Cuentas nuevas / sin tratar {pnlViewMode === 'monthly' ? 'del mes' : ''}</h3>
                       <div className="table-container">
                         <table>
                           <thead>
@@ -1912,14 +2015,14 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
                             </tr>
                           </thead>
                           <tbody>
-                            {displayCustomPnl.unmappedSourceLines.map((line) => (
+                            {activePnlCustom.unmappedSourceLines.map((line) => (
                               <tr key={`unmapped-${line.lineOrder}-${line.accountCode}-${line.accountName}`}>
                                 <td>{line.lineOrder}</td>
                                 <td>{line.accountCode || '-'}</td>
                                 <td style={{ fontWeight: 700 }}>{line.accountName}</td>
                                 <td>{line.sourceSectionLabel || '-'}</td>
                                 <td style={{ textAlign: 'right' }}>
-                                  {renderCopyableCurrencyButton(`pnl-unmapped-${line.lineOrder}`, line.amountCLP, {
+                                  {renderCopyableCurrencyButton(`pnl-unmapped-${pnlViewMode}-${line.lineOrder}`, line.amountCLP, {
                                     subtle: true,
                                     minWidth: '160px',
                                   })}
@@ -1934,7 +2037,7 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
 
                   <div className="finance-card" style={{ padding: '1rem' }}>
                     <h3 style={{ fontSize: '1rem', marginBottom: '0.75rem' }}>Trazabilidad Fuente</h3>
-                    {displayPnlTraceabilityRows.length ? (
+                    {pnlViewMode === 'accumulated' && displayPnlTraceabilityRows.length ? (
                       <div className="table-container">
                         <table>
                           <thead>
@@ -1971,7 +2074,9 @@ const MonthlyAnalysisModule: React.FC<MonthlyAnalysisModuleProps> = ({ products 
                       </div>
                     ) : (
                       <div style={{ padding: '0.85rem', border: '1px dashed var(--border)', borderRadius: '12px', background: 'var(--surface)' }}>
-                        No hay cuentas fuente trazables para mostrar todavía.
+                        {pnlViewMode === 'monthly'
+                          ? 'La pestaña mensual prioriza visualización y copia de montos. La trazabilidad detallada queda en la comprobación mensual.'
+                          : 'No hay cuentas fuente trazables para mostrar todavía.'}
                       </div>
                     )}
                   </div>
