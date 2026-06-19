@@ -81,6 +81,7 @@ export const MONTHLY_PNL_TARGET_SECTIONS: MonthlyPnlTargetSectionDefinition[] = 
       defineAccount('repair_expense', 'Repair expense'),
       defineAccount('freight_and_delivery_expense', 'Freight and delivery expense'),
       defineAccount('customs_duty', 'Customs Duty'),
+      defineAccount('depreciation_expense', 'Depreciation expense'),
       defineAccount('training_and_education_expense', 'Training and education expense'),
       defineAccount('printing_and_publication_expenses', 'Printing and publication expenses'),
       defineAccount('commissions', 'Commissions (bank charge etc)'),
@@ -128,7 +129,6 @@ export const MONTHLY_PNL_TARGET_SECTIONS: MonthlyPnlTargetSectionDefinition[] = 
     label: 'VII. Non-operating expenses',
     accounts: [
       defineAccount('interest_expense', 'Interest expense'),
-      defineAccount('depreciation_expense', 'Depreciation expense'),
       defineAccount('loss_fx_transactions', 'Loss on foreign currency transactions (exchange)'),
       defineAccount('loss_fx_translation', 'Loss on foreign exchange translations'),
       defineAccount('loss_on_disposals_ppe', 'Loss on disposal of property, plant and equipment'),

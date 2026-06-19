@@ -141,7 +141,7 @@ describe('monthlyPnlCustomEngine', () => {
     expect(result.errors).toContain('Salaries (Admin, GM) no puede ser mayor que REMUNERACIONES.');
   });
 
-  it('no suma depreciacion del ejercicio dentro de SG&A para este layout', () => {
+  it('suma depreciacion del ejercicio dentro de SG&A', () => {
     const result = buildMonthlyPnlCustomMapping([
       makeLine({ lineOrder: 1, accountCode: '3.1.1010.10.01', accountName: 'VENTAS', section: 'INGRESOS', amountCLP: 1_000_000 }),
       makeLine({ lineOrder: 2, accountCode: '4.5.1040.10.01', accountName: 'REMUNERACIONES', subsection: 'GTOS. DE ADMINIS. Y VENTAS', amountCLP: 400_000 }),
@@ -150,10 +150,10 @@ describe('monthlyPnlCustomEngine', () => {
       adminSalaryManualCLP: 0,
     });
 
-    expect(result.totals.totalSgaCLP).toBe(400_000);
+    expect(result.totals.totalSgaCLP).toBe(450_000);
     expect(result.mappedLines.find((line) => line.targetKey === 'depreciation_expense')?.amountCLP).toBe(50_000);
-    expect(result.totals.totalNonOperatingExpensesCLP).toBe(50_000);
-    expect(result.mappedLines.find((line) => line.targetKey === 'operating_income_loss')?.amountCLP).toBe(600_000);
+    expect(result.totals.totalNonOperatingExpensesCLP).toBe(0);
+    expect(result.mappedLines.find((line) => line.targetKey === 'operating_income_loss')?.amountCLP).toBe(550_000);
     expect(result.mappedLines.find((line) => line.targetKey === 'profit_before_income_tax')?.amountCLP).toBe(550_000);
   });
 
