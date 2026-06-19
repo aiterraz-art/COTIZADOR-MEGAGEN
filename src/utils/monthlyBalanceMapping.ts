@@ -36,6 +36,7 @@ export const MONTHLY_BALANCE_SOURCE_ACCOUNT_MAPPINGS: MonthlyBalanceSourceAccoun
   { sourceCode: '1.1.1040.10.07', sourceName: 'WEBPAY', sourceKind: 'detail', targetKey: 'undeposited_funds' },
   { sourceCode: '1.1.1040.20.01', sourceName: 'CHEQUES POR COBRAR', sourceKind: 'detail', targetKey: 'undeposited_funds' },
   { sourceCode: '1.1.1040.40.01', sourceName: 'ANTICIPO DE SUELDOS', sourceKind: 'detail', targetKey: 'other_receivable' },
+  { sourceCode: '1.1.1040.40.02', sourceName: 'PRESTAMOS DE LA EMPRESA', sourceKind: 'detail', targetKey: 'other_receivable' },
   { sourceCode: '1.1.1040.50.01', sourceName: 'DEUDORES VARIOS', sourceKind: 'detail', targetKey: 'other_receivable' },
   { sourceCode: '1.1.1040.50.02', sourceName: 'ANTICIPO A PROVEEDORES', sourceKind: 'detail', targetKey: 'advance_to_vendor' },
   { sourceCode: '1.1.1040.50.03', sourceName: 'ANTICIPO DE HONORARIOS', sourceKind: 'detail', targetKey: 'prepaid_expenses' },

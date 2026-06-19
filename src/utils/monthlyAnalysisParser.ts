@@ -346,8 +346,15 @@ const evaluateDetectedPeriods = (
   if (!detectedPeriodKeys.length) return;
   const allMatch = detectedPeriodKeys.every((periodKey) => periodKey === selectedPeriodKey);
   const anyMatch = detectedPeriodKeys.some((periodKey) => periodKey === selectedPeriodKey);
+  const sortedPeriodKeys = [...detectedPeriodKeys].sort();
+  const latestDetectedPeriodKey = sortedPeriodKeys.at(-1) ?? null;
+  const sameYearRangeEndingAtSelected = (
+    latestDetectedPeriodKey === selectedPeriodKey
+    && new Set(sortedPeriodKeys.map((periodKey) => periodKey.slice(0, 4))).size === 1
+  );
 
   if (allMatch) return;
+  if (sameYearRangeEndingAtSelected) return;
 
   if (!anyMatch) {
     errors.push(`El archivo parece pertenecer a ${detectedPeriodKeys.join(', ')} y no al periodo ${selectedPeriodKey}.`);
@@ -379,14 +386,29 @@ const extractPeriodKeysFromText = (value: string): string[] => {
 
 const collectDetectedPeriodKeysFromMatrix = (rows: SheetMatrixRow[]): string[] => {
   const detected = new Set<string>();
+  let foundPeriodLabel = false;
 
   for (const row of rows.slice(0, 12)) {
     for (const cell of row) {
       if (typeof cell !== 'string') continue;
       const normalizedCell = normalize(cell);
       if (!normalizedCell.includes('period')) continue;
+      foundPeriodLabel = true;
       for (const periodKey of extractPeriodKeysFromText(cell)) {
         detected.add(periodKey);
+      }
+    }
+  }
+
+  if (!foundPeriodLabel) {
+    for (const row of rows.slice(0, 6)) {
+      for (const cell of row) {
+        if (typeof cell !== 'string') continue;
+        const periodKeys = extractPeriodKeysFromText(cell);
+        if (periodKeys.length < 2) continue;
+        for (const periodKey of periodKeys) {
+          detected.add(periodKey);
+        }
       }
     }
   }

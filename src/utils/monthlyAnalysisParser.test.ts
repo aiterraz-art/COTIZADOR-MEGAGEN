@@ -106,6 +106,21 @@ describe('monthlyAnalysisParser', () => {
     expect(result.rows[6]?.isSubtotal).toBe(true);
   });
 
+  it('acepta balances acumulados cuando el cierre del rango coincide con el periodo seleccionado', () => {
+    const result = parseBalanceWorksheetRows([
+      ['Balance General', '', '', '', '', '', '', '', '', ''],
+      ['Periodo del 01/01/2026 al 30/06/2026', '', '', '', '', '', '', '', '', ''],
+      ['Cuenta', 'Descripción', 'Debe $', 'Haber $', 'Deudor $', 'Acreedor $', 'Activo $', 'Pasivo $', 'Pérdida $', 'Ganancia $'],
+      ['1.1.1010.20.07', 'BCO_BCI - 32832061', 10, 5, 5, 0, 5, 0, 0, 0],
+      ['Resultado', '', '', '', '', '', '', '', 25, 10],
+    ], '2026-06');
+
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).toEqual([]);
+    expect(result.detectedPeriodKeys).toEqual(['2026-01', '2026-06']);
+    expect(result.rows.at(-1)?.amountCLP).toBe(15);
+  });
+
   it('captura Resultado aunque la cabecera Pérdida venga con texto corrupto', () => {
     const result = parseBalanceWorksheetRows([
       ['MEGAGEN IMPLANT CHILE SPA', 'Fecha :19/05/2026', '', '', '', '', '', '', '', ''],
@@ -191,6 +206,21 @@ describe('monthlyAnalysisParser', () => {
     expect(result.rows[3]?.section).toBe('GASTOS_OPERACIONALES');
     expect(result.rows.at(-1)?.accountName).toBe('OTROS INGRESOS');
     expect(result.rows.at(-1)?.isSubtotal).toBe(true);
+  });
+
+  it('detecta el cierre de un ER acumulado aunque la palabra periodo venga corrupta', () => {
+    const result = parsePnlWorksheetRows([
+      ['ESTADO DE RESULTADO PERSONALIZADO', '', '', '', ''],
+      ['Per鲤do del 01/01/2026 al 31/05/2026', '', '', '', ''],
+      ['Cuenta', 'Descripción', 'Año 2025', 'Año 2026', 'Diferencia $'],
+      ['3.1.1010.10.01', 'VENTAS', 0, 250, 250],
+      ['', 'RESULTADO EJERCICIO', 0, 250, 250],
+    ], '2026-05');
+
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).toEqual([]);
+    expect(result.detectedPeriodKeys).toEqual(['2026-01', '2026-05']);
+    expect(result.rows[0]?.amountCLP).toBe(250);
   });
 
   it('usa el año del periodo seleccionado en el ER y no depende de 2026', () => {

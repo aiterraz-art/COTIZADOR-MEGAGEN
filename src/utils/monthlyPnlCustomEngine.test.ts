@@ -112,6 +112,25 @@ describe('monthlyPnlCustomEngine', () => {
     expect(result.mappedLines.find((line) => line.targetKey === 'other_sga_expense')?.amountCLP).toBe(117_500);
   });
 
+  it('mapea las nuevas cuentas acumuladas del ER a sus conceptos correctos', () => {
+    const result = buildMonthlyPnlCustomMapping([
+      makeLine({ lineOrder: 1, accountCode: '4.5.1030.10.28', accountName: 'GASTOS DE CAPACITACION', subsection: 'GTOS. DE ADMINIS. Y VENTAS', amountCLP: 2_700_000 }),
+      makeLine({ lineOrder: 2, accountCode: '4.5.1030.10.33', accountName: 'GTOS. AUTOPISTAS', subsection: 'GTOS. DE ADMINIS. Y VENTAS', amountCLP: 134_777 }),
+      makeLine({ lineOrder: 3, accountCode: '4.5.1050.10.07', accountName: 'IVA NO RECUPERABLE', subsection: 'GTOS. DE ADMINIS. Y VENTAS', amountCLP: 82_612 }),
+      makeLine({ lineOrder: 4, accountCode: '4.5.1070.10.04', accountName: 'INTERESES Y MULTAS FISCALES', section: 'OTROS_INGRESOS_EGRESOS', subsection: 'DEPRECIACION', amountCLP: 99_613 }),
+      makeLine({ lineOrder: 5, accountCode: '4.5.1070.10.05', accountName: 'REAJUSTE ART 72.', section: 'OTROS_INGRESOS_EGRESOS', subsection: 'DEPRECIACION', amountCLP: 28_642 }),
+    ], {
+      adminSalaryManualCLP: 0,
+    });
+
+    expect(result.errors).toEqual([]);
+    expect(result.unmappedSourceLines).toEqual([]);
+    expect(result.mappedLines.find((line) => line.targetKey === 'training_and_education_expense')?.amountCLP).toBe(2_700_000);
+    expect(result.mappedLines.find((line) => line.targetKey === 'travel_and_transportation_expense')?.amountCLP).toBe(134_777);
+    expect(result.mappedLines.find((line) => line.targetKey === 'taxes_and_dues')?.amountCLP).toBe(82_612);
+    expect(result.mappedLines.find((line) => line.targetKey === 'miscellaneous_loss')?.amountCLP).toBe(128_255);
+  });
+
   it('valida que Salaries (Admin, GM) no exceda REMUNERACIONES', () => {
     const result = buildMonthlyPnlCustomMapping([
       makeLine({ lineOrder: 1, accountCode: '4.5.1040.10.01', accountName: 'REMUNERACIONES', subsection: 'GTOS. DE ADMINIS. Y VENTAS', amountCLP: 2_000_000 }),

@@ -207,4 +207,19 @@ describe('monthlyBalanceCustomEngine', () => {
     expect(result.mappedLines.find((line) => line.targetKey === 'accumulated_depreciation_me')?.amountCLP).toBe(-32_231);
     expect(result.unmappedSourceLines).toHaveLength(0);
   });
+
+  it('mapea prestamos de la empresa dentro de other receivable', () => {
+    const result = buildMonthlyBalanceCustomMapping([
+      makeBalanceLine({
+        accountCode: '1.1.1040.40.02',
+        accountName: 'PRESTAMOS DE LA EMPRESA',
+        amountCLP: 1_400_000,
+      }),
+    ], {
+      customPnl: makeCustomPnl(0),
+    });
+
+    expect(result.mappedLines.find((line) => line.targetKey === 'other_receivable')?.amountCLP).toBe(1_400_000);
+    expect(result.unmappedSourceLines).toHaveLength(0);
+  });
 });
