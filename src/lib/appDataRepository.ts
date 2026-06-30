@@ -149,6 +149,22 @@ const toSavedImportSnapshotRecord = (row: Record<string, unknown>): SavedImportS
   items: normalizeImportSnapshotItems(row.items),
 });
 
+const isPocketBaseCollectionContextError = (error: unknown): boolean => {
+  const candidate = error as { message?: string; response?: { message?: string }; status?: number } | null;
+  const message = [candidate?.message, candidate?.response?.message].filter(Boolean).join(' ');
+  return candidate?.status === 404 && /Missing(?: or invalid)? collection context/i.test(message);
+};
+
+const mapPocketBaseCollectionError = (error: unknown, collectionName: string): Error => {
+  if (isPocketBaseCollectionContextError(error)) {
+    return new Error(
+      `La colección "${collectionName}" no existe en PocketBase. Crea esa colección en la instancia activa o ejecuta npm run sync:pocketbase con credenciales de administrador.`,
+    );
+  }
+
+  return error instanceof Error ? error : new Error('Error desconocido de PocketBase.');
+};
+
 const deleteAllPocketBaseRecords = async (collectionName: string): Promise<void> => {
   const rows = await pocketbase.collection(collectionName).getFullList<{ id: string }>({ fields: 'id' });
   for (const row of rows) {
@@ -318,11 +334,15 @@ export const saveImportSnapshotRecord = async (payload: SaveImportSnapshotPayloa
     return toSavedImportSnapshotRecord(data as Record<string, unknown>);
   }
 
-  const data = await pocketbase.collection('import_snapshots').create<Record<string, unknown>>({
-    ...recordPayload,
-    created_at: new Date().toISOString(),
-  });
-  return toSavedImportSnapshotRecord(data);
+  try {
+    const data = await pocketbase.collection('import_snapshots').create<Record<string, unknown>>({
+      ...recordPayload,
+      created_at: new Date().toISOString(),
+    });
+    return toSavedImportSnapshotRecord(data);
+  } catch (error) {
+    throw mapPocketBaseCollectionError(error, 'import_snapshots');
+  }
 };
 
 export const fetchImportSnapshotRecords = async (): Promise<SavedImportSnapshotRecord[]> => {
@@ -339,7 +359,11 @@ export const fetchImportSnapshotRecords = async (): Promise<SavedImportSnapshotR
   let rows: Record<string, unknown>[] = [];
   try {
     rows = await pocketbase.collection('import_snapshots').getFullList<Record<string, unknown>>({ sort: '-created_at' });
-  } catch {
+  } catch (error) {
+    if (isPocketBaseCollectionContextError(error)) {
+      throw mapPocketBaseCollectionError(error, 'import_snapshots');
+    }
+
     rows = await pocketbase.collection('import_snapshots').getFullList<Record<string, unknown>>();
   }
 
@@ -357,7 +381,11 @@ export const deleteImportSnapshotRecord = async (id: string): Promise<void> => {
     return;
   }
 
-  await pocketbase.collection('import_snapshots').delete(id);
+  try {
+    await pocketbase.collection('import_snapshots').delete(id);
+  } catch (error) {
+    throw mapPocketBaseCollectionError(error, 'import_snapshots');
+  }
 };
 
 export const deleteProductRecord = async (id: string): Promise<void> => {

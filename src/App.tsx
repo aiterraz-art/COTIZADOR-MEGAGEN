@@ -501,7 +501,7 @@ const App: React.FC = () => {
       setImportSnapshots(data || []);
     } catch (error) {
       console.error('Error fetching import snapshots:', error);
-      setImportSnapshotsError(`No se pudieron cargar los cálculos permanentes desde ${getDataBackendLabel()}.`);
+      setImportSnapshotsError((error as Error).message || `No se pudieron cargar los cálculos permanentes desde ${getDataBackendLabel()}.`);
     } finally {
       setIsLoadingImportSnapshots(false);
     }
