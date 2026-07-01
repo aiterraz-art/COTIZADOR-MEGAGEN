@@ -9,6 +9,7 @@ export type ProductMovementClassification =
   | 'other';
 
 export interface DailyProductMovementRow {
+  sourceIndex: number;
   sku: string;
   description: string;
   date: string;

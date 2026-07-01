@@ -8,6 +8,7 @@ import type {
   ProductMovementDirection,
 } from '../types/dailyProductMovements';
 import { parseDailyProductMovementsFile } from '../utils/dailyProductMovementsParser';
+import { findImplantDefinition, IMPLANT_DEFINITIONS, type ImplantModelKey } from '../data/implantDefinitions';
 
 const STORAGE_KEY = 'megagen.dailyProductMovements.state';
 
@@ -61,6 +62,17 @@ const directionLabel: Record<ProductMovementDirection, string> = {
   opening: 'Saldo anterior',
   neutral: 'Sin dirección',
 };
+
+type DailyFamilyKey = ImplantModelKey | 'ADITAMENTOS';
+
+interface DailyFamilySummary {
+  key: DailyFamilyKey;
+  label: string;
+  entryQty: number;
+  exitQty: number;
+  entryAmountCLP: number;
+  exitAmountCLP: number;
+}
 
 const SummaryCard = ({ label, value, helper, tone }: { label: string; value: string; helper?: string; tone?: string }) => (
   <div className="finance-card">
@@ -140,6 +152,75 @@ const DailyProductMovementsModule: React.FC = () => {
     });
   }, [parsed, search, documentFilter, directionFilter]);
 
+  const familyReport = useMemo(() => {
+    if (!parsed) return [];
+
+    const base = new Map<DailyFamilyKey, DailyFamilySummary>();
+    for (const implant of IMPLANT_DEFINITIONS) {
+      base.set(implant.key, {
+        key: implant.key,
+        label: implant.name,
+        entryQty: 0,
+        exitQty: 0,
+        entryAmountCLP: 0,
+        exitAmountCLP: 0,
+      });
+    }
+    base.set('ADITAMENTOS', {
+      key: 'ADITAMENTOS',
+      label: 'Aditamentos',
+      entryQty: 0,
+      exitQty: 0,
+      entryAmountCLP: 0,
+      exitAmountCLP: 0,
+    });
+
+    for (const row of parsed.rows) {
+      if (row.direction === 'opening') continue;
+      const implant = findImplantDefinition(row.description);
+      const key: DailyFamilyKey = implant?.key ?? 'ADITAMENTOS';
+      const current = base.get(key);
+      if (!current) continue;
+
+      current.entryQty += row.entryQty;
+      current.exitQty += row.exitQty;
+      current.entryAmountCLP += row.entryAmountCLP;
+      current.exitAmountCLP += row.exitAmountCLP;
+    }
+
+    return [...base.values()];
+  }, [parsed]);
+
+  const totalsReport = useMemo(() => {
+    if (!parsed) {
+      return {
+        entryQty: 0,
+        exitQty: 0,
+        entryAmountCLP: 0,
+        exitAmountCLP: 0,
+        endingInventoryCLP: 0,
+      };
+    }
+
+    const latestBySku = new Map<string, DailyProductMovementRow>();
+    for (const row of parsed.rows) {
+      const existing = latestBySku.get(row.sku);
+      if (!existing || row.sourceIndex > existing.sourceIndex) {
+        latestBySku.set(row.sku, row);
+      }
+    }
+
+    const endingInventoryCLP = [...latestBySku.values()].reduce((acc, row) => acc + row.balanceAmountCLP, 0);
+
+    return {
+      entryQty: parsed.totalEntryQty,
+      exitQty: parsed.totalExitQty,
+      entryAmountCLP: parsed.totalEntryAmountCLP,
+      exitAmountCLP: parsed.totalExitAmountCLP,
+      endingInventoryCLP,
+    };
+  }, [parsed]);
+
   return (
     <section className="glass card" style={{ marginTop: '1rem', textAlign: 'left' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap', marginBottom: '1.5rem' }}>
@@ -191,7 +272,55 @@ const DailyProductMovementsModule: React.FC = () => {
             <SummaryCard label="Filas de movimiento" value={formatQty(parsed.movementRows)} helper={`Saldo inicial: ${formatQty(parsed.openingRows)}`} />
             <SummaryCard label="Entradas" value={formatQty(parsed.totalEntryQty)} helper={formatCLP(parsed.totalEntryAmountCLP)} tone="var(--success)" />
             <SummaryCard label="Salidas" value={formatQty(parsed.totalExitQty)} helper={formatCLP(parsed.totalExitAmountCLP)} tone="var(--error)" />
-            <SummaryCard label="Tipos de documento" value={formatQty(parsed.documentSummaries.length)} helper={parsed.sourcePeriodLabel || 'Sin periodo'} />
+            <SummaryCard label="Inventario final del día" value={formatCLP(totalsReport.endingInventoryCLP)} helper={parsed.sourcePeriodLabel || 'Sin periodo'} />
+          </div>
+
+          <div className="finance-card" style={{ padding: '1rem', marginBottom: '1rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap', marginBottom: '0.75rem', alignItems: 'center' }}>
+              <div>
+                <div style={{ fontWeight: 700 }}>Reporte Diario por Familia</div>
+                <div className="text-muted" style={{ fontSize: '0.78rem' }}>
+                  Periodo: {parsed.dateFrom || '-'} a {parsed.dateTo || '-'} | Todo lo no clasificado como implante se consolida en aditamentos.
+                </div>
+              </div>
+              <div className="text-muted" style={{ fontSize: '0.78rem' }}>
+                Tipos documento detectados: {formatQty(parsed.documentSummaries.length)}
+              </div>
+            </div>
+            <div className="table-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Familia</th>
+                    <th style={{ textAlign: 'right' }}>Entrada Qty</th>
+                    <th style={{ textAlign: 'right' }}>Salida Qty</th>
+                    <th style={{ textAlign: 'right' }}>Entrada CLP</th>
+                    <th style={{ textAlign: 'right' }}>Salida CLP</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {familyReport.map((item) => (
+                    <tr key={item.key}>
+                      <td>{item.label}</td>
+                      <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--success)' }}>{formatQty(item.entryQty)}</td>
+                      <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--error)' }}>{formatQty(item.exitQty)}</td>
+                      <td style={{ textAlign: 'right' }}>{formatCLP(item.entryAmountCLP)}</td>
+                      <td style={{ textAlign: 'right' }}>{formatCLP(item.exitAmountCLP)}</td>
+                    </tr>
+                  ))}
+                  <tr>
+                    <td><strong>Total General</strong></td>
+                    <td style={{ textAlign: 'right', fontWeight: 800, color: 'var(--success)' }}>{formatQty(totalsReport.entryQty)}</td>
+                    <td style={{ textAlign: 'right', fontWeight: 800, color: 'var(--error)' }}>{formatQty(totalsReport.exitQty)}</td>
+                    <td style={{ textAlign: 'right', fontWeight: 800 }}>{formatCLP(totalsReport.entryAmountCLP)}</td>
+                    <td style={{ textAlign: 'right', fontWeight: 800 }}>{formatCLP(totalsReport.exitAmountCLP)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div className="text-muted" style={{ fontSize: '0.8rem', marginTop: '0.65rem' }}>
+              Valor total inventario final del día: <strong>{formatCLP(totalsReport.endingInventoryCLP)}</strong>
+            </div>
           </div>
 
           <div style={{ display: 'grid', gap: '1rem', gridTemplateColumns: 'minmax(260px, 0.9fr) minmax(0, 1.6fr)', marginBottom: '1rem' }}>

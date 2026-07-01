@@ -221,7 +221,7 @@ export const parseDailyProductMovementsFile = async (file: File): Promise<DailyP
   const sourcePeriodLabel = String(periodRow[1] ?? periodRow[0] ?? '').trim();
   const rows: DailyProductMovementRow[] = [];
 
-  for (const sourceRow of matrix.slice(headerRowIndex + 1)) {
+  for (const [offset, sourceRow] of matrix.slice(headerRowIndex + 1).entries()) {
     const row = sourceRow.map((cell) => String(cell ?? '').trim());
     if (!row.some(Boolean)) continue;
 
@@ -255,6 +255,7 @@ export const parseDailyProductMovementsFile = async (file: File): Promise<DailyP
         : 0;
 
     rows.push({
+      sourceIndex: offset,
       sku,
       description,
       date,
