@@ -13,6 +13,7 @@ import CRMModule from './components/CRMModule';
 import CotizadorModule from './components/CotizadorModule';
 import MonthlyAnalysisModule from './components/MonthlyAnalysisModule';
 import CommissionClosureModule from './components/CommissionClosureModule';
+import DailyProductMovementsModule from './components/DailyProductMovementsModule';
 import {
   createProductRecord,
   deleteImportSnapshotRecord,
@@ -90,7 +91,7 @@ const readStoredJSON = <T,>(key: string): T | null => {
 
 
 
-type ModuleKey = 'cotizador' | 'monthlyAnalysis' | 'analysis' | 'imports' | 'inventory' | 'crm' | 'commissionsMegagen' | 'commissions3dental' | 'clientes' | 'facturacion';
+type ModuleKey = 'cotizador' | 'monthlyAnalysis' | 'analysis' | 'dailyProductMovements' | 'imports' | 'inventory' | 'crm' | 'commissionsMegagen' | 'commissions3dental' | 'clientes' | 'facturacion';
 
 interface ImportItemCalculated extends ImportItemRaw {
   baseTotalForeign: number;
@@ -1625,6 +1626,13 @@ const App: React.FC = () => {
         isReady: true
       },
       {
+        key: 'dailyProductMovements',
+        name: 'Mov. Diarios Productos',
+        description: 'Mayor auxiliar diario con entradas, salidas y traslados por bodega.',
+        icon: <Boxes size={18} />,
+        isReady: true
+      },
+      {
         key: 'imports',
         name: 'Importaciones',
         description: 'Costo puesto en Chile, margen y precios de venta.',
@@ -2270,6 +2278,8 @@ const App: React.FC = () => {
         </section>
       ) : activeModule === 'inventory' ? (
         <InventoryModule />
+      ) : activeModule === 'dailyProductMovements' ? (
+        <DailyProductMovementsModule />
       ) : activeModule === 'crm' ? (
         <CRMModule />
       ) : activeModule === 'commissionsMegagen' ? (
