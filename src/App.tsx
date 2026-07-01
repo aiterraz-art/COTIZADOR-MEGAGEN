@@ -1418,7 +1418,7 @@ const App: React.FC = () => {
   };
 
   const formatKUSD = (value: number) => `${value.toFixed(2)} K USD`;
-  const formatPlainCLP = (value: number) => new Intl.NumberFormat('es-CL', { maximumFractionDigits: 0 }).format(value);
+  const formatPlainCLP = (value: number) => Math.round(value).toString();
 
   const cashFlowMetrics = useMemo(() => {
     if (!cashFlowSummary || exchangeRate <= 0) return null;
