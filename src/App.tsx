@@ -1113,9 +1113,9 @@ const App: React.FC = () => {
     }
   };
 
-  const copyMetricValue = async (key: string, value: number, decimals = 2) => {
+  const copyMetricValue = async (key: string, value: number, decimals = 2, rawText?: string) => {
     try {
-      await navigator.clipboard.writeText(value.toFixed(decimals));
+      await navigator.clipboard.writeText(rawText ?? value.toFixed(decimals));
       setCopiedMetricKey(key);
       setTimeout(() => setCopiedMetricKey(''), 1200);
     } catch {
@@ -1418,6 +1418,7 @@ const App: React.FC = () => {
   };
 
   const formatKUSD = (value: number) => `${value.toFixed(2)} K USD`;
+  const formatPlainCLP = (value: number) => new Intl.NumberFormat('es-CL', { maximumFractionDigits: 0 }).format(value);
 
   const cashFlowMetrics = useMemo(() => {
     if (!cashFlowSummary || exchangeRate <= 0) return null;
@@ -2379,12 +2380,18 @@ const App: React.FC = () => {
                     label: 'Sales - Actual (K USD)',
                     value: salesMetrics?.salesKUSD ?? 0,
                     decimals: 2,
+                    secondaryKey: 'sales_actual_clp',
+                    secondaryLabel: 'CLP Excel',
+                    secondaryValue: dailySalesSummary?.totalSalesCLPExcludingDispatch ?? 0,
                   },
                   {
                     key: 'collection_actual_kusd',
                     label: 'Collection - Actual (K USD) / Cash-in',
                     value: cashFlowMetrics?.incomeKUSD ?? 0,
                     decimals: 2,
+                    secondaryKey: 'collection_actual_clp',
+                    secondaryLabel: 'CLP Excel',
+                    secondaryValue: cashFlowSummary?.totalIncomeCLP ?? 0,
                   },
                   {
                     key: 'fx_actual_ea',
@@ -2397,6 +2404,9 @@ const App: React.FC = () => {
                     label: 'Cash Flow - Cash-out (K USD)',
                     value: cashFlowMetrics?.expenseKUSD ?? 0,
                     decimals: 2,
+                    secondaryKey: 'cash_out_clp',
+                    secondaryLabel: 'CLP Excel',
+                    secondaryValue: cashFlowSummary?.totalExpenseCLP ?? 0,
                   },
                 ].map((metric) => (
                   <div key={metric.key} style={{
@@ -2418,22 +2428,42 @@ const App: React.FC = () => {
                     >
                       <Copy size={13} />
                     </button>
-                    <button
-                      className="btn"
-                      style={{
-                        fontSize: '0.9rem',
-                        padding: '0.25rem 0.55rem',
-                        background: copiedMetricKey === metric.key ? 'rgba(16,185,129,0.12)' : 'rgba(0,167,233,0.1)',
-                        color: copiedMetricKey === metric.key ? 'var(--success)' : 'var(--primary)',
-                        border: '1px solid var(--border)',
-                        minWidth: '88px',
-                        justifyContent: 'center'
-                      }}
-                      onClick={() => copyMetricValue(metric.key, metric.value, metric.decimals)}
-                      title="Click para copiar"
-                    >
-                      {copiedMetricKey === metric.key ? 'Copiado' : metric.value.toFixed(metric.decimals)}
-                    </button>
+                    <div style={{ display: 'grid', gap: '0.35rem', justifyItems: 'end' }}>
+                      <button
+                        className="btn"
+                        style={{
+                          fontSize: '0.9rem',
+                          padding: '0.25rem 0.55rem',
+                          background: copiedMetricKey === metric.key ? 'rgba(16,185,129,0.12)' : 'rgba(0,167,233,0.1)',
+                          color: copiedMetricKey === metric.key ? 'var(--success)' : 'var(--primary)',
+                          border: '1px solid var(--border)',
+                          minWidth: '88px',
+                          justifyContent: 'center'
+                        }}
+                        onClick={() => copyMetricValue(metric.key, metric.value, metric.decimals)}
+                        title="Click para copiar"
+                      >
+                        {copiedMetricKey === metric.key ? 'Copiado' : metric.value.toFixed(metric.decimals)}
+                      </button>
+                      {metric.secondaryKey ? (
+                        <button
+                          className="btn"
+                          style={{
+                            fontSize: '0.78rem',
+                            padding: '0.2rem 0.5rem',
+                            background: copiedMetricKey === metric.secondaryKey ? 'rgba(16,185,129,0.12)' : 'rgba(15,23,42,0.05)',
+                            color: copiedMetricKey === metric.secondaryKey ? 'var(--success)' : 'var(--text)',
+                            border: '1px solid var(--border)',
+                            minWidth: '88px',
+                            justifyContent: 'center'
+                          }}
+                          onClick={() => copyMetricValue(metric.secondaryKey, metric.secondaryValue ?? 0, 0, formatPlainCLP(metric.secondaryValue ?? 0))}
+                          title={`Copiar ${metric.secondaryLabel}`}
+                        >
+                          {copiedMetricKey === metric.secondaryKey ? 'Copiado' : formatCLP(metric.secondaryValue ?? 0)}
+                        </button>
+                      ) : null}
+                    </div>
                   </div>
                 ))}
               </div>
