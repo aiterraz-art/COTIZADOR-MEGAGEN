@@ -40,7 +40,8 @@ const readStoredState = (): PersistedState | null => {
 const classificationLabel: Record<ProductMovementClassification, string> = {
   opening_balance: 'Saldo inicial',
   sale_exit: 'Salida venta',
-  dispatch_guide: 'Guía despacho',
+  dispatch_transfer: 'Traslado interno',
+  dispatch_sale: 'Salida comercial',
   credit_note_entry: 'Entrada NC',
   other: 'Por revisar',
 };
@@ -48,7 +49,8 @@ const classificationLabel: Record<ProductMovementClassification, string> = {
 const classificationTone: Record<ProductMovementClassification, string> = {
   opening_balance: '#64748b',
   sale_exit: 'var(--error)',
-  dispatch_guide: '#2563eb',
+  dispatch_transfer: '#2563eb',
+  dispatch_sale: '#7c3aed',
   credit_note_entry: 'var(--success)',
   other: 'var(--warning)',
 };
@@ -171,7 +173,8 @@ const DailyProductMovementsModule: React.FC = () => {
         <div className="text-muted" style={{ fontSize: '0.82rem', lineHeight: 1.6 }}>
           `Saldo Anterior` se toma como saldo inicial.
           `REBAJA STOCK` se clasifica como salida.
-          `52 Guia de Despacho` respeta las columnas de entrada/salida para detectar traslados entre bodegas.
+          `52 Guia de Despacho` se clasifica como `traslado interno` cuando el mismo documento y SKU tienen una salida y su contrapartida de entrada entre bodegas.
+          Si la guía solo registra salida neta, se clasifica como `salida comercial`.
           `PARTE DE ENTRADA NC` se clasifica como entrada.
         </div>
       </div>

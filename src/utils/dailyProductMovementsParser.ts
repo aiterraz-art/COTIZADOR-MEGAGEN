@@ -88,9 +88,9 @@ const classifyMovement = (
   }
 
   if (normalizedDocument.includes('guia de despacho')) {
-    if (entryQty > 0 && exitQty <= 0) return { classification: 'dispatch_guide', direction: 'entry' };
-    if (exitQty > 0) return { classification: 'dispatch_guide', direction: 'exit' };
-    return { classification: 'dispatch_guide', direction: 'neutral' };
+    if (entryQty > 0 && exitQty <= 0) return { classification: 'dispatch_transfer', direction: 'entry' };
+    if (exitQty > 0) return { classification: 'dispatch_transfer', direction: 'exit' };
+    return { classification: 'dispatch_transfer', direction: 'neutral' };
   }
 
   if (normalizedDocument.includes('parte de entrada nc')) {
@@ -100,6 +100,36 @@ const classifyMovement = (
   if (entryQty > 0 && exitQty <= 0) return { classification: 'other', direction: 'entry' };
   if (exitQty > 0 && entryQty <= 0) return { classification: 'other', direction: 'exit' };
   return { classification: 'other', direction: 'neutral' };
+};
+
+const refineDispatchGuideClassifications = (rows: DailyProductMovementRow[]): DailyProductMovementRow[] => {
+  const guideGroups = new Map<string, { totalEntryQty: number; totalExitQty: number }>();
+
+  for (const row of rows) {
+    if (!normalize(row.document).includes('guia de despacho')) continue;
+    const key = `${normalize(row.document)}|${row.documentNumber}|${row.sku}`;
+    const current = guideGroups.get(key) ?? { totalEntryQty: 0, totalExitQty: 0 };
+    current.totalEntryQty += row.entryQty;
+    current.totalExitQty += row.exitQty;
+    guideGroups.set(key, current);
+  }
+
+  return rows.map((row) => {
+    if (!normalize(row.document).includes('guia de despacho')) return row;
+
+    const key = `${normalize(row.document)}|${row.documentNumber}|${row.sku}`;
+    const group = guideGroups.get(key);
+    if (!group) return row;
+
+    const isInternalTransfer = group.totalEntryQty > 0
+      && group.totalExitQty > 0
+      && Math.abs(group.totalEntryQty - group.totalExitQty) < 0.000001;
+
+    return {
+      ...row,
+      classification: isInternalTransfer ? 'dispatch_transfer' : 'dispatch_sale',
+    };
+  });
 };
 
 const readCsvMatrix = async (file: File): Promise<string[][]> => {
@@ -146,7 +176,8 @@ const summarizeDocuments = (rows: DailyProductMovementRow[]): DailyProductMoveme
   const map = new Map<string, DailyProductMovementDocumentSummary>();
 
   for (const row of rows) {
-    const current = map.get(row.document) ?? {
+    const summaryKey = `${row.document}__${row.classification}`;
+    const current = map.get(summaryKey) ?? {
       document: row.document,
       classification: row.classification,
       rows: 0,
@@ -172,7 +203,7 @@ const summarizeDocuments = (rows: DailyProductMovementRow[]): DailyProductMoveme
       current.openingRows += 1;
     }
 
-    map.set(row.document, current);
+    map.set(summaryKey, current);
   }
 
   return [...map.values()].sort((a, b) => b.rows - a.rows || a.document.localeCompare(b.document, 'es'));
@@ -246,23 +277,25 @@ export const parseDailyProductMovementsFile = async (file: File): Promise<DailyP
     });
   }
 
-  rows.sort((a, b) => {
+  const refinedRows = refineDispatchGuideClassifications(rows);
+
+  refinedRows.sort((a, b) => {
     if (a.dateISO !== b.dateISO) return a.dateISO.localeCompare(b.dateISO);
     if (a.document !== b.document) return a.document.localeCompare(b.document, 'es');
     if (a.documentNumber !== b.documentNumber) return a.documentNumber.localeCompare(b.documentNumber, 'es');
     return a.sku.localeCompare(b.sku, 'es');
   });
 
-  const documentSummaries = summarizeDocuments(rows);
-  const movementRows = rows.filter((row) => row.direction !== 'opening');
-  const timestamps = rows
+  const documentSummaries = summarizeDocuments(refinedRows);
+  const movementRows = refinedRows.filter((row) => row.direction !== 'opening');
+  const timestamps = refinedRows
     .map((row) => row.dateISO)
     .filter(Boolean)
     .sort();
 
   return {
     sourcePeriodLabel,
-    rows,
+    rows: refinedRows,
     documentSummaries,
     unknownDocuments: documentSummaries
       .filter((summary) => summary.classification === 'other')

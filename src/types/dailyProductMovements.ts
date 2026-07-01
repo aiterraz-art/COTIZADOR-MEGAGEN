@@ -3,7 +3,8 @@ export type ProductMovementDirection = 'entry' | 'exit' | 'opening' | 'neutral';
 export type ProductMovementClassification =
   | 'opening_balance'
   | 'sale_exit'
-  | 'dispatch_guide'
+  | 'dispatch_transfer'
+  | 'dispatch_sale'
   | 'credit_note_entry'
   | 'other';
 
