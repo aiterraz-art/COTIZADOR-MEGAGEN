@@ -28,6 +28,11 @@ const formatQty = (value: number): string => new Intl.NumberFormat('es-CL', {
   maximumFractionDigits: 2,
 }).format(value);
 
+const formatCopyQty = (value: number): string => {
+  if (Number.isInteger(value)) return String(value);
+  return value.toFixed(2).replace(/\.?0+$/, '');
+};
+
 const readStoredState = (): PersistedState | null => {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -92,6 +97,7 @@ const DailyProductMovementsModule: React.FC = () => {
   const [directionFilter, setDirectionFilter] = useState<'ALL' | ProductMovementDirection>('ALL');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [copiedQuantityKey, setCopiedQuantityKey] = useState('');
 
   useEffect(() => {
     if (!parsed || !sourceFileName) {
@@ -131,6 +137,16 @@ const DailyProductMovementsModule: React.FC = () => {
     setDocumentFilter('Todos');
     setDirectionFilter('ALL');
     localStorage.removeItem(STORAGE_KEY);
+  };
+
+  const copyQuantityValue = async (key: string, value: number) => {
+    try {
+      await navigator.clipboard.writeText(formatCopyQty(value));
+      setCopiedQuantityKey(key);
+      setTimeout(() => setCopiedQuantityKey(''), 1200);
+    } catch {
+      alert('No fue posible copiar la cantidad.');
+    }
   };
 
   const documentOptions = useMemo(() => (
@@ -302,16 +318,40 @@ const DailyProductMovementsModule: React.FC = () => {
                   {familyReport.map((item) => (
                     <tr key={item.key}>
                       <td>{item.label}</td>
-                      <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--success)' }}>{formatQty(item.entryQty)}</td>
-                      <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--error)' }}>{formatQty(item.exitQty)}</td>
+                      <td
+                        style={{ textAlign: 'right', fontWeight: 700, color: 'var(--success)', cursor: 'pointer', background: copiedQuantityKey === `entry-${item.key}` ? 'rgba(16,185,129,0.12)' : undefined }}
+                        onClick={() => void copyQuantityValue(`entry-${item.key}`, item.entryQty)}
+                        title="Click para copiar cantidad"
+                      >
+                        {copiedQuantityKey === `entry-${item.key}` ? 'Copiado' : formatQty(item.entryQty)}
+                      </td>
+                      <td
+                        style={{ textAlign: 'right', fontWeight: 700, color: 'var(--error)', cursor: 'pointer', background: copiedQuantityKey === `exit-${item.key}` ? 'rgba(239,68,68,0.12)' : undefined }}
+                        onClick={() => void copyQuantityValue(`exit-${item.key}`, item.exitQty)}
+                        title="Click para copiar cantidad"
+                      >
+                        {copiedQuantityKey === `exit-${item.key}` ? 'Copiado' : formatQty(item.exitQty)}
+                      </td>
                       <td style={{ textAlign: 'right' }}>{formatCLP(item.entryAmountCLP)}</td>
                       <td style={{ textAlign: 'right' }}>{formatCLP(item.exitAmountCLP)}</td>
                     </tr>
                   ))}
                   <tr>
                     <td><strong>Total General</strong></td>
-                    <td style={{ textAlign: 'right', fontWeight: 800, color: 'var(--success)' }}>{formatQty(totalsReport.entryQty)}</td>
-                    <td style={{ textAlign: 'right', fontWeight: 800, color: 'var(--error)' }}>{formatQty(totalsReport.exitQty)}</td>
+                    <td
+                      style={{ textAlign: 'right', fontWeight: 800, color: 'var(--success)', cursor: 'pointer', background: copiedQuantityKey === 'entry-total' ? 'rgba(16,185,129,0.12)' : undefined }}
+                      onClick={() => void copyQuantityValue('entry-total', totalsReport.entryQty)}
+                      title="Click para copiar cantidad"
+                    >
+                      {copiedQuantityKey === 'entry-total' ? 'Copiado' : formatQty(totalsReport.entryQty)}
+                    </td>
+                    <td
+                      style={{ textAlign: 'right', fontWeight: 800, color: 'var(--error)', cursor: 'pointer', background: copiedQuantityKey === 'exit-total' ? 'rgba(239,68,68,0.12)' : undefined }}
+                      onClick={() => void copyQuantityValue('exit-total', totalsReport.exitQty)}
+                      title="Click para copiar cantidad"
+                    >
+                      {copiedQuantityKey === 'exit-total' ? 'Copiado' : formatQty(totalsReport.exitQty)}
+                    </td>
                     <td style={{ textAlign: 'right', fontWeight: 800 }}>{formatCLP(totalsReport.entryAmountCLP)}</td>
                     <td style={{ textAlign: 'right', fontWeight: 800 }}>{formatCLP(totalsReport.exitAmountCLP)}</td>
                   </tr>
