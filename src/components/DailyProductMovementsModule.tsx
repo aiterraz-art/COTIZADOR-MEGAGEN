@@ -192,7 +192,7 @@ const DailyProductMovementsModule: React.FC = () => {
     });
 
     for (const row of parsed.rows) {
-      if (row.direction === 'opening') continue;
+      if (row.direction === 'opening' || row.classification === 'dispatch_transfer') continue;
       const implant = findImplantDefinition(row.description);
       const key: DailyFamilyKey = implant?.key ?? 'ADITAMENTOS';
       const current = base.get(key);
@@ -218,6 +218,10 @@ const DailyProductMovementsModule: React.FC = () => {
       };
     }
 
+    const reportRows = parsed.rows.filter((row) => (
+      row.direction !== 'opening' && row.classification !== 'dispatch_transfer'
+    ));
+
     const latestBySku = new Map<string, DailyProductMovementRow>();
     for (const row of parsed.rows) {
       const existing = latestBySku.get(row.sku);
@@ -229,10 +233,10 @@ const DailyProductMovementsModule: React.FC = () => {
     const endingInventoryCLP = [...latestBySku.values()].reduce((acc, row) => acc + row.balanceAmountCLP, 0);
 
     return {
-      entryQty: parsed.totalEntryQty,
-      exitQty: parsed.totalExitQty,
-      entryAmountCLP: parsed.totalEntryAmountCLP,
-      exitAmountCLP: parsed.totalExitAmountCLP,
+      entryQty: reportRows.reduce((acc, row) => acc + row.entryQty, 0),
+      exitQty: reportRows.reduce((acc, row) => acc + row.exitQty, 0),
+      entryAmountCLP: reportRows.reduce((acc, row) => acc + row.entryAmountCLP, 0),
+      exitAmountCLP: reportRows.reduce((acc, row) => acc + row.exitAmountCLP, 0),
       endingInventoryCLP,
     };
   }, [parsed]);
@@ -286,8 +290,8 @@ const DailyProductMovementsModule: React.FC = () => {
         <>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem', marginBottom: '1rem' }}>
             <SummaryCard label="Filas de movimiento" value={formatQty(parsed.movementRows)} helper={`Saldo inicial: ${formatQty(parsed.openingRows)}`} />
-            <SummaryCard label="Entradas" value={formatQty(parsed.totalEntryQty)} helper={formatCLP(parsed.totalEntryAmountCLP)} tone="var(--success)" />
-            <SummaryCard label="Salidas" value={formatQty(parsed.totalExitQty)} helper={formatCLP(parsed.totalExitAmountCLP)} tone="var(--error)" />
+            <SummaryCard label="Entradas reporte" value={formatQty(totalsReport.entryQty)} helper={`${formatCLP(totalsReport.entryAmountCLP)} | sin traslados`} tone="var(--success)" />
+            <SummaryCard label="Salidas reporte" value={formatQty(totalsReport.exitQty)} helper={`${formatCLP(totalsReport.exitAmountCLP)} | sin traslados`} tone="var(--error)" />
             <SummaryCard label="Inventario final del día" value={formatCLP(totalsReport.endingInventoryCLP)} helper={parsed.sourcePeriodLabel || 'Sin periodo'} />
           </div>
 
@@ -296,7 +300,7 @@ const DailyProductMovementsModule: React.FC = () => {
               <div>
                 <div style={{ fontWeight: 700 }}>Reporte Diario por Familia</div>
                 <div className="text-muted" style={{ fontSize: '0.78rem' }}>
-                  Periodo: {parsed.dateFrom || '-'} a {parsed.dateTo || '-'} | Todo lo no clasificado como implante se consolida en aditamentos.
+                  Periodo: {parsed.dateFrom || '-'} a {parsed.dateTo || '-'} | Todo lo no clasificado como implante se consolida en aditamentos. Los traslados internos entre bodegas no se cuentan en este reporte.
                 </div>
               </div>
               <div className="text-muted" style={{ fontSize: '0.78rem' }}>
