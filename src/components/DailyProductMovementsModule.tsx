@@ -33,6 +33,13 @@ const formatCopyQty = (value: number): string => {
   return value.toFixed(2).replace(/\.?0+$/, '');
 };
 
+const normalizeMovementText = (value: string): string => value
+  .toLowerCase()
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .replace(/\s+/g, ' ')
+  .trim();
+
 const readStoredState = (): PersistedState | null => {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -168,6 +175,41 @@ const DailyProductMovementsModule: React.FC = () => {
     });
   }, [parsed, search, documentFilter, directionFilter]);
 
+  const reportRows = useMemo(() => {
+    if (!parsed) return [];
+
+    const transferGroups = new Map<string, { totalEntryQty: number; totalExitQty: number }>();
+
+    parsed.rows.forEach((row) => {
+      const normalizedDocument = normalizeMovementText(row.document);
+      if (!normalizedDocument.includes('guia de despacho')) return;
+
+      const key = `${normalizedDocument}|${row.documentNumber}|${row.sku}`;
+      const current = transferGroups.get(key) ?? { totalEntryQty: 0, totalExitQty: 0 };
+      current.totalEntryQty += row.entryQty;
+      current.totalExitQty += row.exitQty;
+      transferGroups.set(key, current);
+    });
+
+    return parsed.rows.filter((row) => {
+      if (row.direction === 'opening') return false;
+
+      const normalizedDocument = normalizeMovementText(row.document);
+      if (!normalizedDocument.includes('guia de despacho')) return true;
+
+      const key = `${normalizedDocument}|${row.documentNumber}|${row.sku}`;
+      const group = transferGroups.get(key);
+      const isInternalTransfer = Boolean(
+        group
+        && group.totalEntryQty > 0
+        && group.totalExitQty > 0
+        && Math.abs(group.totalEntryQty - group.totalExitQty) < 0.000001,
+      );
+
+      return !isInternalTransfer;
+    });
+  }, [parsed]);
+
   const familyReport = useMemo(() => {
     if (!parsed) return [];
 
@@ -191,8 +233,7 @@ const DailyProductMovementsModule: React.FC = () => {
       exitAmountCLP: 0,
     });
 
-    for (const row of parsed.rows) {
-      if (row.direction === 'opening' || row.classification === 'dispatch_transfer') continue;
+    for (const row of reportRows) {
       const implant = findImplantDefinition(row.description);
       const key: DailyFamilyKey = implant?.key ?? 'ADITAMENTOS';
       const current = base.get(key);
@@ -205,7 +246,7 @@ const DailyProductMovementsModule: React.FC = () => {
     }
 
     return [...base.values()];
-  }, [parsed]);
+  }, [parsed, reportRows]);
 
   const totalsReport = useMemo(() => {
     if (!parsed) {
@@ -218,17 +259,15 @@ const DailyProductMovementsModule: React.FC = () => {
       };
     }
 
-    const reportRows = parsed.rows.filter((row) => (
-      row.direction !== 'opening' && row.classification !== 'dispatch_transfer'
-    ));
-
     const latestBySku = new Map<string, DailyProductMovementRow>();
-    for (const row of parsed.rows) {
+    parsed.rows.forEach((row, index) => {
       const existing = latestBySku.get(row.sku);
-      if (!existing || row.sourceIndex > existing.sourceIndex) {
+      const currentSourceIndex = row.sourceIndex ?? index;
+      const existingSourceIndex = existing?.sourceIndex ?? -1;
+      if (!existing || currentSourceIndex > existingSourceIndex) {
         latestBySku.set(row.sku, row);
       }
-    }
+    });
 
     const endingInventoryCLP = [...latestBySku.values()].reduce((acc, row) => acc + row.balanceAmountCLP, 0);
 
@@ -239,7 +278,7 @@ const DailyProductMovementsModule: React.FC = () => {
       exitAmountCLP: reportRows.reduce((acc, row) => acc + row.exitAmountCLP, 0),
       endingInventoryCLP,
     };
-  }, [parsed]);
+  }, [parsed, reportRows]);
 
   return (
     <section className="glass card" style={{ marginTop: '1rem', textAlign: 'left' }}>
@@ -300,7 +339,7 @@ const DailyProductMovementsModule: React.FC = () => {
               <div>
                 <div style={{ fontWeight: 700 }}>Reporte Diario por Familia</div>
                 <div className="text-muted" style={{ fontSize: '0.78rem' }}>
-                  Periodo: {parsed.dateFrom || '-'} a {parsed.dateTo || '-'} | Todo lo no clasificado como implante se consolida en aditamentos. Los traslados internos entre bodegas no se cuentan en este reporte.
+                  Periodo: {reportRows[0]?.date || parsed.dateFrom || '-'} a {reportRows[reportRows.length - 1]?.date || parsed.dateTo || '-'} | Todo lo no clasificado como implante se consolida en aditamentos. Los traslados internos entre bodegas no se cuentan en este reporte.
                 </div>
               </div>
               <div className="text-muted" style={{ fontSize: '0.78rem' }}>
