@@ -177,25 +177,35 @@ const DailyProductMovementsModule: React.FC = () => {
       : ['Todos']
   ), [parsed]);
 
+  const rowsInSourcePeriod = useMemo(() => {
+    if (!parsed) return [];
+
+    const fromISO = parsed.sourcePeriodFromISO;
+    const toISO = parsed.sourcePeriodToISO;
+    if (!fromISO || !toISO) return parsed.rows;
+
+    return parsed.rows.filter((row) => !row.dateISO || (row.dateISO >= fromISO && row.dateISO <= toISO));
+  }, [parsed]);
+
   const filteredRows = useMemo(() => {
     if (!parsed) return [];
     const query = search.toLowerCase().trim();
 
-    return parsed.rows.filter((row) => {
+    return rowsInSourcePeriod.filter((row) => {
       const matchesDocument = documentFilter === 'Todos' || row.document === documentFilter;
       const matchesDirection = directionFilter === 'ALL' || row.direction === directionFilter;
       const content = `${row.sku} ${row.description} ${row.document} ${row.documentNumber} ${row.warehouse}`.toLowerCase();
       const matchesSearch = !query || content.includes(query);
       return matchesDocument && matchesDirection && matchesSearch;
     });
-  }, [parsed, search, documentFilter, directionFilter]);
+  }, [parsed, rowsInSourcePeriod, search, documentFilter, directionFilter]);
 
   const reportRows = useMemo(() => {
     if (!parsed) return [];
 
     const transferGroups = new Map<string, { totalEntryQty: number; totalExitQty: number }>();
 
-    parsed.rows.forEach((row) => {
+    rowsInSourcePeriod.forEach((row) => {
       const normalizedDocument = normalizeMovementText(row.document);
       if (!normalizedDocument.includes('guia de despacho')) return;
 
@@ -206,7 +216,7 @@ const DailyProductMovementsModule: React.FC = () => {
       transferGroups.set(key, current);
     });
 
-    return parsed.rows.filter((row) => {
+    return rowsInSourcePeriod.filter((row) => {
       if (row.direction === 'opening') return false;
 
       const normalizedDocument = normalizeMovementText(row.document);
@@ -223,7 +233,24 @@ const DailyProductMovementsModule: React.FC = () => {
 
       return !isInternalTransfer;
     });
-  }, [parsed]);
+  }, [parsed, rowsInSourcePeriod]);
+
+  const rowsOutsideSourcePeriodCount = useMemo(() => {
+    if (!parsed) return 0;
+    return Math.max(parsed.rows.length - rowsInSourcePeriod.length, 0);
+  }, [parsed, rowsInSourcePeriod]);
+
+  const valueOnlySummary = useMemo(() => {
+    const entryRows = reportRows.filter((row) => row.entryQty <= 0 && row.entryAmountCLP > 0);
+    const exitRows = reportRows.filter((row) => row.exitQty <= 0 && row.exitAmountCLP > 0);
+
+    return {
+      entryRows: entryRows.length,
+      exitRows: exitRows.length,
+      entryAmountCLP: entryRows.reduce((acc, row) => acc + row.entryAmountCLP, 0),
+      exitAmountCLP: exitRows.reduce((acc, row) => acc + row.exitAmountCLP, 0),
+    };
+  }, [reportRows]);
 
   const familyReport = useMemo(() => {
     if (!parsed) return [];
@@ -354,13 +381,29 @@ const DailyProductMovementsModule: React.FC = () => {
               <div>
                 <div style={{ fontWeight: 700 }}>Reporte Diario por Familia</div>
                 <div className="text-muted" style={{ fontSize: '0.78rem' }}>
-                  Periodo: {reportRows[0]?.date || parsed.dateFrom || '-'} a {reportRows[reportRows.length - 1]?.date || parsed.dateTo || '-'} | Todo lo no clasificado como implante se consolida en aditamentos. Los traslados internos entre bodegas no se cuentan en este reporte.
+                  Periodo: {parsed.sourcePeriodFrom || reportRows[0]?.date || parsed.dateFrom || '-'} a {parsed.sourcePeriodTo || reportRows[reportRows.length - 1]?.date || parsed.dateTo || '-'} | Todo lo no clasificado como implante se consolida en aditamentos. Los traslados internos entre bodegas no se cuentan en este reporte.
                 </div>
               </div>
               <div className="text-muted" style={{ fontSize: '0.78rem' }}>
                 Tipos documento detectados: {formatQty(parsed.documentSummaries.length)}
               </div>
             </div>
+            {rowsOutsideSourcePeriodCount > 0 ? (
+              <div style={{ marginBottom: '0.8rem', background: 'rgba(37, 99, 235, 0.06)', border: '1px solid rgba(37, 99, 235, 0.18)', borderRadius: '12px', padding: '0.8rem' }}>
+                <div style={{ fontWeight: 700, marginBottom: '0.2rem', color: '#1d4ed8' }}>Filas fuera del periodo ignoradas en el reporte</div>
+                <div className="text-muted" style={{ fontSize: '0.8rem' }}>
+                  Se excluyeron {formatQty(rowsOutsideSourcePeriodCount)} filas porque su fecha no cae dentro del periodo declarado por el archivo.
+                </div>
+              </div>
+            ) : null}
+            {valueOnlySummary.entryRows > 0 || valueOnlySummary.exitRows > 0 ? (
+              <div style={{ marginBottom: '0.8rem', background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.28)', borderRadius: '12px', padding: '0.8rem' }}>
+                <div style={{ fontWeight: 700, marginBottom: '0.2rem', color: '#9A5A00' }}>Movimientos con monto pero sin cantidad</div>
+                <div className="text-muted" style={{ fontSize: '0.8rem' }}>
+                  Entradas: {formatQty(valueOnlySummary.entryRows)} filas por {formatCLP(valueOnlySummary.entryAmountCLP)}. Salidas: {formatQty(valueOnlySummary.exitRows)} filas por {formatCLP(valueOnlySummary.exitAmountCLP)}. Estos montos se reflejan en CLP, pero no suman unidades porque la cantidad viene en cero en el archivo.
+                </div>
+              </div>
+            ) : null}
             <div className="table-container">
               <table>
                 <thead>
@@ -450,7 +493,11 @@ const DailyProductMovementsModule: React.FC = () => {
                   <div style={{ fontWeight: 700 }}>Detalle de movimientos</div>
                   <div className="text-muted" style={{ fontSize: '0.78rem' }}>
                     Archivo: <strong>{sourceFileName}</strong>
-                    {parsed.dateFrom && parsed.dateTo ? ` | Rango: ${parsed.dateFrom} a ${parsed.dateTo}` : ''}
+                    {(parsed.sourcePeriodFrom && parsed.sourcePeriodTo)
+                      ? ` | Rango: ${parsed.sourcePeriodFrom} a ${parsed.sourcePeriodTo}`
+                      : parsed.dateFrom && parsed.dateTo
+                        ? ` | Rango: ${parsed.dateFrom} a ${parsed.dateTo}`
+                        : ''}
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>

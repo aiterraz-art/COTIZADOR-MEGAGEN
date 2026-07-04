@@ -72,6 +72,26 @@ const parseDate = (value: unknown): { display: string; iso: string } => {
   return { display: raw, iso: '' };
 };
 
+const parsePeriodRange = (value: string): {
+  from?: string;
+  to?: string;
+  fromISO?: string;
+  toISO?: string;
+} => {
+  const matches = value.match(/\d{1,2}\/\d{1,2}\/\d{4}/g) ?? [];
+  if (!matches.length) return {};
+
+  const from = parseDate(matches[0]);
+  const to = parseDate(matches[matches.length - 1]);
+
+  return {
+    from: from.display || matches[0],
+    to: to.display || matches[matches.length - 1],
+    fromISO: from.iso,
+    toISO: to.iso,
+  };
+};
+
 const classifyMovement = (
   document: string,
   entryQty: number,
@@ -219,6 +239,7 @@ export const parseDailyProductMovementsFile = async (file: File): Promise<DailyP
 
   const periodRow = matrix[0] ?? [];
   const sourcePeriodLabel = String(periodRow[1] ?? periodRow[0] ?? '').trim();
+  const sourcePeriod = parsePeriodRange(sourcePeriodLabel);
   const rows: DailyProductMovementRow[] = [];
 
   for (const [offset, sourceRow] of matrix.slice(headerRowIndex + 1).entries()) {
@@ -296,6 +317,10 @@ export const parseDailyProductMovementsFile = async (file: File): Promise<DailyP
 
   return {
     sourcePeriodLabel,
+    sourcePeriodFrom: sourcePeriod.from,
+    sourcePeriodTo: sourcePeriod.to,
+    sourcePeriodFromISO: sourcePeriod.fromISO,
+    sourcePeriodToISO: sourcePeriod.toISO,
     rows: refinedRows,
     documentSummaries,
     unknownDocuments: documentSummaries

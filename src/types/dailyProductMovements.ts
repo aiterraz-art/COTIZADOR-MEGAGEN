@@ -46,6 +46,10 @@ export interface DailyProductMovementDocumentSummary {
 
 export interface DailyProductMovementsParseResult {
   sourcePeriodLabel: string;
+  sourcePeriodFrom?: string;
+  sourcePeriodTo?: string;
+  sourcePeriodFromISO?: string;
+  sourcePeriodToISO?: string;
   rows: DailyProductMovementRow[];
   documentSummaries: DailyProductMovementDocumentSummary[];
   unknownDocuments: string[];
