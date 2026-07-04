@@ -11,6 +11,7 @@ import { parseDailyProductMovementsFile } from '../utils/dailyProductMovementsPa
 import { findImplantDefinition, IMPLANT_DEFINITIONS, type ImplantModelKey } from '../data/implantDefinitions';
 
 const STORAGE_KEY = 'megagen.dailyProductMovements.state';
+const MAX_PERSISTED_STATE_BYTES = 1_500_000;
 
 interface PersistedState {
   sourceFileName: string;
@@ -107,12 +108,26 @@ const DailyProductMovementsModule: React.FC = () => {
   const [copiedQuantityKey, setCopiedQuantityKey] = useState('');
 
   useEffect(() => {
-    if (!parsed || !sourceFileName) {
-      localStorage.removeItem(STORAGE_KEY);
-      return;
-    }
+    try {
+      if (!parsed || !sourceFileName) {
+        localStorage.removeItem(STORAGE_KEY);
+        return;
+      }
 
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ sourceFileName, parsed }));
+      const payload = JSON.stringify({ sourceFileName, parsed });
+      if (payload.length > MAX_PERSISTED_STATE_BYTES) {
+        localStorage.removeItem(STORAGE_KEY);
+        return;
+      }
+
+      localStorage.setItem(STORAGE_KEY, payload);
+    } catch {
+      try {
+        localStorage.removeItem(STORAGE_KEY);
+      } catch {
+        // noop
+      }
+    }
   }, [parsed, sourceFileName]);
 
   const handleUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
