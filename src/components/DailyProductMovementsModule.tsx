@@ -293,6 +293,7 @@ const DailyProductMovementsModule: React.FC = () => {
   const totalsReport = useMemo(() => {
     if (!parsed) {
       return {
+        openingInventoryCLP: 0,
         entryQty: 0,
         exitQty: 0,
         entryAmountCLP: 0,
@@ -301,23 +302,19 @@ const DailyProductMovementsModule: React.FC = () => {
       };
     }
 
-    const latestBySku = new Map<string, DailyProductMovementRow>();
-    parsed.rows.forEach((row, index) => {
-      const existing = latestBySku.get(row.sku);
-      const currentSourceIndex = row.sourceIndex ?? index;
-      const existingSourceIndex = existing?.sourceIndex ?? -1;
-      if (!existing || currentSourceIndex > existingSourceIndex) {
-        latestBySku.set(row.sku, row);
-      }
-    });
-
-    const endingInventoryCLP = [...latestBySku.values()].reduce((acc, row) => acc + row.balanceAmountCLP, 0);
+    const openingInventoryCLP = parsed.rows
+      .filter((row) => row.direction === 'opening')
+      .reduce((acc, row) => acc + row.balanceAmountCLP, 0);
+    const entryAmountCLP = reportRows.reduce((acc, row) => acc + row.entryAmountCLP, 0);
+    const exitAmountCLP = reportRows.reduce((acc, row) => acc + row.exitAmountCLP, 0);
+    const endingInventoryCLP = openingInventoryCLP + entryAmountCLP - exitAmountCLP;
 
     return {
+      openingInventoryCLP,
       entryQty: reportRows.reduce((acc, row) => acc + row.entryQty, 0),
       exitQty: reportRows.reduce((acc, row) => acc + row.exitQty, 0),
-      entryAmountCLP: reportRows.reduce((acc, row) => acc + row.entryAmountCLP, 0),
-      exitAmountCLP: reportRows.reduce((acc, row) => acc + row.exitAmountCLP, 0),
+      entryAmountCLP,
+      exitAmountCLP,
       endingInventoryCLP,
     };
   }, [parsed, reportRows]);
@@ -373,7 +370,7 @@ const DailyProductMovementsModule: React.FC = () => {
             <SummaryCard label="Filas de movimiento" value={formatQty(parsed.movementRows)} helper={`Saldo inicial: ${formatQty(parsed.openingRows)}`} />
             <SummaryCard label="Entradas reporte" value={formatQty(totalsReport.entryQty)} helper={`${formatCLP(totalsReport.entryAmountCLP)} | sin traslados`} tone="var(--success)" />
             <SummaryCard label="Salidas reporte" value={formatQty(totalsReport.exitQty)} helper={`${formatCLP(totalsReport.exitAmountCLP)} | sin traslados`} tone="var(--error)" />
-            <SummaryCard label="Inventario final del día" value={formatCLP(totalsReport.endingInventoryCLP)} helper={parsed.sourcePeriodLabel || 'Sin periodo'} />
+            <SummaryCard label="Inventario final del día" value={formatCLP(totalsReport.endingInventoryCLP)} helper={`${formatCLP(totalsReport.openingInventoryCLP)} inicial | sin traslados`} />
           </div>
 
           <div className="finance-card" style={{ padding: '1rem', marginBottom: '1rem' }}>
@@ -460,7 +457,7 @@ const DailyProductMovementsModule: React.FC = () => {
               </table>
             </div>
             <div className="text-muted" style={{ fontSize: '0.8rem', marginTop: '0.65rem' }}>
-              Valor total inventario final del día: <strong>{formatCLP(totalsReport.endingInventoryCLP)}</strong>
+              Valor total inventario final del día: <strong>{formatCLP(totalsReport.endingInventoryCLP)}</strong> | Saldo inicial usado: <strong>{formatCLP(totalsReport.openingInventoryCLP)}</strong> | Sin impacto de traspasos entre bodegas.
             </div>
           </div>
 
