@@ -87,6 +87,22 @@ interface DailyFamilySummary {
   exitAmountCLP: number;
 }
 
+const getReportEntryQty = (row: DailyProductMovementRow): number => (
+  row.direction === 'entry' ? row.effectiveQty : 0
+);
+
+const getReportExitQty = (row: DailyProductMovementRow): number => (
+  row.direction === 'exit' ? row.effectiveQty : 0
+);
+
+const getReportEntryAmount = (row: DailyProductMovementRow): number => (
+  row.direction === 'entry' ? row.effectiveAmountCLP : 0
+);
+
+const getReportExitAmount = (row: DailyProductMovementRow): number => (
+  row.direction === 'exit' ? row.effectiveAmountCLP : 0
+);
+
 const SummaryCard = ({ label, value, helper, tone }: { label: string; value: string; helper?: string; tone?: string }) => (
   <div className="finance-card">
     <div className="text-muted" style={{ fontSize: '0.7rem' }}>{label}</div>
@@ -281,10 +297,10 @@ const DailyProductMovementsModule: React.FC = () => {
       const current = base.get(key);
       if (!current) continue;
 
-      current.entryQty += row.entryQty;
-      current.exitQty += row.exitQty;
-      current.entryAmountCLP += row.entryAmountCLP;
-      current.exitAmountCLP += row.exitAmountCLP;
+      current.entryQty += getReportEntryQty(row);
+      current.exitQty += getReportExitQty(row);
+      current.entryAmountCLP += getReportEntryAmount(row);
+      current.exitAmountCLP += getReportExitAmount(row);
     }
 
     return [...base.values()];
@@ -305,14 +321,14 @@ const DailyProductMovementsModule: React.FC = () => {
     const openingInventoryCLP = parsed.rows
       .filter((row) => row.direction === 'opening')
       .reduce((acc, row) => acc + row.balanceAmountCLP, 0);
-    const entryAmountCLP = reportRows.reduce((acc, row) => acc + row.entryAmountCLP, 0);
-    const exitAmountCLP = reportRows.reduce((acc, row) => acc + row.exitAmountCLP, 0);
+    const entryAmountCLP = reportRows.reduce((acc, row) => acc + getReportEntryAmount(row), 0);
+    const exitAmountCLP = reportRows.reduce((acc, row) => acc + getReportExitAmount(row), 0);
     const endingInventoryCLP = openingInventoryCLP + entryAmountCLP - exitAmountCLP;
 
     return {
       openingInventoryCLP,
-      entryQty: reportRows.reduce((acc, row) => acc + row.entryQty, 0),
-      exitQty: reportRows.reduce((acc, row) => acc + row.exitQty, 0),
+      entryQty: reportRows.reduce((acc, row) => acc + getReportEntryQty(row), 0),
+      exitQty: reportRows.reduce((acc, row) => acc + getReportExitQty(row), 0),
       entryAmountCLP,
       exitAmountCLP,
       endingInventoryCLP,

@@ -213,12 +213,12 @@ const summarizeDocuments = (rows: DailyProductMovementRow[]): DailyProductMoveme
     current.rows += 1;
     if (row.direction === 'entry') {
       current.entryRows += 1;
-      current.entryQty += row.entryQty;
-      current.entryAmountCLP += row.entryAmountCLP;
+      current.entryQty += row.effectiveQty;
+      current.entryAmountCLP += row.effectiveAmountCLP;
     } else if (row.direction === 'exit') {
       current.exitRows += 1;
-      current.exitQty += row.exitQty;
-      current.exitAmountCLP += row.exitAmountCLP;
+      current.exitQty += row.effectiveQty;
+      current.exitAmountCLP += row.effectiveAmountCLP;
     } else if (row.direction === 'opening') {
       current.openingRows += 1;
     }
@@ -265,14 +265,14 @@ export const parseDailyProductMovementsFile = async (file: File): Promise<DailyP
 
     const { classification, direction } = classifyMovement(document, entryQty, exitQty);
     const effectiveQty = direction === 'entry'
-      ? entryQty
+      ? (entryQty > 0 ? entryQty : 0)
       : direction === 'exit'
-        ? exitQty
+        ? (exitQty > 0 ? exitQty : 0)
         : 0;
     const effectiveAmountCLP = direction === 'entry'
-      ? entryAmountCLP
+      ? (entryQty > 0 ? entryAmountCLP : 0)
       : direction === 'exit'
-        ? exitAmountCLP
+        ? (exitQty > 0 ? exitAmountCLP : 0)
         : 0;
 
     rows.push({
@@ -329,10 +329,10 @@ export const parseDailyProductMovementsFile = async (file: File): Promise<DailyP
     totalRows: rows.length,
     openingRows: rows.filter((row) => row.direction === 'opening').length,
     movementRows: movementRows.length,
-    totalEntryQty: movementRows.reduce((acc, row) => acc + row.entryQty, 0),
-    totalExitQty: movementRows.reduce((acc, row) => acc + row.exitQty, 0),
-    totalEntryAmountCLP: movementRows.reduce((acc, row) => acc + row.entryAmountCLP, 0),
-    totalExitAmountCLP: movementRows.reduce((acc, row) => acc + row.exitAmountCLP, 0),
+    totalEntryQty: movementRows.reduce((acc, row) => acc + (row.direction === 'entry' ? row.effectiveQty : 0), 0),
+    totalExitQty: movementRows.reduce((acc, row) => acc + (row.direction === 'exit' ? row.effectiveQty : 0), 0),
+    totalEntryAmountCLP: movementRows.reduce((acc, row) => acc + (row.direction === 'entry' ? row.effectiveAmountCLP : 0), 0),
+    totalExitAmountCLP: movementRows.reduce((acc, row) => acc + (row.direction === 'exit' ? row.effectiveAmountCLP : 0), 0),
     dateFrom: timestamps[0],
     dateTo: timestamps[timestamps.length - 1],
   };
