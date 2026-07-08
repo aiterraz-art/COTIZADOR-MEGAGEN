@@ -133,6 +133,7 @@ const App: React.FC = () => {
   const salesFileInputRef = useRef<HTMLInputElement>(null);
   const importFileInputRef = useRef<HTMLInputElement>(null);
   const importPdfInputRef = useRef<HTMLInputElement>(null);
+  const dailySalesSummaryImageRef = useRef<HTMLDivElement>(null);
 
   // Quotations Manager State
   const [activeModule, setActiveModule] = useState<ModuleKey>('cotizador');
@@ -152,6 +153,7 @@ const App: React.FC = () => {
   const [hqCreditActualKUSD, setHqCreditActualKUSD] = useState<number>(0);
   const [copiedReport, setCopiedReport] = useState(false);
   const [copiedMetricKey, setCopiedMetricKey] = useState('');
+  const [copiedDailySalesImage, setCopiedDailySalesImage] = useState(false);
   const [importCurrency, setImportCurrency] = useState<'USD' | 'EUR'>(() => {
     const stored = localStorage.getItem(IMPORT_CURRENCY_STORAGE_KEY);
     return stored === 'EUR' ? 'EUR' : 'USD';
@@ -1125,6 +1127,45 @@ const App: React.FC = () => {
     }
   };
 
+  const copyDailySalesSummaryAsImage = async () => {
+    if (!dailySalesSummaryImageRef.current) return;
+
+    try {
+      const canvas = await html2canvas(dailySalesSummaryImageRef.current, {
+        backgroundColor: '#ffffff',
+        scale: 2,
+        logging: false,
+      });
+
+      const blob = await new Promise<Blob | null>((resolve) => {
+        canvas.toBlob((generatedBlob) => resolve(generatedBlob), 'image/png');
+      });
+
+      if (!blob) {
+        throw new Error('No fue posible generar la imagen.');
+      }
+
+      if (navigator.clipboard && 'write' in navigator.clipboard && typeof ClipboardItem !== 'undefined') {
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            'image/png': blob,
+          }),
+        ]);
+        setCopiedDailySalesImage(true);
+        setTimeout(() => setCopiedDailySalesImage(false), 1500);
+        return;
+      }
+
+      const link = document.createElement('a');
+      link.download = `implantes-vendidos-${reportDate || new Date().toISOString().slice(0, 10)}.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+      alert('Tu navegador no permite copiar imágenes directo. Descargué el PNG para que lo uses.');
+    } catch (error) {
+      alert('No fue posible copiar el resumen como imagen: ' + (error as Error).message);
+    }
+  };
+
   const downloadImportCalculation = () => {
     if (!importCalculatedItems.length) {
       alert('Primero carga o ingresa productos de importación.');
@@ -1536,6 +1577,13 @@ const App: React.FC = () => {
     const date = new Date(`${reportDate}T00:00:00`);
     if (Number.isNaN(date.getTime())) return reportDate;
     return date.toLocaleDateString('en-US', { day: 'numeric', month: 'short' });
+  }, [reportDate]);
+
+  const reportDateLabel = useMemo(() => {
+    if (!reportDate) return '-';
+    const date = new Date(`${reportDate}T00:00:00`);
+    if (Number.isNaN(date.getTime())) return reportDate;
+    return date.toLocaleDateString('es-CL');
   }, [reportDate]);
 
   const percent = (actual: number, target: number) => {
@@ -2545,45 +2593,64 @@ const App: React.FC = () => {
 
             {dailySalesSummary && salesMetrics ? (
               <div style={{ display: 'grid', gap: '1rem' }}>
-                <h3 style={{ fontSize: '1rem' }}>Sales del Día (sin despacho)</h3>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.75rem' }}>
-                  <div className="finance-card">
-                    <div className="text-muted" style={{ fontSize: '0.68rem' }}>VENTA TOTAL SIN DESPACHO</div>
-                    <div style={{ fontWeight: 800, fontSize: '1.25rem' }}>{formatKUSD(salesMetrics.salesKUSD)}</div>
-                    <div className="text-muted" style={{ fontSize: '0.75rem' }}>{formatUSD(salesMetrics.salesUSD)}</div>
-                  </div>
-                  <div className="finance-card">
-                    <div className="text-muted" style={{ fontSize: '0.68rem' }}>COSTO TOTAL SIN DESPACHO</div>
-                    <div style={{ fontWeight: 800, fontSize: '1.25rem' }}>{formatKUSD(salesMetrics.costKUSD)}</div>
-                    <div className="text-muted" style={{ fontSize: '0.75rem' }}>{formatUSD(salesMetrics.costUSD)}</div>
-                  </div>
-                  <div className="finance-card">
-                    <div className="text-muted" style={{ fontSize: '0.68rem' }}>IMPLANTES TOTALES</div>
-                    <div style={{ fontWeight: 800, fontSize: '1.25rem' }}>{dailySalesSummary.totalImplants.toFixed(0)}</div>
-                    <div className="text-muted" style={{ fontSize: '0.75rem' }}>Unidades</div>
-                  </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                  <h3 style={{ fontSize: '1rem', margin: 0 }}>Sales del Día (sin despacho)</h3>
+                  <button className="btn btn-primary" onClick={copyDailySalesSummaryAsImage}>
+                    <Copy size={14} /> {copiedDailySalesImage ? 'Imagen copiada' : 'Copiar resumen como imagen'}
+                  </button>
                 </div>
-                <div className="table-container">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Implante</th>
-                        <th style={{ textAlign: 'right' }}>Cantidad</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {IMPLANT_DEFINITIONS.map((implant) => (
-                        <tr key={implant.key}>
-                          <td>{implant.name}</td>
-                          <td style={{ textAlign: 'right', fontWeight: 700 }}>{dailySalesSummary.implantsByModel[implant.key]}</td>
+                <div
+                  ref={dailySalesSummaryImageRef}
+                  className="finance-card"
+                  style={{ padding: '1rem', background: '#ffffff' }}
+                >
+                  <div style={{ marginBottom: '0.85rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.75rem', flexWrap: 'wrap' }}>
+                      <div style={{ fontWeight: 800, fontSize: '1rem' }}>Resumen de Implantes Vendidos</div>
+                      <div style={{ padding: '0.35rem 0.65rem', borderRadius: '999px', background: 'rgba(0,167,233,0.1)', color: 'var(--primary)', fontWeight: 700, fontSize: '0.82rem' }}>
+                        Informe: {reportDateLabel}
+                      </div>
+                    </div>
+                    <div className="text-muted" style={{ fontSize: '0.78rem' }}>
+                      Archivo: <strong>{salesSourceFile}</strong> | Registros: {dailySalesSummary.movementCount} | Rango: {dailySalesSummary.dateFrom || '-'} a {dailySalesSummary.dateTo || '-'} | Dólar aplicado: {exchangeRate}
+                    </div>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.75rem', marginBottom: '1rem' }}>
+                    <div className="finance-card">
+                      <div className="text-muted" style={{ fontSize: '0.68rem' }}>VENTA TOTAL SIN DESPACHO</div>
+                      <div style={{ fontWeight: 800, fontSize: '1.25rem' }}>{formatKUSD(salesMetrics.salesKUSD)}</div>
+                      <div className="text-muted" style={{ fontSize: '0.75rem' }}>{formatUSD(salesMetrics.salesUSD)}</div>
+                    </div>
+                    <div className="finance-card">
+                      <div className="text-muted" style={{ fontSize: '0.68rem' }}>COSTO TOTAL SIN DESPACHO</div>
+                      <div style={{ fontWeight: 800, fontSize: '1.25rem' }}>{formatKUSD(salesMetrics.costKUSD)}</div>
+                      <div className="text-muted" style={{ fontSize: '0.75rem' }}>{formatUSD(salesMetrics.costUSD)}</div>
+                    </div>
+                    <div className="finance-card">
+                      <div className="text-muted" style={{ fontSize: '0.68rem' }}>IMPLANTES TOTALES</div>
+                      <div style={{ fontWeight: 800, fontSize: '1.25rem' }}>{dailySalesSummary.totalImplants.toFixed(0)}</div>
+                      <div className="text-muted" style={{ fontSize: '0.75rem' }}>Unidades</div>
+                    </div>
+                  </div>
+                  <div className="table-container">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Implante</th>
+                          <th style={{ textAlign: 'right' }}>Cantidad</th>
                         </tr>
-                      ))}
-                      <tr><td><strong>Total Implantes</strong></td><td style={{ textAlign: 'right', fontWeight: 800 }}>{dailySalesSummary.totalImplants}</td></tr>
-                    </tbody>
-                  </table>
-                </div>
-                <div className="text-muted" style={{ fontSize: '0.78rem' }}>
-                  Archivo: <strong>{salesSourceFile}</strong> | Registros: {dailySalesSummary.movementCount} | Rango: {dailySalesSummary.dateFrom || '-'} a {dailySalesSummary.dateTo || '-'} | Dólar aplicado: {exchangeRate}
+                      </thead>
+                      <tbody>
+                        {IMPLANT_DEFINITIONS.map((implant) => (
+                          <tr key={implant.key}>
+                            <td>{implant.name}</td>
+                            <td style={{ textAlign: 'right', fontWeight: 700 }}>{dailySalesSummary.implantsByModel[implant.key]}</td>
+                          </tr>
+                        ))}
+                        <tr><td><strong>Total Implantes</strong></td><td style={{ textAlign: 'right', fontWeight: 800 }}>{dailySalesSummary.totalImplants}</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </div>
             ) : (
