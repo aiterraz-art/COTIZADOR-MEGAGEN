@@ -2612,19 +2612,14 @@ const App: React.FC = () => {
                       </div>
                     </div>
                     <div className="text-muted" style={{ fontSize: '0.78rem' }}>
-                      Archivo: <strong>{salesSourceFile}</strong> | Registros: {dailySalesSummary.movementCount} | Rango: {dailySalesSummary.dateFrom || '-'} a {dailySalesSummary.dateTo || '-'} | Dólar aplicado: {exchangeRate}
+                      Archivo: <strong>{salesSourceFile}</strong> | Registros: {dailySalesSummary.movementCount} | Rango: {dailySalesSummary.dateFrom || '-'} a {dailySalesSummary.dateTo || '-'}
                     </div>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.75rem', marginBottom: '1rem' }}>
                     <div className="finance-card">
                       <div className="text-muted" style={{ fontSize: '0.68rem' }}>VENTA TOTAL SIN DESPACHO</div>
-                      <div style={{ fontWeight: 800, fontSize: '1.25rem' }}>{formatKUSD(salesMetrics.salesKUSD)}</div>
-                      <div className="text-muted" style={{ fontSize: '0.75rem' }}>{formatUSD(salesMetrics.salesUSD)}</div>
-                    </div>
-                    <div className="finance-card">
-                      <div className="text-muted" style={{ fontSize: '0.68rem' }}>COSTO TOTAL SIN DESPACHO</div>
-                      <div style={{ fontWeight: 800, fontSize: '1.25rem' }}>{formatKUSD(salesMetrics.costKUSD)}</div>
-                      <div className="text-muted" style={{ fontSize: '0.75rem' }}>{formatUSD(salesMetrics.costUSD)}</div>
+                      <div style={{ fontWeight: 800, fontSize: '1.25rem' }}>{formatCLP(dailySalesSummary.totalSalesCLPExcludingDispatch)}</div>
+                      <div className="text-muted" style={{ fontSize: '0.75rem' }}>Pesos chilenos</div>
                     </div>
                     <div className="finance-card">
                       <div className="text-muted" style={{ fontSize: '0.68rem' }}>IMPLANTES TOTALES</div>
