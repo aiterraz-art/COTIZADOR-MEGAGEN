@@ -76,6 +76,24 @@ const IMPORT_MARGIN_STORAGE_KEY = 'megagen.import.margin';
 const IMPORT_SNAPSHOTS_STORAGE_KEY = 'megagen.import.snapshots';
 const DEFAULT_QUOTE_MARGIN_PERCENT = 50;
 
+const getLocalDateInputValue = (): string => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const formatInputDateLabel = (value: string, locale: string, options?: Intl.DateTimeFormatOptions): string => {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return value;
+
+  const [, year, month, day] = match;
+  const date = new Date(Number(year), Number(month) - 1, Number(day));
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString(locale, options);
+};
+
 const readStoredJSON = <T,>(key: string): T | null => {
   try {
     const raw = localStorage.getItem(key);
@@ -143,7 +161,7 @@ const App: React.FC = () => {
   const [analysisSourceFile, setAnalysisSourceFile] = useState(() => localStorage.getItem(CASH_FLOW_FILE_STORAGE_KEY) || '');
   const [dailySalesSummary, setDailySalesSummary] = useState<DailySalesSummary | null>(() => readStoredJSON<DailySalesSummary>(DAILY_SALES_SUMMARY_STORAGE_KEY));
   const [salesSourceFile, setSalesSourceFile] = useState(() => localStorage.getItem(DAILY_SALES_FILE_STORAGE_KEY) || '');
-  const [reportDate, setReportDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [reportDate, setReportDate] = useState<string>(() => getLocalDateInputValue());
   const [salesTargetKUSD, setSalesTargetKUSD] = useState<number>(0);
   const [collectionTargetKUSD, setCollectionTargetKUSD] = useState<number>(0);
   const [fxSalesTargetEA, setFxSalesTargetEA] = useState<number>(0);
@@ -1574,16 +1592,12 @@ const App: React.FC = () => {
 
   const dayLabel = useMemo(() => {
     if (!reportDate) return 'Today';
-    const date = new Date(`${reportDate}T00:00:00`);
-    if (Number.isNaN(date.getTime())) return reportDate;
-    return date.toLocaleDateString('en-US', { day: 'numeric', month: 'short' });
+    return formatInputDateLabel(reportDate, 'en-US', { day: 'numeric', month: 'short' });
   }, [reportDate]);
 
   const reportDateLabel = useMemo(() => {
     if (!reportDate) return '-';
-    const date = new Date(`${reportDate}T00:00:00`);
-    if (Number.isNaN(date.getTime())) return reportDate;
-    return date.toLocaleDateString('es-CL');
+    return formatInputDateLabel(reportDate, 'es-CL');
   }, [reportDate]);
 
   const percent = (actual: number, target: number) => {
