@@ -37,6 +37,7 @@ import { convertImportAmountToCLP } from './utils/importCosting';
 import { calculateQuote } from './utils/quotePricingEngine';
 import type { LinePricingMode, QuoteLineDraft, QuotePricingConfig } from './types/quotation';
 import { useCotizadorState } from './hooks/useCotizadorState';
+import { IMPLANT_DEFINITIONS } from './data/implantDefinitions';
 import {
   Calculator,
   Copy,
@@ -2571,12 +2572,12 @@ const App: React.FC = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      <tr><td>XPEED AnyRidge Internal Fixture [AR]</td><td style={{ textAlign: 'right', fontWeight: 700 }}>{dailySalesSummary.implantsByModel.AR}</td></tr>
-                      <tr><td>AnyOne Internal Fixture [AO]</td><td style={{ textAlign: 'right', fontWeight: 700 }}>{dailySalesSummary.implantsByModel.AO}</td></tr>
-                      <tr><td>ST Internal Fixture [ST]</td><td style={{ textAlign: 'right', fontWeight: 700 }}>{dailySalesSummary.implantsByModel.ST}</td></tr>
-                      <tr><td>BLUEDIAMOND IMPLANT [BD]</td><td style={{ textAlign: 'right', fontWeight: 700 }}>{dailySalesSummary.implantsByModel.BD}</td></tr>
-                      <tr><td>Mini Internal Fixture [MN]</td><td style={{ textAlign: 'right', fontWeight: 700 }}>{dailySalesSummary.implantsByModel.MN}</td></tr>
-                      <tr><td>ARi ExCon Implant [ARiE]</td><td style={{ textAlign: 'right', fontWeight: 700 }}>{dailySalesSummary.implantsByModel.ARiE}</td></tr>
+                      {IMPLANT_DEFINITIONS.map((implant) => (
+                        <tr key={implant.key}>
+                          <td>{implant.name}</td>
+                          <td style={{ textAlign: 'right', fontWeight: 700 }}>{dailySalesSummary.implantsByModel[implant.key]}</td>
+                        </tr>
+                      ))}
                       <tr><td><strong>Total Implantes</strong></td><td style={{ textAlign: 'right', fontWeight: 800 }}>{dailySalesSummary.totalImplants}</td></tr>
                     </tbody>
                   </table>

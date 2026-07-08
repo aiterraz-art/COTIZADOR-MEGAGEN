@@ -431,7 +431,7 @@ export const parseDailySalesFile = (file: File): Promise<DailySalesSummary> => {
                     totalCostCLPExcludingDispatch += currentCost * quantity;
                     movementCount += 1;
 
-                    const implant = findImplantDefinition(normalizedDescription);
+                    const implant = findImplantDefinition(`${codeRaw} ${descriptionRaw}`);
                     if (implant) {
                         implantsByModel[implant.key] += quantity;
                     }
