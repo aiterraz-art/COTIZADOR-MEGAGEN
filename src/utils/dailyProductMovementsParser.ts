@@ -98,6 +98,9 @@ const classifyMovement = (
   exitQty: number,
 ): { classification: ProductMovementClassification; direction: ProductMovementDirection } => {
   const normalizedDocument = normalize(document);
+  const isCreditNoteEntry = normalizedDocument.includes('parte de entrada')
+    && normalizedDocument.includes('nc');
+  const isImportEntry = normalizedDocument.includes('parte de entrada importacion');
 
   if (normalizedDocument.includes('saldo anterior')) {
     return { classification: 'opening_balance', direction: 'opening' };
@@ -113,11 +116,11 @@ const classifyMovement = (
     return { classification: 'dispatch_transfer', direction: 'neutral' };
   }
 
-  if (normalizedDocument.includes('parte de entrada nc')) {
+  if (isCreditNoteEntry) {
     return { classification: 'credit_note_entry', direction: entryQty > 0 ? 'entry' : 'neutral' };
   }
 
-  if (normalizedDocument.includes('parte de entrada import')) {
+  if (isImportEntry) {
     return { classification: 'import_entry', direction: entryQty > 0 ? 'entry' : 'neutral' };
   }
 
