@@ -6,6 +6,7 @@ export type ProductMovementClassification =
   | 'dispatch_transfer'
   | 'dispatch_sale'
   | 'credit_note_entry'
+  | 'import_entry'
   | 'other';
 
 export interface DailyProductMovementRow {

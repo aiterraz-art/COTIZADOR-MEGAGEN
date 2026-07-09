@@ -117,6 +117,10 @@ const classifyMovement = (
     return { classification: 'credit_note_entry', direction: entryQty > 0 ? 'entry' : 'neutral' };
   }
 
+  if (normalizedDocument.includes('parte de entrada import')) {
+    return { classification: 'import_entry', direction: entryQty > 0 ? 'entry' : 'neutral' };
+  }
+
   if (entryQty > 0 && exitQty <= 0) return { classification: 'other', direction: 'entry' };
   if (exitQty > 0 && entryQty <= 0) return { classification: 'other', direction: 'exit' };
   return { classification: 'other', direction: 'neutral' };
