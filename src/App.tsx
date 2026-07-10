@@ -94,6 +94,20 @@ const formatInputDateLabel = (value: string, locale: string, options?: Intl.Date
   return date.toLocaleDateString(locale, options);
 };
 
+const parseDisplayDateToInputValue = (value?: string): string | null => {
+  if (!value) return null;
+
+  const normalized = value.trim();
+  const isoMatch = normalized.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoMatch) return normalized;
+
+  const displayMatch = normalized.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+  if (!displayMatch) return null;
+
+  const [, day, month, year] = displayMatch;
+  return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+};
+
 const readStoredJSON = <T,>(key: string): T | null => {
   try {
     const raw = localStorage.getItem(key);
@@ -1011,6 +1025,8 @@ const App: React.FC = () => {
       const summary = await parseCashFlowFile(file);
       setCashFlowSummary(summary);
       setAnalysisSourceFile(file.name);
+      const detectedDate = parseDisplayDateToInputValue(summary.dateTo || summary.dateFrom);
+      if (detectedDate) setReportDate(detectedDate);
     } catch (error) {
       alert('Error al procesar movimientos de caja: ' + (error as Error).message);
     }
@@ -1024,6 +1040,8 @@ const App: React.FC = () => {
       const summary = await parseDailySalesFile(file);
       setDailySalesSummary(summary);
       setSalesSourceFile(file.name);
+      const detectedDate = parseDisplayDateToInputValue(summary.dateTo || summary.dateFrom);
+      if (detectedDate) setReportDate(detectedDate);
     } catch (error) {
       alert('Error al procesar ventas del día: ' + (error as Error).message);
     }
