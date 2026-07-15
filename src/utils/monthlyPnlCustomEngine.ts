@@ -19,6 +19,12 @@ const createEmptyManualInputs = (): MonthlyManualInputs => ({
   adminSalaryManualCLP: null,
 });
 
+const isPositiveFinancialExpenseCredit = (targetKey: string, row: MonthlyPnlSourceRow): boolean => (
+  targetKey === 'interest_expense'
+  && row.isSubtotal
+  && row.amountCLP > 0
+);
+
 const toSourceRows = (lines: MonthlyPnlLine[]): MonthlyPnlSourceRow[] => lines.map((line) => ({
   lineOrder: line.lineOrder,
   accountCode: line.accountCode,
@@ -166,7 +172,10 @@ export const buildMonthlyPnlCustomMapping = (
       continue;
     }
 
-    const target = mappedLines.get(mapping.targetKey);
+    const resolvedTargetKey = isPositiveFinancialExpenseCredit(mapping.targetKey, row)
+      ? 'interest_income'
+      : mapping.targetKey;
+    const target = mappedLines.get(resolvedTargetKey);
     if (!target) {
       if (!row.isSubtotal) {
         unmappedSourceLines.push(row);

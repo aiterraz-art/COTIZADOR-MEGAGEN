@@ -185,4 +185,21 @@ describe('monthlyPnlCustomEngine', () => {
     expect(result.mappedLines.find((line) => line.targetKey === 'interest_expense')?.amountCLP).toBe(6_384);
     expect(result.totals.totalNonOperatingExpensesCLP).toBe(6_384);
   });
+
+  it('trata un subtotal GASTO FINANCIERO positivo como abono no operacional', () => {
+    const result = buildMonthlyPnlCustomMapping([
+      makeLine({ lineOrder: 1, accountCode: '3.1.1010.10.01', accountName: 'VENTAS', section: 'INGRESOS', amountCLP: 1_000_000 }),
+      makeLine({ lineOrder: 2, accountCode: '', accountName: 'GASTO FINANCIERO', section: 'OTROS_INGRESOS_EGRESOS', subsection: 'GASTO FINANCIERO', amountCLP: 3, isSubtotal: true }),
+    ], {
+      adminSalaryManualCLP: 0,
+    });
+
+    expect(result.errors).toEqual([]);
+    expect(result.unmappedSourceLines).toEqual([]);
+    expect(result.mappedLines.find((line) => line.targetKey === 'interest_income')?.amountCLP).toBe(3);
+    expect(result.mappedLines.find((line) => line.targetKey === 'interest_expense')?.amountCLP).toBe(0);
+    expect(result.totals.totalNonOperatingIncomeCLP).toBe(3);
+    expect(result.totals.totalNonOperatingExpensesCLP).toBe(0);
+    expect(result.mappedLines.find((line) => line.targetKey === 'net_profit_loss')?.amountCLP).toBe(1_000_003);
+  });
 });
