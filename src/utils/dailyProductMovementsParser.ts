@@ -129,6 +129,20 @@ const classifyMovement = (
   return { classification: 'other', direction: 'neutral' };
 };
 
+const parseQuotedCsvCell = (value: string): string => {
+  let parsed = value.trim();
+  if (parsed.startsWith('"')) parsed = parsed.slice(1);
+  if (parsed.endsWith('"')) parsed = parsed.slice(0, -1);
+  return parsed.replace(/"{2,}/g, '"').trim();
+};
+
+const parseSemicolonCsvMatrixLenient = (text: string): string[][] => (
+  text
+    .split(/\r?\n/)
+    .filter((line) => line.trim().length > 0)
+    .map((line) => line.split(';').map(parseQuotedCsvCell))
+);
+
 const refineDispatchGuideClassifications = (rows: DailyProductMovementRow[]): DailyProductMovementRow[] => {
   const guideGroups = new Map<string, { totalEntryQty: number; totalExitQty: number }>();
 
@@ -168,7 +182,12 @@ const readCsvMatrix = async (file: File): Promise<string[][]> => {
   });
 
   if (result.errors.length) {
-    throw new Error(result.errors[0].message);
+    const onlyQuoteErrors = result.errors.every((error) => error.type === 'Quotes');
+    if (!onlyQuoteErrors) {
+      throw new Error(result.errors[0].message);
+    }
+
+    return parseSemicolonCsvMatrixLenient(text);
   }
 
   return result.data;
