@@ -25,6 +25,26 @@ const isPositiveFinancialExpenseCredit = (targetKey: string, row: MonthlyPnlSour
   && row.amountCLP > 0
 );
 
+const normalizeMappedAmount = (
+  target: MonthlyPnlMappedLine,
+  row: MonthlyPnlSourceRow,
+): number => {
+  const isExpenseSection = target.sectionKey === 'COST_OF_SALES'
+    || target.sectionKey === 'SGA'
+    || target.sectionKey === 'NON_OPERATING_EXPENSES'
+    || target.targetKey === 'income_tax_expense';
+
+  if (!isExpenseSection) return row.amountCLP;
+
+  // Section subtotals in the source workbook are usually exported as negatives,
+  // while detail rows can legitimately be negative credits/reversals.
+  if (row.isSubtotal) {
+    return asPositiveMagnitude(row.amountCLP);
+  }
+
+  return row.amountCLP;
+};
+
 const toSourceRows = (lines: MonthlyPnlLine[]): MonthlyPnlSourceRow[] => lines.map((line) => ({
   lineOrder: line.lineOrder,
   accountCode: line.accountCode,
@@ -191,12 +211,7 @@ export const buildMonthlyPnlCustomMapping = (
       sourceSectionLabel: row.sourceSectionLabel,
     };
 
-    const isPositiveMagnitudeTarget = target.sectionKey === 'COST_OF_SALES'
-      || target.sectionKey === 'SGA'
-      || target.sectionKey === 'NON_OPERATING_EXPENSES'
-      || target.targetKey === 'income_tax_expense';
-
-    assignAmount(target, isPositiveMagnitudeTarget ? asPositiveMagnitude(row.amountCLP) : row.amountCLP, source);
+    assignAmount(target, normalizeMappedAmount(target, row), source);
   }
 
   if (remunerationRows.length) {

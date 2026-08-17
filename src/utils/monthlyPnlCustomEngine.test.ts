@@ -202,4 +202,22 @@ describe('monthlyPnlCustomEngine', () => {
     expect(result.totals.totalNonOperatingExpensesCLP).toBe(0);
     expect(result.mappedLines.find((line) => line.targetKey === 'net_profit_loss')?.amountCLP).toBe(1_000_003);
   });
+
+  it('mantiene signos negativos en detalles de gasto para no inflar el gasto neto', () => {
+    const result = buildMonthlyPnlCustomMapping([
+      makeLine({ lineOrder: 1, accountCode: '3.1.1010.10.01', accountName: 'VENTAS', section: 'INGRESOS', amountCLP: 94321012 }),
+      makeLine({ lineOrder: 2, accountCode: '', accountName: 'COSTOS DE EXPLOTACION', section: 'COSTO_VENTAS', subsection: 'COSTOS DE EXPLOTACION', amountCLP: -54312940, isSubtotal: true }),
+      makeLine({ lineOrder: 3, accountCode: '4.5.1050.10.04', accountName: 'CASTIGO DE EXISTENCIAS', subsection: 'GTOS. DE ADMINIS. Y VENTAS', amountCLP: -36554 }),
+      makeLine({ lineOrder: 4, accountCode: '', accountName: 'GASTO FINANCIERO', section: 'OTROS_INGRESOS_EGRESOS', subsection: 'GASTO FINANCIERO', amountCLP: -999, isSubtotal: true }),
+      makeLine({ lineOrder: 5, accountCode: '4.5.1090.10.01', accountName: 'DIFERENCIA DE CAMBIO', section: 'OTROS_INGRESOS_EGRESOS', subsection: 'OTROS EGRESOS F. DE LA EXPLOT.', amountCLP: 1_405_106 }),
+      makeLine({ lineOrder: 6, accountCode: '4.5.1060.10.01', accountName: 'DEPRECIACION DEL EJERCICIO', section: 'OTROS_INGRESOS_EGRESOS', subsection: 'DEPRECIACION', amountCLP: 287_864 }),
+    ], {
+      adminSalaryManualCLP: 0,
+    });
+
+    expect(result.errors).toEqual([]);
+    expect(result.mappedLines.find((line) => line.targetKey === 'inventory_write_off')?.amountCLP).toBe(-36_554);
+    expect(result.totals.totalSgaCLP).toBe(251_310);
+    expect(result.mappedLines.find((line) => line.targetKey === 'net_profit_loss')?.amountCLP).toBe(38_350_657);
+  });
 });
