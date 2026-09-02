@@ -258,6 +258,33 @@ const findColumn = (headers: string[], aliases: string[]): number => {
   return -1;
 };
 
+const findMonetaryColumn = (headers: string[], quantityIndex: number): number => {
+  const byKnownName = findColumn(headers, [
+    'val. saldo', 'val saldo', 'valor saldo', 'saldo clp', 'saldo $', '$ saldo', 'saldo monto', 'monto saldo', 'saldo importe',
+    'saldo valorizado', 'saldo valor', 'valor saldo', 'valor total', 'importe', 'monto', 'valor',
+  ]);
+  if (byKnownName >= 0 && byKnownName !== quantityIndex) return byKnownName;
+
+  const byCurrencyMarker = headers.findIndex((header, index) => {
+    if (index === quantityIndex) return false;
+    const normalizedHeader = normalize(header);
+    return normalizedHeader.includes('saldo')
+      && /\$|clp|peso|monto|valor|importe/.test(normalizedHeader);
+  });
+  if (byCurrencyMarker >= 0) return byCurrencyMarker;
+
+  // The daily product ledger has a fixed structure: balance amount is column 13
+  // (zero-based index 12), even when its heading is exported with a custom label.
+  const normalizedHeaders = headers.map(normalize);
+  const isDailyLedger = normalizedHeaders.includes('codigo')
+    && normalizedHeaders.includes('descripcion')
+    && normalizedHeaders.includes('fecha')
+    && normalizedHeaders.includes('documento');
+  if (isDailyLedger && headers.length > 12 && quantityIndex !== 12) return 12;
+
+  return headers.findIndex((header, index) => index !== quantityIndex && normalize(header) === 'saldo');
+};
+
 /** Parses a warehouse ledger with product, quantity and balance/value columns. */
 export const parseWarehouseLedgerFile = async (file: File): Promise<WarehouseLedgerParseResult> => {
   const extension = file.name.split('.').pop()?.toLowerCase();
@@ -283,7 +310,7 @@ export const parseWarehouseLedgerFile = async (file: File): Promise<WarehouseLed
   const skuIndex = findColumn(header.headers, ['sku', 'codigo producto', 'codigo articulo', 'cod producto', 'cod articulo', 'codigo', 'cod']);
   const nameIndex = findColumn(header.headers, ['descripcion producto', 'nombre producto', 'descripcion', 'producto', 'articulo', 'nombre']);
   const quantityIndex = findColumn(header.headers, ['cant. saldo', 'cant saldo', 'cantidad saldo', 'saldo qty', 'saldo cantidad', 'saldo unidades', 'qty saldo', 'cantidad', 'unidades', 'qty', 'quantity', 'existencia', 'stock']);
-  const valueIndex = findColumn(header.headers, ['saldo clp', 'saldo $', '$ saldo', 'saldo monto', 'monto saldo', 'saldo importe', 'saldo valorizado', 'saldo valor', 'valor saldo', 'valor total', 'importe', 'monto', 'valor']);
+  const valueIndex = findMonetaryColumn(header.headers, quantityIndex);
 
   if (valueIndex < 0 || (skuIndex < 0 && nameIndex < 0)) {
     throw new Error('Faltan columnas requeridas. Se necesita producto o código y una columna monetaria, como Saldo CLP, Saldo $ o Monto Saldo.');
