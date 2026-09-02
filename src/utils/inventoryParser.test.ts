@@ -5,7 +5,7 @@ import { parseWarehouseLedgerFile } from './inventoryParser';
 describe('warehouse ledger parser', () => {
   it('uses Cant. Saldo as units and the shared ST implant definition', async () => {
     const worksheet = XLSX.utils.aoa_to_sheet([
-      ['Codigo', 'Descripcion', 'Cant. Saldo', 'Saldo CLP'],
+      ['Codigo', 'Descripcion', 'Cant. Saldo', 'Saldo $'],
       ['ST-001', 'ST Internal Fixture [ST]', 2922, 123456],
     ]);
     const workbook = XLSX.utils.book_new();

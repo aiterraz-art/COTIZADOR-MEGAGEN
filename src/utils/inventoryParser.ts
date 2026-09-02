@@ -283,10 +283,10 @@ export const parseWarehouseLedgerFile = async (file: File): Promise<WarehouseLed
   const skuIndex = findColumn(header.headers, ['sku', 'codigo producto', 'codigo articulo', 'cod producto', 'cod articulo', 'codigo', 'cod']);
   const nameIndex = findColumn(header.headers, ['descripcion producto', 'nombre producto', 'descripcion', 'producto', 'articulo', 'nombre']);
   const quantityIndex = findColumn(header.headers, ['cant. saldo', 'cant saldo', 'cantidad saldo', 'saldo qty', 'saldo cantidad', 'saldo unidades', 'qty saldo', 'cantidad', 'unidades', 'qty', 'quantity', 'existencia', 'stock']);
-  const valueIndex = findColumn(header.headers, ['saldo clp', 'saldo $', 'saldo monto', 'saldo importe', 'saldo valorizado', 'saldo valor', 'valor total', 'saldo final', 'importe', 'monto', 'valor', 'saldo']);
+  const valueIndex = findColumn(header.headers, ['saldo clp', 'saldo $', '$ saldo', 'saldo monto', 'monto saldo', 'saldo importe', 'saldo valorizado', 'saldo valor', 'valor saldo', 'valor total', 'importe', 'monto', 'valor']);
 
   if (valueIndex < 0 || (skuIndex < 0 && nameIndex < 0)) {
-    throw new Error('Faltan columnas requeridas. Se necesita producto o código y una columna de saldo/valor.');
+    throw new Error('Faltan columnas requeridas. Se necesita producto o código y una columna monetaria, como Saldo CLP, Saldo $ o Monto Saldo.');
   }
 
   const rows: WarehouseLedgerRow[] = [];

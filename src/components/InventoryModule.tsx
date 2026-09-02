@@ -453,7 +453,7 @@ const InventoryModule: React.FC = () => {
               <div>
                 <strong>Mayor auxiliar de inventario</strong>
                 <p className="text-muted" style={{ margin: '0.25rem 0 0', fontSize: '0.78rem' }}>
-                  Sube el Excel o CSV con código/producto y saldo o valor. Se totalizarán las familias de fixtures y el valor completo de bodega.
+                  Sube el Excel o CSV con código/producto, Cant. Saldo y una columna monetaria (Saldo CLP, Saldo $ o Monto Saldo). Se totalizarán las familias de fixtures y el valor completo de bodega en pesos chilenos.
                 </p>
                 {warehouseFileName && <p className="text-muted" style={{ margin: '0.4rem 0 0', fontSize: '0.74rem' }}>{warehouseFileName} · {warehouseLoadSummary}</p>}
               </div>
@@ -468,7 +468,7 @@ const InventoryModule: React.FC = () => {
             <>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: '0.75rem', marginBottom: '1rem' }}>
                 <button className="finance-card" onClick={() => void copyWarehouseMetric('total-value', warehouseSummary.valueCLP)} title="Haz clic para copiar" style={{ textAlign: 'left', cursor: 'pointer' }}>
-                  <div className="text-muted" style={{ fontSize: '0.72rem' }}>VALOR TOTAL BODEGA</div>
+                  <div className="text-muted" style={{ fontSize: '0.72rem' }}>VALOR TOTAL BODEGA (CLP)</div>
                   <div style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--primary)', marginTop: '0.25rem' }}>{formatCLP(warehouseSummary.valueCLP)}</div>
                   {copiedWarehouseMetric === 'total-value' && <div className="text-muted" style={{ fontSize: '0.72rem', marginTop: '0.3rem' }}>Copiado</div>}
                 </button>
@@ -482,7 +482,7 @@ const InventoryModule: React.FC = () => {
               <div className="table-container" style={{ marginBottom: '1rem' }}>
                 <div className="text-muted" style={{ fontSize: '0.72rem', padding: '0.55rem 0.7rem 0' }}>Haz clic en cualquier cifra para copiarla.</div>
                 <table>
-                  <thead><tr><th>Categoría</th><th style={{ textAlign: 'right' }}>Unidades</th><th style={{ textAlign: 'right' }}>SKUs</th><th style={{ textAlign: 'right' }}>Valor</th></tr></thead>
+                  <thead><tr><th>Categoría</th><th style={{ textAlign: 'right' }}>Unidades</th><th style={{ textAlign: 'right' }}>SKUs</th><th style={{ textAlign: 'right' }}>Valor (CLP)</th></tr></thead>
                   <tbody>
                     {warehouseSummary.byCategory.map((item) => (
                       <tr key={item.category}>
