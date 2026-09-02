@@ -243,10 +243,19 @@ const findHeaderRow = (matrix: unknown[][]): { index: number; headers: string[] 
 
 const findColumn = (headers: string[], aliases: string[]): number => {
   const normalizedAliases = aliases.map(normalize);
-  return headers.findIndex((header) => {
-    const normalizedHeader = normalize(header);
-    return normalizedAliases.some((alias) => normalizedHeader === alias || normalizedHeader.includes(alias));
-  });
+  const normalizedHeaders = headers.map(normalize);
+
+  // Search aliases in priority order. This distinguishes e.g. "Saldo Qty"
+  // from the later "Saldo CLP" column in the daily warehouse ledger.
+  for (const alias of normalizedAliases) {
+    const exactIndex = normalizedHeaders.findIndex((header) => header === alias);
+    if (exactIndex >= 0) return exactIndex;
+
+    const containedIndex = normalizedHeaders.findIndex((header) => header.includes(alias));
+    if (containedIndex >= 0) return containedIndex;
+  }
+
+  return -1;
 };
 
 /** Parses a warehouse ledger with product, quantity and balance/value columns. */
@@ -273,8 +282,8 @@ export const parseWarehouseLedgerFile = async (file: File): Promise<WarehouseLed
 
   const skuIndex = findColumn(header.headers, ['sku', 'codigo producto', 'codigo articulo', 'cod producto', 'cod articulo', 'codigo', 'cod']);
   const nameIndex = findColumn(header.headers, ['descripcion producto', 'nombre producto', 'descripcion', 'producto', 'articulo', 'nombre']);
-  const quantityIndex = findColumn(header.headers, ['saldo cantidad', 'cantidad saldo', 'cantidad', 'unidades', 'existencia', 'stock']);
-  const valueIndex = findColumn(header.headers, ['saldo valorizado', 'saldo valor', 'valor total', 'saldo final', 'importe', 'monto', 'valor', 'saldo']);
+  const quantityIndex = findColumn(header.headers, ['cant. saldo', 'cant saldo', 'cantidad saldo', 'saldo qty', 'saldo cantidad', 'saldo unidades', 'qty saldo', 'cantidad', 'unidades', 'qty', 'quantity', 'existencia', 'stock']);
+  const valueIndex = findColumn(header.headers, ['saldo clp', 'saldo $', 'saldo monto', 'saldo importe', 'saldo valorizado', 'saldo valor', 'valor total', 'saldo final', 'importe', 'monto', 'valor', 'saldo']);
 
   if (valueIndex < 0 || (skuIndex < 0 && nameIndex < 0)) {
     throw new Error('Faltan columnas requeridas. Se necesita producto o código y una columna de saldo/valor.');
