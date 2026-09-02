@@ -1,5 +1,6 @@
 import * as XLSX from 'xlsx';
 import Papa from 'papaparse';
+import { findImplantDefinition } from '../data/implantDefinitions';
 import type {
   CurrentStock,
   ParsedDatasetResult,
@@ -215,17 +216,17 @@ const classifyWarehouseProduct = (sku: string, name: string): WarehouseCategory 
     .replace(/[_-]/g, ' ');
   const includes = (pattern: RegExp) => pattern.test(source);
 
+  // Shared source of truth with "Mov. Diarios Productos": an item is an implant
+  // only when it matches one of the defined implant families.
+  const implant = findImplantDefinition(`${sku} ${name}`);
+  if (implant) {
+    if (implant.key === 'ARiE') return 'Ari';
+    if (implant.key === 'MN') return 'ETC';
+    return implant.key;
+  }
+
   const prostheticTerms = /abutment|pilar|analog|análogo|coping|scanbody|scan body|transfer|cylinder|cilindro|tornillo|screw|healing|cicatriz|locator|barra|bar\/clip|aditamento/;
   if (includes(prostheticTerms)) return 'Prosthetic';
-
-  if (includes(/\bblue\s*diamond\b|\bbd\d*\b/)) return 'BD';
-  if (includes(/\bari\b|anyridge\s*(i|internal)\b/)) return 'Ari';
-  if (includes(/\banyridge\b|\bar\d+\b|\bar\b/)) return 'AR';
-  if (includes(/\banyone\b|\bany\s*one\b|\bao\d+\b|\bao\b/)) return 'AO';
-  if (includes(/\bst\d+\b|\bst fixture\b|\bspecial\s*thread\b/)) return 'ST';
-
-  const fixtureTerms = /fixture|implante|implant/;
-  if (includes(fixtureTerms)) return 'ETC';
   return 'Others';
 };
 
