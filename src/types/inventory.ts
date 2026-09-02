@@ -59,3 +59,19 @@ export interface InventoryUploadMetadata {
   rotation?: DatasetUploadMeta;
   stock?: DatasetUploadMeta;
 }
+
+export type WarehouseCategory = 'BD' | 'Ari' | 'AR' | 'AO' | 'ST' | 'ETC' | 'Prosthetic' | 'Others';
+
+export interface WarehouseLedgerRow {
+  sku: string;
+  name: string;
+  quantity: number;
+  valueCLP: number;
+  category: WarehouseCategory;
+}
+
+export interface WarehouseLedgerParseResult {
+  rows: WarehouseLedgerRow[];
+  totalRows: number;
+  discardedRows: number;
+}

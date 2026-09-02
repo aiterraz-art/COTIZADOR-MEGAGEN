@@ -16,6 +16,8 @@ import type {
   InventoryUploadMetadata,
   ProductRotation,
   ProductSupplier,
+  WarehouseCategory,
+  WarehouseLedgerRow,
 } from '../types/inventory';
 import {
   fetchRotation90d,
@@ -29,6 +31,7 @@ import {
   parseRotationFile,
   parseStockFile,
   parseSupplierMasterFile,
+  parseWarehouseLedgerFile,
 } from '../utils/inventoryParser';
 import { buildInventoryCalculations } from '../utils/inventoryEngine';
 
@@ -36,7 +39,14 @@ const META_STORAGE_KEY = 'megagen.inventory.uploadMeta';
 const SETTINGS_STORAGE_KEY = 'megagen.inventory.settings';
 const FILTER_STORAGE_KEY = 'megagen.inventory.supplierFilter';
 
-type InventoryInnerTab = 'dashboard' | 'history';
+type InventoryInnerTab = 'dashboard' | 'warehouseValue' | 'history';
+
+const warehouseCategories: WarehouseCategory[] = ['BD', 'Ari', 'AR', 'AO', 'ST', 'ETC', 'Prosthetic', 'Others'];
+const formatCLP = (value: number) => new Intl.NumberFormat('es-CL', {
+  style: 'currency',
+  currency: 'CLP',
+  maximumFractionDigits: 0,
+}).format(value);
 
 const statusColors: Record<InventoryStatus, string> = {
   CRITICAL: 'var(--error)',
@@ -77,6 +87,7 @@ const InventoryModule: React.FC = () => {
   const supplierInputRef = useRef<HTMLInputElement>(null);
   const rotationInputRef = useRef<HTMLInputElement>(null);
   const stockInputRef = useRef<HTMLInputElement>(null);
+  const warehouseLedgerInputRef = useRef<HTMLInputElement>(null);
 
   const [suppliers, setSuppliers] = useState<ProductSupplier[]>([]);
   const [rotations, setRotations] = useState<ProductRotation[]>([]);
@@ -89,6 +100,9 @@ const InventoryModule: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isRecalculating, setIsRecalculating] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [warehouseRows, setWarehouseRows] = useState<WarehouseLedgerRow[]>([]);
+  const [warehouseFileName, setWarehouseFileName] = useState('');
+  const [warehouseLoadSummary, setWarehouseLoadSummary] = useState('');
 
   useEffect(() => {
     localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
@@ -198,6 +212,24 @@ const InventoryModule: React.FC = () => {
     }
   };
 
+  const handleWarehouseLedgerUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setErrorMessage('');
+    try {
+      const result = await parseWarehouseLedgerFile(file);
+      if (!result.rows.length) throw new Error('No se encontraron productos con información valorizable.');
+      setWarehouseRows(result.rows);
+      setWarehouseFileName(file.name);
+      setWarehouseLoadSummary(`${result.rows.length} productos leídos${result.discardedRows ? ` · ${result.discardedRows} filas descartadas` : ''}`);
+    } catch (error) {
+      setErrorMessage(`Error al cargar el mayor auxiliar: ${(error as Error).message}`);
+    } finally {
+      event.target.value = '';
+    }
+  };
+
   const handleRecalculate = () => {
     setIsRecalculating(true);
     setTimeout(() => setIsRecalculating(false), 250);
@@ -229,6 +261,23 @@ const InventoryModule: React.FC = () => {
   }, [calculations]);
 
   const isDatasetIncomplete = suppliers.length === 0 || rotations.length === 0 || stocks.length === 0;
+
+  const warehouseSummary = useMemo(() => {
+    const byCategory = warehouseCategories.map((category) => {
+      const categoryRows = warehouseRows.filter((row) => row.category === category);
+      return {
+        category,
+        quantity: categoryRows.reduce((sum, row) => sum + row.quantity, 0),
+        valueCLP: categoryRows.reduce((sum, row) => sum + row.valueCLP, 0),
+        products: categoryRows.length,
+      };
+    });
+    return {
+      byCategory,
+      quantity: byCategory.reduce((sum, item) => sum + item.quantity, 0),
+      valueCLP: byCategory.reduce((sum, item) => sum + item.valueCLP, 0),
+    };
+  }, [warehouseRows]);
 
   const exportPurchaseOrder = () => {
     if (selectedSupplier === 'Todos') {
@@ -320,6 +369,9 @@ const InventoryModule: React.FC = () => {
           <button className="btn" style={{ background: activeTab === 'dashboard' ? 'var(--primary)' : 'var(--surface)', color: activeTab === 'dashboard' ? '#fff' : 'var(--text)' }} onClick={() => setActiveTab('dashboard')}>
             Dashboard
           </button>
+          <button className="btn" style={{ background: activeTab === 'warehouseValue' ? 'var(--primary)' : 'var(--surface)', color: activeTab === 'warehouseValue' ? '#fff' : 'var(--text)' }} onClick={() => setActiveTab('warehouseValue')}>
+            Valor bodega
+          </button>
           <button className="btn" style={{ background: activeTab === 'history' ? 'var(--primary)' : 'var(--surface)', color: activeTab === 'history' ? '#fff' : 'var(--text)' }} onClick={() => setActiveTab('history')}>
             Historial de cargas
           </button>
@@ -382,7 +434,74 @@ const InventoryModule: React.FC = () => {
         </div>
       </div>
 
-      {activeTab === 'history' ? (
+      {activeTab === 'warehouseValue' ? (
+        <div>
+          <div className="finance-card" style={{ marginBottom: '1rem', padding: '1rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+              <div>
+                <strong>Mayor auxiliar de inventario</strong>
+                <p className="text-muted" style={{ margin: '0.25rem 0 0', fontSize: '0.78rem' }}>
+                  Sube el Excel o CSV con código/producto y saldo o valor. Se totalizarán las familias de fixtures y el valor completo de bodega.
+                </p>
+                {warehouseFileName && <p className="text-muted" style={{ margin: '0.4rem 0 0', fontSize: '0.74rem' }}>{warehouseFileName} · {warehouseLoadSummary}</p>}
+              </div>
+              <button className="btn btn-primary" onClick={() => warehouseLedgerInputRef.current?.click()}>
+                <Upload size={15} /> Cargar mayor auxiliar
+              </button>
+              <input ref={warehouseLedgerInputRef} type="file" style={{ display: 'none' }} accept=".csv,.xlsx,.xls" onChange={handleWarehouseLedgerUpload} />
+            </div>
+          </div>
+
+          {warehouseRows.length > 0 ? (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: '0.75rem', marginBottom: '1rem' }}>
+                <div className="finance-card">
+                  <div className="text-muted" style={{ fontSize: '0.72rem' }}>VALOR TOTAL BODEGA</div>
+                  <div style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--primary)', marginTop: '0.25rem' }}>{formatCLP(warehouseSummary.valueCLP)}</div>
+                </div>
+                <div className="finance-card">
+                  <div className="text-muted" style={{ fontSize: '0.72rem' }}>UNIDADES TOTALES</div>
+                  <div style={{ fontSize: '1.5rem', fontWeight: 800, marginTop: '0.25rem' }}>{warehouseSummary.quantity.toLocaleString('es-CL', { maximumFractionDigits: 2 })}</div>
+                </div>
+              </div>
+
+              <div className="table-container" style={{ marginBottom: '1rem' }}>
+                <table>
+                  <thead><tr><th>Categoría</th><th style={{ textAlign: 'right' }}>Productos</th><th style={{ textAlign: 'right' }}>Unidades</th><th style={{ textAlign: 'right' }}>Valor</th></tr></thead>
+                  <tbody>
+                    {warehouseSummary.byCategory.map((item) => (
+                      <tr key={item.category}>
+                        <td style={{ fontWeight: 700 }}>{item.category === 'ETC' ? 'Fixture ETC' : item.category}</td>
+                        <td style={{ textAlign: 'right' }}>{item.products}</td>
+                        <td style={{ textAlign: 'right' }}>{item.quantity.toLocaleString('es-CL', { maximumFractionDigits: 2 })}</td>
+                        <td style={{ textAlign: 'right', fontWeight: 700 }}>{formatCLP(item.valueCLP)}</td>
+                      </tr>
+                    ))}
+                    <tr style={{ background: 'rgba(148,163,184,0.12)' }}>
+                      <td style={{ fontWeight: 800 }}>TOTAL BODEGA</td>
+                      <td style={{ textAlign: 'right', fontWeight: 800 }}>{warehouseRows.length}</td>
+                      <td style={{ textAlign: 'right', fontWeight: 800 }}>{warehouseSummary.quantity.toLocaleString('es-CL', { maximumFractionDigits: 2 })}</td>
+                      <td style={{ textAlign: 'right', fontWeight: 800 }}>{formatCLP(warehouseSummary.valueCLP)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <details className="finance-card">
+                <summary style={{ cursor: 'pointer', fontWeight: 700 }}>Ver detalle de clasificación ({warehouseRows.length} productos)</summary>
+                <div className="table-container" style={{ marginTop: '0.8rem', maxHeight: '360px' }}>
+                  <table>
+                    <thead><tr><th>Código</th><th>Producto</th><th>Categoría</th><th style={{ textAlign: 'right' }}>Unidades</th><th style={{ textAlign: 'right' }}>Valor</th></tr></thead>
+                    <tbody>{warehouseRows.map((row, index) => <tr key={`${row.sku}-${index}`}><td>{row.sku || '—'}</td><td>{row.name}</td><td>{row.category === 'ETC' ? 'Fixture ETC' : row.category}</td><td style={{ textAlign: 'right' }}>{row.quantity.toLocaleString('es-CL', { maximumFractionDigits: 2 })}</td><td style={{ textAlign: 'right' }}>{formatCLP(row.valueCLP)}</td></tr>)}</tbody>
+                  </table>
+                </div>
+              </details>
+            </>
+          ) : (
+            <div className="text-muted" style={{ textAlign: 'center', padding: '2rem 1rem' }}>Aún no hay un mayor auxiliar cargado.</div>
+          )}
+        </div>
+      ) : activeTab === 'history' ? (
         <div style={{ display: 'grid', gap: '0.8rem' }}>
           {(['suppliers', 'rotation', 'stock'] as const).map((key) => (
             <div key={key} className="finance-card" style={{ padding: '0.8rem' }}>
