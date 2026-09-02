@@ -467,20 +467,20 @@ const InventoryModule: React.FC = () => {
 
               <div className="table-container" style={{ marginBottom: '1rem' }}>
                 <table>
-                  <thead><tr><th>Categoría</th><th style={{ textAlign: 'right' }}>Productos</th><th style={{ textAlign: 'right' }}>Unidades</th><th style={{ textAlign: 'right' }}>Valor</th></tr></thead>
+                  <thead><tr><th>Categoría</th><th style={{ textAlign: 'right' }}>Unidades</th><th style={{ textAlign: 'right' }}>SKUs</th><th style={{ textAlign: 'right' }}>Valor</th></tr></thead>
                   <tbody>
                     {warehouseSummary.byCategory.map((item) => (
                       <tr key={item.category}>
                         <td style={{ fontWeight: 700 }}>{item.category === 'ETC' ? 'Fixture ETC' : item.category}</td>
-                        <td style={{ textAlign: 'right' }}>{item.products}</td>
                         <td style={{ textAlign: 'right' }}>{item.quantity.toLocaleString('es-CL', { maximumFractionDigits: 2 })}</td>
+                        <td style={{ textAlign: 'right' }}>{item.products}</td>
                         <td style={{ textAlign: 'right', fontWeight: 700 }}>{formatCLP(item.valueCLP)}</td>
                       </tr>
                     ))}
                     <tr style={{ background: 'rgba(148,163,184,0.12)' }}>
                       <td style={{ fontWeight: 800 }}>TOTAL BODEGA</td>
-                      <td style={{ textAlign: 'right', fontWeight: 800 }}>{warehouseRows.length}</td>
                       <td style={{ textAlign: 'right', fontWeight: 800 }}>{warehouseSummary.quantity.toLocaleString('es-CL', { maximumFractionDigits: 2 })}</td>
+                      <td style={{ textAlign: 'right', fontWeight: 800 }}>{warehouseRows.length}</td>
                       <td style={{ textAlign: 'right', fontWeight: 800 }}>{formatCLP(warehouseSummary.valueCLP)}</td>
                     </tr>
                   </tbody>
@@ -488,7 +488,7 @@ const InventoryModule: React.FC = () => {
               </div>
 
               <details className="finance-card">
-                <summary style={{ cursor: 'pointer', fontWeight: 700 }}>Ver detalle de clasificación ({warehouseRows.length} productos)</summary>
+                <summary style={{ cursor: 'pointer', fontWeight: 700 }}>Ver detalle de clasificación ({warehouseRows.length} SKUs)</summary>
                 <div className="table-container" style={{ marginTop: '0.8rem', maxHeight: '360px' }}>
                   <table>
                     <thead><tr><th>Código</th><th>Producto</th><th>Categoría</th><th style={{ textAlign: 'right' }}>Unidades</th><th style={{ textAlign: 'right' }}>Valor</th></tr></thead>
