@@ -47,6 +47,7 @@ const formatCLP = (value: number) => new Intl.NumberFormat('es-CL', {
   currency: 'CLP',
   maximumFractionDigits: 0,
 }).format(value);
+const formatCopyNumber = (value: number) => (Number.isInteger(value) ? String(value) : String(value).replace('.', ','));
 
 const statusColors: Record<InventoryStatus, string> = {
   CRITICAL: 'var(--error)',
@@ -103,6 +104,7 @@ const InventoryModule: React.FC = () => {
   const [warehouseRows, setWarehouseRows] = useState<WarehouseLedgerRow[]>([]);
   const [warehouseFileName, setWarehouseFileName] = useState('');
   const [warehouseLoadSummary, setWarehouseLoadSummary] = useState('');
+  const [copiedWarehouseMetric, setCopiedWarehouseMetric] = useState('');
 
   useEffect(() => {
     localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
@@ -233,6 +235,16 @@ const InventoryModule: React.FC = () => {
   const handleRecalculate = () => {
     setIsRecalculating(true);
     setTimeout(() => setIsRecalculating(false), 250);
+  };
+
+  const copyWarehouseMetric = async (key: string, value: number) => {
+    try {
+      await navigator.clipboard.writeText(formatCopyNumber(value));
+      setCopiedWarehouseMetric(key);
+      setTimeout(() => setCopiedWarehouseMetric(''), 1200);
+    } catch {
+      setErrorMessage('No fue posible copiar la cifra.');
+    }
   };
 
   const calculations = useMemo(() => {
@@ -455,33 +467,36 @@ const InventoryModule: React.FC = () => {
           {warehouseRows.length > 0 ? (
             <>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: '0.75rem', marginBottom: '1rem' }}>
-                <div className="finance-card">
+                <button className="finance-card" onClick={() => void copyWarehouseMetric('total-value', warehouseSummary.valueCLP)} title="Haz clic para copiar" style={{ textAlign: 'left', cursor: 'pointer' }}>
                   <div className="text-muted" style={{ fontSize: '0.72rem' }}>VALOR TOTAL BODEGA</div>
                   <div style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--primary)', marginTop: '0.25rem' }}>{formatCLP(warehouseSummary.valueCLP)}</div>
-                </div>
-                <div className="finance-card">
+                  {copiedWarehouseMetric === 'total-value' && <div className="text-muted" style={{ fontSize: '0.72rem', marginTop: '0.3rem' }}>Copiado</div>}
+                </button>
+                <button className="finance-card" onClick={() => void copyWarehouseMetric('total-quantity', warehouseSummary.quantity)} title="Haz clic para copiar" style={{ textAlign: 'left', cursor: 'pointer' }}>
                   <div className="text-muted" style={{ fontSize: '0.72rem' }}>UNIDADES TOTALES</div>
                   <div style={{ fontSize: '1.5rem', fontWeight: 800, marginTop: '0.25rem' }}>{warehouseSummary.quantity.toLocaleString('es-CL', { maximumFractionDigits: 2 })}</div>
-                </div>
+                  {copiedWarehouseMetric === 'total-quantity' && <div className="text-muted" style={{ fontSize: '0.72rem', marginTop: '0.3rem' }}>Copiado</div>}
+                </button>
               </div>
 
               <div className="table-container" style={{ marginBottom: '1rem' }}>
+                <div className="text-muted" style={{ fontSize: '0.72rem', padding: '0.55rem 0.7rem 0' }}>Haz clic en cualquier cifra para copiarla.</div>
                 <table>
                   <thead><tr><th>Categoría</th><th style={{ textAlign: 'right' }}>Unidades</th><th style={{ textAlign: 'right' }}>SKUs</th><th style={{ textAlign: 'right' }}>Valor</th></tr></thead>
                   <tbody>
                     {warehouseSummary.byCategory.map((item) => (
                       <tr key={item.category}>
                         <td style={{ fontWeight: 700 }}>{item.category === 'ETC' ? 'Fixture ETC' : item.category}</td>
-                        <td style={{ textAlign: 'right' }}>{item.quantity.toLocaleString('es-CL', { maximumFractionDigits: 2 })}</td>
-                        <td style={{ textAlign: 'right' }}>{item.products}</td>
-                        <td style={{ textAlign: 'right', fontWeight: 700 }}>{formatCLP(item.valueCLP)}</td>
+                        <td onClick={() => void copyWarehouseMetric(`${item.category}-quantity`, item.quantity)} title="Copiar unidades" style={{ textAlign: 'right', cursor: 'pointer', fontWeight: copiedWarehouseMetric === `${item.category}-quantity` ? 800 : undefined }}>{copiedWarehouseMetric === `${item.category}-quantity` ? 'Copiado' : item.quantity.toLocaleString('es-CL', { maximumFractionDigits: 2 })}</td>
+                        <td onClick={() => void copyWarehouseMetric(`${item.category}-skus`, item.products)} title="Copiar SKUs" style={{ textAlign: 'right', cursor: 'pointer', fontWeight: copiedWarehouseMetric === `${item.category}-skus` ? 800 : undefined }}>{copiedWarehouseMetric === `${item.category}-skus` ? 'Copiado' : item.products}</td>
+                        <td onClick={() => void copyWarehouseMetric(`${item.category}-value`, item.valueCLP)} title="Copiar valor" style={{ textAlign: 'right', fontWeight: 700, cursor: 'pointer' }}>{copiedWarehouseMetric === `${item.category}-value` ? 'Copiado' : formatCLP(item.valueCLP)}</td>
                       </tr>
                     ))}
                     <tr style={{ background: 'rgba(148,163,184,0.12)' }}>
                       <td style={{ fontWeight: 800 }}>TOTAL BODEGA</td>
-                      <td style={{ textAlign: 'right', fontWeight: 800 }}>{warehouseSummary.quantity.toLocaleString('es-CL', { maximumFractionDigits: 2 })}</td>
-                      <td style={{ textAlign: 'right', fontWeight: 800 }}>{warehouseRows.length}</td>
-                      <td style={{ textAlign: 'right', fontWeight: 800 }}>{formatCLP(warehouseSummary.valueCLP)}</td>
+                      <td onClick={() => void copyWarehouseMetric('table-total-quantity', warehouseSummary.quantity)} title="Copiar unidades" style={{ textAlign: 'right', fontWeight: 800, cursor: 'pointer' }}>{copiedWarehouseMetric === 'table-total-quantity' ? 'Copiado' : warehouseSummary.quantity.toLocaleString('es-CL', { maximumFractionDigits: 2 })}</td>
+                      <td onClick={() => void copyWarehouseMetric('table-total-skus', warehouseRows.length)} title="Copiar SKUs" style={{ textAlign: 'right', fontWeight: 800, cursor: 'pointer' }}>{copiedWarehouseMetric === 'table-total-skus' ? 'Copiado' : warehouseRows.length}</td>
+                      <td onClick={() => void copyWarehouseMetric('table-total-value', warehouseSummary.valueCLP)} title="Copiar valor" style={{ textAlign: 'right', fontWeight: 800, cursor: 'pointer' }}>{copiedWarehouseMetric === 'table-total-value' ? 'Copiado' : formatCLP(warehouseSummary.valueCLP)}</td>
                     </tr>
                   </tbody>
                 </table>
