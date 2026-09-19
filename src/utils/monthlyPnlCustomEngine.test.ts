@@ -131,6 +131,22 @@ describe('monthlyPnlCustomEngine', () => {
     expect(result.mappedLines.find((line) => line.targetKey === 'miscellaneous_loss')?.amountCLP).toBe(128_255);
   });
 
+  it('mapea las nuevas cuentas de agosto de 2026 a sus conceptos operativos', () => {
+    const result = buildMonthlyPnlCustomMapping([
+      makeLine({ lineOrder: 1, accountCode: '4.5.1040.10.05', accountName: 'ASIGNACION HERRAMIENTAS', subsection: 'GTOS. DE ADMINIS. Y VENTAS', amountCLP: 500_000 }),
+      makeLine({ lineOrder: 2, accountCode: '4.5.1040.10.06', accountName: 'VIATICOS', subsection: 'GTOS. DE ADMINIS. Y VENTAS', amountCLP: 380_000 }),
+      makeLine({ lineOrder: 3, accountCode: '4.5.1040.10.12', accountName: 'INDEMNIZACION SUSTITUTIVA AVISO PREVIO', subsection: 'GTOS. DE ADMINIS. Y VENTAS', amountCLP: 796_959 }),
+    ], {
+      adminSalaryManualCLP: 0,
+    });
+
+    expect(result.errors).toEqual([]);
+    expect(result.unmappedSourceLines).toEqual([]);
+    expect(result.mappedLines.find((line) => line.targetKey === 'employee_benefits')?.amountCLP).toBe(500_000);
+    expect(result.mappedLines.find((line) => line.targetKey === 'travel_and_transportation_expense')?.amountCLP).toBe(380_000);
+    expect(result.mappedLines.find((line) => line.targetKey === 'provision_for_severance_indemnities')?.amountCLP).toBe(796_959);
+  });
+
   it('valida que Salaries (Admin, GM) no exceda REMUNERACIONES', () => {
     const result = buildMonthlyPnlCustomMapping([
       makeLine({ lineOrder: 1, accountCode: '4.5.1040.10.01', accountName: 'REMUNERACIONES', subsection: 'GTOS. DE ADMINIS. Y VENTAS', amountCLP: 2_000_000 }),
