@@ -482,7 +482,9 @@ export const mapRowsToImportItems = (rows: Record<string, unknown>[]): ImportIte
         const finalUnitCost = parseNumber(unitCost ?? fallbackCost);
 
         if (!finalName && !finalSku) return;
-        if (finalQty <= 0 || finalUnitCost <= 0) return;
+        // El costo cero es válido: el ítem debe permanecer visible para su revisión
+        // y puede completarse posteriormente desde la tabla de importaciones.
+        if (finalQty <= 0 || finalUnitCost < 0) return;
 
         items.push({
             sku: finalSku,

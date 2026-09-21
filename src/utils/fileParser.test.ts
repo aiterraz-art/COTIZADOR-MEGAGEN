@@ -37,4 +37,24 @@ describe('fileParser import rows', () => {
             name: 'Bone Matrix I',
         });
     });
+
+    it('conserva productos con costo unitario cero', () => {
+        const items = mapRowsToImportItems([
+            {
+                SKU: 'SIN-COSTO',
+                Producto: 'Producto pendiente de costo',
+                Cantidad: 3,
+                Costo: 0,
+            },
+        ]);
+
+        expect(items).toEqual([
+            {
+                sku: 'SIN-COSTO',
+                name: 'Producto pendiente de costo',
+                quantity: 3,
+                unitCost: 0,
+            },
+        ]);
+    });
 });

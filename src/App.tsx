@@ -147,7 +147,7 @@ const createEmptyImportItem = (): ImportItemRaw => ({
 });
 
 const isImportItemReady = (item: ImportItemRaw): boolean => (
-  Boolean((item.sku.trim() || item.name.trim()) && item.quantity > 0 && item.unitCost > 0)
+  Boolean((item.sku.trim() || item.name.trim()) && item.quantity > 0 && item.unitCost >= 0)
 );
 
 const App: React.FC = () => {
@@ -2179,7 +2179,7 @@ const App: React.FC = () => {
 
             {incompleteImportItemsCount > 0 && (
               <div style={{ marginTop: '0.6rem', padding: '0.7rem 0.9rem', borderRadius: '10px', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', color: '#9A5A00', fontSize: '0.78rem' }}>
-                Hay {incompleteImportItemsCount} fila(s) incompleta(s). Solo se calculan, guardan y exportan los ítems con nombre o SKU, cantidad y costo mayores a cero.
+                Hay {incompleteImportItemsCount} fila(s) incompleta(s). Solo se calculan, guardan y exportan los ítems con nombre o SKU, cantidad mayor a cero y costo igual o mayor a cero.
               </div>
             )}
           </div>
@@ -2244,7 +2244,7 @@ const App: React.FC = () => {
             </>
           ) : (
             <div style={{ padding: '1rem', border: '1px dashed var(--border)', borderRadius: '12px', background: 'var(--surface)' }}>
-              Carga un archivo de importación o agrega filas manuales con SKU, nombre, cantidad y costo para calcular precios.
+              Carga un archivo de importación o agrega filas manuales con SKU, nombre, cantidad y costo (puede ser cero) para calcular precios.
             </div>
           )}
             </>
